@@ -56,7 +56,7 @@ jobs:
       # - uses: actions/setup-java@v4
       #   with: { distribution: temurin, java-version: "25", cache: maven }
       - name: Build and test
-        run: echo "FILL: install from the lockfile, lint, test, build" && exit 1
+        run: 'echo "FILL: install from the lockfile, lint, test, build" && exit 1'
 
   python:
     needs: gitleaks
@@ -81,7 +81,7 @@ jobs:
       # FILL: toolchain, browsers (install system deps only when runner.environment == 'github-hosted'),
       # start servers, run end-to-end tests.
       - name: End-to-end tests
-        run: echo "FILL: end-to-end tests, or delete this job and 'e2e' from scripts/ci_paths.json" && exit 1
+        run: 'echo "FILL: end-to-end tests, or delete this job and e2e from scripts/ci_paths.json" && exit 1'
       - name: Stop servers
         if: always()
         run: python3 scripts/stop_all.py
