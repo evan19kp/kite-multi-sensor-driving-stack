@@ -1,0 +1,25 @@
+{
+  "_comment": "Rules for scripts/check_forbidden_files.py. Driving Stack: nothing from BeamNG.tech, no binaries, no keys. Changing this file is a contract change (its own item, Evan approves).",
+  "extensions": [
+    ".jbeam", ".pc", ".dae", ".cdae", ".dds", ".ter", ".mis", ".prefab", ".lua", ".zip", ".7z",
+    ".rar", ".exe", ".dll", ".pdb", ".so", ".dylib", ".pak", ".key", ".pem", ".pfx", ".p12",
+    ".ktx", ".ogg", ".wav", ".mp4", ".mov", ".avi", ".mkv", ".bin", ".rrd"
+  ],
+  "name_patterns": ["*.materials.json", "info.json", "tech.key", "*.forest4.json", "items.level.json"],
+  "path_markers": ["beamng/", "beamng.tech", "beamng.drive", "bin64/", "gameengine/", "/levels/", "/vehicles/"],
+  "content_markers": [
+    "bCDDL",
+    "copyright[^\\n]{0,80}beamng gmbh",
+    "[a-z]:[\\\\/]+beamng",
+    "/[a-z]/beamng",
+    "/mnt/[a-z]/beamng",
+    "appdata[\\\\/]+local[\\\\/]+beamng",
+    "BNG_HOME"
+  ],
+  "max_file_kb": 2048,
+  "content_exempt": [
+    "scripts/check_forbidden_files.py",
+    "scripts/test_check_forbidden_files.py",
+    "scripts/forbidden_files.json"
+  ]
+}

@@ -37,6 +37,8 @@ jobs:
           fetch-depth: 0
       - id: classify
         run: python3 scripts/ci_changes.py
+      - name: Forbidden files (another program's files, binaries, keys)
+        run: python3 scripts/check_forbidden_files.py
       - uses: gitleaks/gitleaks-action@v2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

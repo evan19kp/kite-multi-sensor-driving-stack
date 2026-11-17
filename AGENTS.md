@@ -141,3 +141,14 @@ item. Never loop.
 ## Standing rules
 
 Each item that introduces a lasting rule adds a "## Standing rules (R<n>)" section below.
+
+## Simulator files (hard rule)
+
+- Never read, list, search, copy, launch or write about the simulator's install folder, its user
+  folder, or the drive it is on, and never put any of its files (vehicles, maps, assets, scripts,
+  configs, license files) in the repo. A guard hook blocks these actions and CI fails any PR that
+  adds such files. Tests use the fake simulator; only Evan runs code against the real one.
+- Code that needs the simulator's folder takes it as a command-line argument. Never hard-code a
+  path to it and never read it from an environment variable.
+- Never weaken scripts/check_forbidden_files.py or scripts/forbidden_files.json unless the brief
+  says so and Evan approved it.
