@@ -1,0 +1,42 @@
+# ---- Secrets / environment ----
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+client_secret*.json
+credentials*.json
+token*.json
+
+# ---- Agent and tool working folders ----
+.run/
+.worktrees/
+scratch/
+graphify-out/
+.impeccable/config.local.json
+
+# ---- Python ----
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+
+# ---- Node ----
+node_modules/
+dist/
+coverage/
+test-results/
+playwright-report/
+
+# ---- Java ----
+target/
+build/
+.gradle/
+
+# ---- OS / editors ----
+.DS_Store
+Thumbs.db
+*.swp
+.idea/
+.vscode/

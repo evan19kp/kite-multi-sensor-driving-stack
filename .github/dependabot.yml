@@ -1,0 +1,25 @@
+# Kit template: keep the ecosystems the project uses (npm, maven, gradle, pip, ...) and set their folders.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: chore
+      include: scope
+    groups:
+      github-actions:
+        patterns: ["*"]
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
+  # FILL: one block per package ecosystem, for example:
+  # - package-ecosystem: npm
+  #   directory: /frontend
+  #   schedule: { interval: weekly }
+  #   commit-message: { prefix: chore, include: scope }
+  #   groups: { npm: { patterns: ["*"] } }
+  #   ignore:
+  #     - dependency-name: "*"
+  #       update-types: ["version-update:semver-major"]

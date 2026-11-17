@@ -1,0 +1,29 @@
+name: PR title
+
+on:
+  pull_request:
+    types: [opened, edited, reopened]   # a push never changes the title, so no synchronize
+
+permissions:
+  contents: read
+
+# Its own group, apart from CI's: a title edit must never cancel a running CI run, and a newer event for
+# the same PR (another edit, a push) replaces this run. It stays a separate workflow because folding it
+# into CI would need the `edited` trigger there, which would restart or cancel CI on every title edit.
+concurrency:
+  group: pr-title-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  pr-title:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test the checker
+        run: python -m unittest test_check_pr_title -v
+        working-directory: scripts
+      - name: Check PR title
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+        run: python scripts/check_pr_title.py

@@ -1,0 +1,13 @@
+{
+  "jobs": ["app", "python", "e2e"],
+  "always_all": [".github/workflows/", "scripts/ci_changes.py", "scripts/ci_paths.json", "scripts/test_ci_changes.py"],
+  "rules": [
+    {"prefix": "frontend/", "jobs": ["app", "e2e"]},
+    {"prefix": "backend/", "jobs": ["app", "e2e"]},
+    {"prefix": "src/", "jobs": ["app", "e2e"]},
+    {"prefix": "scripts/", "jobs": ["python"]},
+    {"prefix": "docs/", "jobs": ["app"]}
+  ],
+  "md_read_by_tests": {},
+  "seed_paths": ["package-lock.json", "frontend/package-lock.json", "backend/pom.xml", ".github/workflows/"]
+}
