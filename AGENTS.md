@@ -142,6 +142,11 @@ item. Never loop.
 
 Each item that introduces a lasting rule adds a "## Standing rules (R<n>)" section below.
 
+## Standing rules (R1)
+
+- README stays honest: planned work says planned, no results without a named test, credit line kept.
+- `docs/BUILD-LOG.md` gets a row in every item's PR.
+
 ## Simulator files (hard rule)
 
 - Never read, list, search, copy, launch or write about the simulator's install folder, its user
