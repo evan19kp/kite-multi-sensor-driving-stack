@@ -57,8 +57,9 @@ Parameters:
 | tentative drop | at the 3rd miss, once 3 hits in 5 steps is out of reach | fixed |
 | deletion of a confirmed track | 5 consecutive misses | fixed |
 
-Only q and the initial velocity sigma were tuned, on seeds 101-120 only. Seeds 1-20 are the
-reporting set and were run once, after tuning. The grid was q in {0.01, 0.1, 1, 10} m^2/s^3 and
+Only q and the initial velocity sigma were tuned, on seeds 101-120 only. The table below comes
+from one run after the final tuning; seeds 1-20 never informed a parameter. An earlier run at a
+superseded commit printed the same table. The grid was q in {0.01, 0.1, 1, 10} m^2/s^3 and
 initial velocity sigma in {5, 10, 20} m/s. The rule, fixed before the grid ran, takes the lowest
 mean of missed + false + id_switches and breaks ties by the lower rmse_m.
 `build/dev/tools/kite_baseline --tracker kalman --seeds 101-120` prints the tuning-seed table for

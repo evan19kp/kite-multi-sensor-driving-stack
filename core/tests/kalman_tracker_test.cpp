@@ -182,6 +182,27 @@ TEST(KalmanTracker, EmptyStepsCoastAConfirmedTrackUntilItIsDeleted) {
   EXPECT_TRUE(tracker.update(8.0, {}).empty());
 }
 
+// Steps 3-6 and 8-11 are misses: 8 in total, but never the 5 in a row that delete a track.
+TEST(KalmanTracker, AHitResetsAConfirmedTracksMissCount) {
+  KalmanTracker tracker = make_tracker();
+  for (int k = 0; k < 3; ++k) {
+    tracker.update(k, {at(k, 0.0, 0.0)});
+  }
+
+  for (int k = 3; k <= 11; ++k) {
+    std::vector<Measurement> z;
+    if (k == 7) {
+      z.push_back(at(k, 0.0, 0.0));
+    }
+    const auto tracks = tracker.update(k, z);
+    ASSERT_EQ(tracks.size(), 1u) << "step " << k;
+    EXPECT_EQ(tracks[0].track_id, 0) << "step " << k;
+  }
+  const auto fifth_miss_in_a_row = tracker.update(12.0, {});
+
+  EXPECT_TRUE(fifth_miss_in_a_row.empty());
+}
+
 // Target A moves +1 m/s along y = 0 and target B -1 m/s along y = 0.2, measured exactly once a
 // second. They pass between steps 5 and 6: at step 5 A is at x = -0.5 and B at x = 0.5; at step 6
 // A is at 0.5 and B at -0.5. Each new measurement is then 0.2 m from the other target's previous
