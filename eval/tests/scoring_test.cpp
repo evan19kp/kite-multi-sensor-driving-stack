@@ -195,5 +195,17 @@ TEST(Scoring, NonFiniteTimeThrows) {
   EXPECT_THROW(score({}, {track(nan, 0, 0.0, 0.0)}, 3.0), std::invalid_argument);
 }
 
+TEST(Scoring, NonFinitePositionThrows) {
+  const double nan = std::numeric_limits<double>::quiet_NaN();
+  const double inf = std::numeric_limits<double>::infinity();
+  const std::vector<GroundTruthState> finite_truth = {actor(0.0, 1, 0.0, 0.0)};
+  const std::vector<TrackState> finite_tracks = {track(0.0, 0, 0.0, 0.0)};
+
+  EXPECT_THROW(score({actor(0.0, 1, nan, 0.0)}, finite_tracks, 3.0), std::invalid_argument);
+  EXPECT_THROW(score({actor(0.0, 1, 0.0, inf)}, finite_tracks, 3.0), std::invalid_argument);
+  EXPECT_THROW(score(finite_truth, {track(0.0, 0, nan, 0.0)}, 3.0), std::invalid_argument);
+  EXPECT_THROW(score(finite_truth, {track(0.0, 0, 0.0, -inf)}, 3.0), std::invalid_argument);
+}
+
 }
 }

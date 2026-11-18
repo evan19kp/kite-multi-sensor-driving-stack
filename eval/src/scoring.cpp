@@ -1,6 +1,7 @@
 #include "kite/scoring.hpp"
 
 #include <algorithm>
+#include <charconv>
 #include <cmath>
 #include <cstddef>
 #include <limits>
@@ -84,11 +85,17 @@ ScoreResult score(const std::vector<GroundTruthState>& truth, const std::vector<
     if (!std::isfinite(state.t)) {
       throw std::invalid_argument("ground truth time must be finite");
     }
+    if (!std::isfinite(state.position.x) || !std::isfinite(state.position.y)) {
+      throw std::invalid_argument("ground truth position must be finite");
+    }
     steps[{state.ego_id, state.t}].truth.push_back(&state);
   }
   for (const TrackState& track : tracks) {
     if (!std::isfinite(track.t)) {
       throw std::invalid_argument("track time must be finite");
+    }
+    if (!std::isfinite(track.position.x) || !std::isfinite(track.position.y)) {
+      throw std::invalid_argument("track position must be finite");
     }
     steps[{track.ego_id, track.t}].tracks.push_back(&track);
   }
@@ -126,7 +133,7 @@ ScoreResult score(const std::vector<GroundTruthState>& truth, const std::vector<
     int matched_here = 0;
     for (std::size_t i = 0; i < truths; ++i) {
       const std::size_t j = column_of_row[i];
-      if (j >= track_count || distance[i * n + j] > match_gate_m) {
+      if (j >= track_count || !(distance[i * n + j] <= match_gate_m)) {
         continue;
       }
       const double d = distance[i * n + j];
@@ -152,6 +159,16 @@ ScoreResult score(const std::vector<GroundTruthState>& truth, const std::vector<
     result.rmse_m = std::sqrt(squared_distance_sum / result.matched);
   }
   return result;
+}
+
+std::string format_fixed(const std::optional<double>& value) {
+  if (!value) {
+    return "n/a";
+  }
+  char buffer[512];
+  const auto result =
+      std::to_chars(buffer, buffer + sizeof(buffer), *value, std::chars_format::fixed, 3);
+  return std::string(buffer, result.ptr);
 }
 
 }

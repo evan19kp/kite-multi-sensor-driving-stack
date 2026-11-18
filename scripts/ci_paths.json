@@ -17,6 +17,6 @@
     {"prefix": "scripts/", "jobs": ["python"]},
     {"prefix": "docs/", "jobs": ["app"]}
   ],
-  "md_read_by_tests": {},
+  "md_read_by_tests": {"docs/BASELINE.md": ["app", "app-windows"], "eval/README.md": ["app", "app-windows"]},
   "seed_paths": [".github/workflows/"]
 }

@@ -56,6 +56,13 @@ if(KITE_BUILD_TESTS)
             "-DEXPECT_STDOUT=matched=3 missed=1 false=1 rmse_m=1.291 id_switches=1 steps=2"
             -P ${CMAKE_CURRENT_SOURCE_DIR}/score_log.cmake)
 
+  add_test(NAME kite_score_no_match_log
+    COMMAND ${CMAKE_COMMAND} -DEXE=$<TARGET_FILE:kite_score>
+            -DLOG=${PROJECT_SOURCE_DIR}/eval/tests/data/no_match.log
+            -DCOPY=${CMAKE_CURRENT_BINARY_DIR}/no_match.log
+            "-DEXPECT_STDOUT=matched=0 missed=2 false=2 rmse_m=n/a id_switches=0 steps=2"
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/score_log.cmake)
+
   kite_exit_test(kite_baseline_help kite_baseline 0 "--help")
   kite_exit_test(kite_baseline_zero_seeds kite_baseline 2 "--seeds;0")
   kite_exit_test(kite_baseline_non_number kite_baseline 2 "--seeds;abc")

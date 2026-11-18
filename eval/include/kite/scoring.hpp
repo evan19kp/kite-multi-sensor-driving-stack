@@ -1,6 +1,7 @@
 #pragma once
 
 #include <optional>
+#include <string>
 #include <vector>
 
 #include "kite/types.hpp"
@@ -32,8 +33,12 @@ struct ScoreResult {
 // a match of an (ego_id, actor_id) to a track id other than the one at its last matched step;
 // steps where the actor is unmatched do not reset that memory.
 //
-// Throws std::invalid_argument for a negative or non-finite gate, or a non-finite t.
+// Throws std::invalid_argument for a negative or non-finite gate, or a non-finite t or position
+// in any truth or track.
 ScoreResult score(const std::vector<GroundTruthState>& truth, const std::vector<TrackState>& tracks,
                   double match_gate_m);
+
+// Formats with exactly three decimals, or "n/a" for nullopt.
+std::string format_fixed(const std::optional<double>& value);
 
 }

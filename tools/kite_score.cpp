@@ -3,7 +3,6 @@
 #include <exception>
 #include <filesystem>
 #include <iostream>
-#include <optional>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -71,16 +70,6 @@ std::string format_int(int value) {
   return std::string(buffer, result.ptr);
 }
 
-std::string format_metres(const std::optional<double>& value) {
-  if (!value) {
-    return "n/a";
-  }
-  char buffer[512];
-  const auto result =
-      std::to_chars(buffer, buffer + sizeof(buffer), *value, std::chars_format::fixed, 3);
-  return std::string(buffer, result.ptr);
-}
-
 }
 
 int main(int argc, char** argv) {
@@ -104,7 +93,7 @@ int main(int argc, char** argv) {
   const kite::ScoreResult result = kite::score(records.truth, records.tracks, args.gate_m);
   std::cout << "matched=" << format_int(result.matched) << " missed=" << format_int(result.missed)
             << " false=" << format_int(result.false_tracks)
-            << " rmse_m=" << format_metres(result.rmse_m)
+            << " rmse_m=" << kite::format_fixed(result.rmse_m)
             << " id_switches=" << format_int(result.id_switches)
             << " steps=" << format_int(result.steps) << "\n";
   return 0;

@@ -87,16 +87,6 @@ std::string format_int(std::int64_t value) {
   return std::string(buffer, result.ptr);
 }
 
-std::string format_fixed(const std::optional<double>& value) {
-  if (!value) {
-    return "n/a";
-  }
-  char buffer[512];
-  const auto result =
-      std::to_chars(buffer, buffer + sizeof(buffer), *value, std::chars_format::fixed, 3);
-  return std::string(buffer, result.ptr);
-}
-
 std::string row(const std::string& label, const std::vector<std::string>& cells) {
   std::string line = "| " + label;
   for (const std::string& cell : cells) {
@@ -133,7 +123,7 @@ int main(int argc, char** argv) {
     const kite::ScoreResult result = run_seed(static_cast<std::uint64_t>(seed));
     table += row(format_int(seed),
                  {format_int(result.matched), format_int(result.missed),
-                  format_int(result.false_tracks), format_fixed(result.rmse_m),
+                  format_int(result.false_tracks), kite::format_fixed(result.rmse_m),
                   format_int(result.id_switches), format_int(result.steps)});
     matched += result.matched;
     missed += result.missed;
@@ -148,9 +138,10 @@ int main(int argc, char** argv) {
 
   const std::optional<double> rmse_mean =
       rmse_count > 0 ? std::optional<double>(rmse_sum / rmse_count) : std::nullopt;
-  table += row("mean", {format_fixed(matched / seeds), format_fixed(missed / seeds),
-                        format_fixed(false_tracks / seeds), format_fixed(rmse_mean),
-                        format_fixed(id_switches / seeds), format_fixed(steps / seeds)});
+  table += row("mean",
+               {kite::format_fixed(matched / seeds), kite::format_fixed(missed / seeds),
+                kite::format_fixed(false_tracks / seeds), kite::format_fixed(rmse_mean),
+                kite::format_fixed(id_switches / seeds), kite::format_fixed(steps / seeds)});
   std::cout << table;
   return 0;
 }
