@@ -129,7 +129,7 @@ Association joint, seeds 101-120: 28590 measurements, 314 ambiguous.
 ### What the numbers show
 
 With joint association, tentative tracks took 230 measurements from confirmed tracks of the same
-car. The study skipped the 314 ambiguous measurements out of 28590. 175 of the 230 steals were
+car. The 314 ambiguous measurements out of 28590 carry no label, so they cannot count as steals. 175 of the 230 steals were
 followed within 5 steps by two confirmed tracks labelled to the same car. 156 steals fit H1. In
 those, the confirmed track was as near or nearer, with a distance ratio median of 1.623 and a
 range of 1.001 to 3.137. The tentative track still scored lower and had the larger det S, with a
