@@ -22,8 +22,9 @@ struct Assignment {
 // admissible pairs are returned, ordered by row.
 //
 // The result has as many pairs as possible for any gate, including infinity and DBL_MAX. Among
-// those it has the least total cost while differences between costs stay finite. With costs of both
-// signs near DBL_MAX the total may not be the least. Costs may be negative. Among equal-cost
+// those it has the least total cost when every admissible cost has magnitude at most 1e300. With
+// larger costs a sum inside the solver can overflow and the total may not be the least, for example
+// costs of 0 and DBL_MAX / 2 under a gate of DBL_MAX / 2. Costs may be negative. Among equal-cost
 // solutions the choice is deterministic but not specified.
 //
 // An infinite gate admits every finite cost. A negative gate is legal and admits only costs <= gate,

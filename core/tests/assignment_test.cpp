@@ -103,6 +103,21 @@ TEST(SolveAssignment, OppositeSignCostsNearTheLargestDoubleStillGiveTheMostPairs
   EXPECT_EQ(solve(cost, kMax).size(), 2u);
 }
 
+CostMatrix five_by_five(double x, double b) {
+  return {5, 5, {x, 0, b, 0, x, 0, 0, b, x, b, b, x, b, b, b, x, 0, b, b, b, b, 0, b, x, 0}};
+}
+
+TEST(SolveAssignment, NonNegativeCostsNearTheLargestDoubleStillGiveTheMostPairs) {
+  EXPECT_EQ(solve(five_by_five(kMax / 2, kMax), kMax / 2).size(), 4u);
+}
+
+TEST(SolveAssignment, CostsUpToOneE300GiveTheLeastTotal) {
+  EXPECT_THAT(solve(five_by_five(1e300, kMax), 1e300),
+              ElementsAre(Pair(0, 3), Pair(1, 0), Pair(3, 1), Pair(4, 4)));
+  EXPECT_THAT(solve(five_by_five(1e300, 2e300), 1e300),
+              ElementsAre(Pair(0, 3), Pair(1, 0), Pair(3, 1), Pair(4, 4)));
+}
+
 TEST(SolveAssignment, TiedSolutionsGiveTheSameAnswerOnEveryCall) {
   const CostMatrix cost{3, 3, {1, 1, 1, 1, 1, 1, 1, 1, 1}};
   const auto first = solve(cost, kInf);
