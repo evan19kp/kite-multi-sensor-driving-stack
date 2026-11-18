@@ -17,7 +17,9 @@ namespace kite {
 //
 // The filter receives measurements only. It starts without an estimate: given valid arguments,
 // predict, update, innovation_mahalanobis2, state and covariance throw std::logic_error until
-// initialize is called. Invalid arguments throw std::invalid_argument first.
+// initialize is called. Invalid arguments throw std::invalid_argument first. update and
+// innovation_mahalanobis2 throw std::domain_error when S = H P H^T + R has a zero or non-finite
+// determinant.
 class ConstantVelocityKalman {
  public:
   // Throws std::invalid_argument unless q is finite and >= 0, and measurement_sigma > 0 with

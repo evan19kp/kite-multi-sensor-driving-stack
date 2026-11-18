@@ -244,7 +244,8 @@ Each item that introduces a lasting rule adds a "## Standing rules (R<n>)" secti
 
 ## Standing rules (R14)
 
-- Filters receive measurements only; tests alone compare their output against ground truth.
+- Filters receive measurements only; only tests and the scorer compare filter output against
+  ground truth.
 - Fixed-size matrix code lives in `core/include/kite/matrix.hpp`; no item adds a second matrix
   library.
 

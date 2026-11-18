@@ -29,49 +29,15 @@ double uniform01(std::mt19937_64& rng) {
   return static_cast<double>(rng() >> 11) * (1.0 / 9007199254740992.0);
 }
 
-// Cholesky factor L with P = L L^T, read from the lower triangle of p. A symmetric matrix is
-// positive definite exactly when every pivot d below is > 0, so nullopt means "not positive
-// definite".
-std::optional<Matrix<4, 4>> cholesky(const Matrix<4, 4>& p) {
-  Matrix<4, 4> l;
-  for (std::size_t j = 0; j < 4; ++j) {
-    double d = p(j, j);
-    for (std::size_t k = 0; k < j; ++k) {
-      d -= l(j, k) * l(j, k);
-    }
-    if (!(d > 0.0)) {
-      return std::nullopt;
-    }
-    l(j, j) = std::sqrt(d);
-    for (std::size_t i = j + 1; i < 4; ++i) {
-      double sum = p(i, j);
-      for (std::size_t k = 0; k < j; ++k) {
-        sum -= l(i, k) * l(j, k);
-      }
-      l(i, j) = sum / l(j, j);
-    }
-  }
-  return l;
-}
-
-// e^T P^-1 e = |w|^2 where L w = e (forward substitution), since P^-1 = L^-T L^-1.
+// e^T P^-1 e = |w|^2 where P = L L^T and L w = e, since P^-1 = L^-T L^-1.
 double normalised_error_squared(const Matrix<4, 1>& e, const Matrix<4, 4>& p) {
-  const std::optional<Matrix<4, 4>> l = cholesky(p);
+  const std::optional<Matrix<4, 4>> l = kite::cholesky(p);
   if (!l) {
     ADD_FAILURE() << "covariance is not positive definite";
     return kNan;
   }
-  Matrix<4, 1> w;
-  double total = 0.0;
-  for (std::size_t i = 0; i < 4; ++i) {
-    double sum = e(i, 0);
-    for (std::size_t k = 0; k < i; ++k) {
-      sum -= (*l)(i, k) * w(k, 0);
-    }
-    w(i, 0) = sum / (*l)(i, i);
-    total += w(i, 0) * w(i, 0);
-  }
-  return total;
+  const Matrix<4, 1> w = kite::forward_substitute(*l, e);
+  return (kite::transpose(w) * w)(0, 0);
 }
 
 double trace(const Matrix<4, 4>& p) { return p(0, 0) + p(1, 1) + p(2, 2) + p(3, 3); }
@@ -215,7 +181,7 @@ double largest_asymmetry_over_random_steps(double q, double sigma, std::uint64_t
         EXPECT_LE(asymmetry, 1e-12) << "step " << step << " entry " << i << "," << j;
       }
     }
-    EXPECT_TRUE(cholesky(p).has_value()) << "not positive definite after step " << step;
+    EXPECT_TRUE(kite::cholesky(p).has_value()) << "not positive definite after step " << step;
     if (testing::Test::HasFailure()) {
       break;
     }
@@ -230,8 +196,8 @@ TEST(ConstantVelocityKalman, StaysSymmetricPositiveDefiniteOverRandomSteps) {
 
 TEST(ConstantVelocityKalman, StaysSymmetricPositiveDefiniteWithAPreciseSensor) {
   // A sensor far more precise than the prediction (sigma = 1e-4 m against a predicted position
-  // spread of metres) is where P - K H P loses positive definiteness to rounding: it subtracts two
-  // nearly equal numbers. The Joseph form adds two positive semi-definite terms instead.
+  // spread of metres) is where P - K H P loses symmetry to rounding: it subtracts two nearly equal
+  // numbers. The Joseph form adds two positive semi-definite terms instead.
   const double worst = largest_asymmetry_over_random_steps(100.0, 1e-4, 20261402);
   std::cout << "largest relative asymmetry: " << worst << "\n";
 }
@@ -294,6 +260,7 @@ double wilson_hilferty(double k, double z) {
 
 // Exact chi-square CDF P(k/2, x/2), the regularised lower incomplete gamma function, by its power
 // series P(a, x) = x^a e^-x / Gamma(a) * sum_n x^n / (a (a + 1) ... (a + n)).
+// For x far above a the sum overflows while the prefactor underflows.
 double chi_square_cdf(double k, double x) {
   const double a = k / 2.0;
   const double half = x / 2.0;
@@ -303,12 +270,19 @@ double chi_square_cdf(double k, double x) {
     term *= half / (a + n);
     sum += term;
   }
-  return std::exp(a * std::log(half) - half - std::lgamma(a)) * sum;
+  const double cdf = std::exp(a * std::log(half) - half - std::lgamma(a)) * sum;
+  if (!std::isfinite(cdf)) {
+    throw std::domain_error("chi_square_cdf: series is not finite");
+  }
+  return cdf;
 }
 
 double chi_square_quantile(double k, double p) {
   double lo = 0.0;
-  double hi = 10.0 * k;
+  double hi = 2.0 * k;
+  if (chi_square_cdf(k, hi) < p) {
+    throw std::domain_error("chi_square_quantile: 2k does not bracket the quantile");
+  }
   for (int i = 0; i < 200; ++i) {
     const double mid = 0.5 * (lo + hi);
     if (chi_square_cdf(k, mid) < p) {
@@ -335,19 +309,65 @@ TEST(ConstantVelocityKalman, WilsonHilfertyBoundsMatchExactChiSquareQuantiles) {
   EXPECT_NEAR(upper, exact_upper, 1e-4 * exact_upper);
 }
 
+constexpr double kGeneratedSigma = 1.0;
+
+// The generator's vehicles move at exactly constant velocity, so the true process noise is zero.
+// Any q > 0 would make P larger than the real error covariance and push NEES below 4.
+constexpr double kGeneratedQ = 0.0;
+
+// Start speeds s are uniform in [5, 15) m/s and headings uniform, so per axis
+//   E[vx] = 0, E[vx vy] = 0, and E[vx^2] = E[s^2] E[cos^2] = (Var s + (E s)^2) / 2
+//   = (100/12 + 100) / 2 = 325/6 = 54.17 (m/s)^2, so velocity_sigma = sqrt(325/6) = 7.36 m/s.
+// The zero-velocity prior then has the right mean and covariance, and the start position is the
+// first measurement, whose error is the measurement noise.
+constexpr double kGeneratedVelocityVariance = 325.0 / 6.0;
+
+// Truth: kite::generate with one vehicle, detection probability 1 (one measurement per step),
+// noise sigma = 1 m, dt = 0.1 s, 5 s (steps 0..50).
+kite::GeneratedScenario generated_scenario(std::uint64_t seed) {
+  return kite::generate({seed, 1, 5.0, 0.1, kGeneratedSigma, 1.0, 100.0});
+}
+
+// Initializes the filter at step 0's measurement, then predicts and updates through step 50.
+void filter_generated_scenario(const kite::GeneratedScenario& scenario,
+                               ConstantVelocityKalman& filter) {
+  ASSERT_EQ(scenario.steps.size(), 51u);
+  ASSERT_EQ(scenario.steps[0].measurements.size(), 1u);
+  const kite::Measurement* previous = &scenario.steps[0].measurements[0];
+  filter.initialize(previous->position, std::sqrt(kGeneratedVelocityVariance));
+  for (std::size_t k = 1; k < scenario.steps.size(); ++k) {
+    ASSERT_EQ(scenario.steps[k].measurements.size(), 1u);
+    const kite::Measurement& m = scenario.steps[k].measurements[0];
+    filter.predict(m.t - previous->t);
+    filter.update(m.position);
+    previous = &m;
+  }
+}
+
+// Bit-exact pins, checked on every CI platform (Linux g++ and MSVC). The generator uses only
+// IEEE-exact operations (see kite/generator.hpp), the filter only +, -, * and /, and the NEES adds
+// one sqrt per Cholesky pivot. Each is correctly rounded and their order is fixed, so with
+// floating-point contraction off (kite_core and this test target) the bits cannot differ between
+// platforms. The values were printed with %a by a MinGW g++ 13.2 build.
+TEST(ConstantVelocityKalman, GeneratedRunMatchesPinnedBits) {
+  const kite::GeneratedScenario scenario = generated_scenario(20261500);
+  ConstantVelocityKalman filter{kGeneratedQ, kGeneratedSigma};
+  ASSERT_NO_FATAL_FAILURE(filter_generated_scenario(scenario, filter));
+  EXPECT_EQ(filter.state().values,
+            (std::array<double, 4>{-0x1.5b6412d037e57p+4, -0x1.ffd0061377759p+5,
+                                   0x1.5bc153c260c75p+3, 0x1.30839625bffd7p+2}));
+  constexpr double kPosition = 0x1.37f300fa0e64ap-4;
+  constexpr double kPositionVelocity = 0x1.729de775fced5p-6;
+  constexpr double kVelocityPosition = 0x1.729de775fced6p-6;
+  constexpr double kVelocity = 0x1.287e52c4ca579p-7;
+  EXPECT_EQ(filter.covariance().values,
+            (std::array<double, 16>{kPosition, 0, kPositionVelocity, 0,
+                                    0, kPosition, 0, kPositionVelocity,
+                                    kVelocityPosition, 0, kVelocity, 0,
+                                    0, kVelocityPosition, 0, kVelocity}));
+}
+
 TEST(ConstantVelocityKalman, AverageNeesOnGeneratedScenariosIsInsideChiSquareBounds) {
-  // Truth: kite::generate with one vehicle, detection probability 1 (one measurement per step),
-  // noise sigma = 1 m, dt = 0.1 s, 5 s (steps 0..50).
-  //
-  // q = 0: the generator's vehicles move at exactly constant velocity, so the true process noise
-  // is zero. Any q > 0 would make P larger than the real error covariance and push NEES below 4.
-  //
-  // velocity_sigma: start speeds s are uniform in [5, 15) m/s and headings uniform, so per axis
-  //   E[vx] = 0, E[vx vy] = 0, and E[vx^2] = E[s^2] E[cos^2] = (Var s + (E s)^2) / 2
-  //   = (100/12 + 100) / 2 = 325/6 = 54.17 (m/s)^2, so velocity_sigma = sqrt(325/6) = 7.36 m/s.
-  // The zero-velocity prior then has the right mean and covariance, and the start position is the
-  // first measurement, whose error is the measurement noise.
-  //
   // Why evaluate at step 50: the Kalman filter is the best linear estimator, so with a prior of
   // the right mean and covariance P equals the true error covariance, Gaussian or not, and
   // E[NEES] = 4 at every step. The chi-square bounds also need the error to be Gaussian. The
@@ -363,8 +383,6 @@ TEST(ConstantVelocityKalman, AverageNeesOnGeneratedScenariosIsInsideChiSquareBou
   // two-sided interval for the average is [chi2(0.025; 4N), chi2(0.975; 4N)] / N, computed by
   // Wilson-Hilferty; WilsonHilfertyBoundsMatchExactChiSquareQuantiles checks it agrees with the
   // exact quantiles to 1e-4 relative.
-  constexpr double kSigma = 1.0;
-  const double velocity_sigma = std::sqrt(325.0 / 6.0);
   const double lower = wilson_hilferty(kDegrees, -kStandardNormalQuantile975) / kRuns;
   const double upper = wilson_hilferty(kDegrees, kStandardNormalQuantile975) / kRuns;
 
@@ -372,21 +390,9 @@ TEST(ConstantVelocityKalman, AverageNeesOnGeneratedScenariosIsInsideChiSquareBou
   for (int run = 0; run < kRuns; ++run) {
     const std::uint64_t seed = 20261500 + static_cast<std::uint64_t>(run);
     SCOPED_TRACE(testing::Message() << "seed " << seed);
-    const kite::GeneratedScenario scenario =
-        kite::generate({seed, 1, 5.0, 0.1, kSigma, 1.0, 100.0});
-    ASSERT_EQ(scenario.steps.size(), 51u);
-
-    ConstantVelocityKalman filter{0.0, kSigma};
-    ASSERT_EQ(scenario.steps[0].measurements.size(), 1u);
-    const kite::Measurement* previous = &scenario.steps[0].measurements[0];
-    filter.initialize(previous->position, velocity_sigma);
-    for (std::size_t k = 1; k < scenario.steps.size(); ++k) {
-      ASSERT_EQ(scenario.steps[k].measurements.size(), 1u);
-      const kite::Measurement& m = scenario.steps[k].measurements[0];
-      filter.predict(m.t - previous->t);
-      filter.update(m.position);
-      previous = &m;
-    }
+    const kite::GeneratedScenario scenario = generated_scenario(seed);
+    ConstantVelocityKalman filter{kGeneratedQ, kGeneratedSigma};
+    ASSERT_NO_FATAL_FAILURE(filter_generated_scenario(scenario, filter));
 
     const kite::GroundTruthState& truth = scenario.steps.back().truth.at(0);
     const Matrix<4, 1>& x = filter.state();
@@ -400,6 +406,8 @@ TEST(ConstantVelocityKalman, AverageNeesOnGeneratedScenariosIsInsideChiSquareBou
             << ", " << upper << "]\n";
   EXPECT_GE(average, lower);
   EXPECT_LE(average, upper);
+  // Pinned like GeneratedRunMatchesPinnedBits.
+  EXPECT_EQ(average, 0x1.00b60e3d61dcp+2);
 }
 
 TEST(ConstantVelocityKalman, ConstructorRejectsInvalidParameters) {
@@ -426,6 +434,44 @@ TEST(ConstantVelocityKalman, EverythingButInitializeThrowsBeforeInitialize) {
   EXPECT_NO_THROW(filter.predict(1.0));
 }
 
+TEST(ConstantVelocityKalman, InitializeAgainRestartsTheEstimate) {
+  // A second initialize with sigma = 2 and velocity_sigma = 0.5 must give state (-4, 6, 0, 0) and
+  // P = diag(4, 4, 0.25, 0.25), as on a new filter.
+  ConstantVelocityKalman filter{1.0, 2.0};
+  filter.initialize({1.0, 1.0}, 3.0);
+  filter.predict(0.5);
+  filter.update({2.0, 0.0});
+  ASSERT_NE(filter.state()(2, 0), 0.0);
+  ASSERT_NE(filter.covariance()(0, 2), 0.0);
+
+  filter.initialize({-4.0, 6.0}, 0.5);
+  EXPECT_EQ(filter.state().values, (std::array<double, 4>{-4, 6, 0, 0}));
+  EXPECT_EQ(filter.covariance().values,
+            (std::array<double, 16>{4, 0, 0, 0, 0, 4, 0, 0, 0, 0, 0.25, 0, 0, 0, 0, 0.25}));
+}
+
+TEST(ConstantVelocityKalman, FailedFirstInitializeLeavesTheFilterUninitialized) {
+  ConstantVelocityKalman filter{1.0, 1.0};
+  EXPECT_THROW(filter.initialize({kNan, 0.0}, 1.0), std::invalid_argument);
+  EXPECT_THROW(filter.initialize({0.0, 0.0}, -1.0), std::invalid_argument);
+  EXPECT_THROW(filter.state(), std::logic_error);
+  EXPECT_THROW(filter.covariance(), std::logic_error);
+}
+
+TEST(ConstantVelocityKalman, FailedInitializeLeavesTheEstimateUnchanged) {
+  ConstantVelocityKalman filter{1.0, 2.0};
+  filter.initialize({1.0, 1.0}, 3.0);
+  filter.predict(0.5);
+  filter.update({2.0, 0.0});
+  const Matrix<4, 1> state = filter.state();
+  const Matrix<4, 4> covariance = filter.covariance();
+
+  EXPECT_THROW(filter.initialize({0.0, kInf}, 1.0), std::invalid_argument);
+  EXPECT_THROW(filter.initialize({-4.0, 6.0}, kNan), std::invalid_argument);
+  EXPECT_EQ(filter.state().values, state.values);
+  EXPECT_EQ(filter.covariance().values, covariance.values);
+}
+
 TEST(ConstantVelocityKalman, NonFiniteOrNegativeInputThrows) {
   ConstantVelocityKalman filter{1.0, 1.0};
   EXPECT_THROW(filter.initialize({kNan, 0.0}, 1.0), std::invalid_argument);
@@ -447,6 +493,15 @@ TEST(ConstantVelocityKalman, NonFiniteOrNegativeInputThrows) {
   EXPECT_THROW(filter.innovation_mahalanobis2({0.0, kNan}), std::invalid_argument);
   EXPECT_EQ(filter.state().values, state.values);
   EXPECT_EQ(filter.covariance().values, covariance.values);
+}
+
+TEST(ConstantVelocityKalman, OverflowedCovarianceThrowsDomainError) {
+  // dt = 1e200 is finite, but dt^2 = 1e400 overflows, so P and then det S are not finite.
+  ConstantVelocityKalman filter{1.0, 1.0};
+  filter.initialize({0.0, 0.0}, 1.0);
+  filter.predict(1e200);
+  EXPECT_THROW(filter.update({0.0, 0.0}), std::domain_error);
+  EXPECT_THROW(filter.innovation_mahalanobis2({0.0, 0.0}), std::domain_error);
 }
 
 }  // namespace

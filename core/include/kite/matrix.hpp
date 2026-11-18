@@ -3,6 +3,7 @@
 #include <array>
 #include <cmath>
 #include <cstddef>
+#include <optional>
 #include <stdexcept>
 
 namespace kite {
@@ -84,6 +85,45 @@ inline Matrix<2, 2> inverse(const Matrix<2, 2>& a) {
   result(1, 0) = -a(1, 0) / det;
   result(1, 1) = a(0, 0) / det;
   return result;
+}
+
+// Lower-triangular L with a = L L^T, read from the lower triangle of a; nullopt when a is not
+// positive definite.
+template <std::size_t N>
+std::optional<Matrix<N, N>> cholesky(const Matrix<N, N>& a) {
+  Matrix<N, N> l;
+  for (std::size_t j = 0; j < N; ++j) {
+    double pivot = a(j, j);
+    for (std::size_t k = 0; k < j; ++k) {
+      pivot -= l(j, k) * l(j, k);
+    }
+    if (!(pivot > 0.0)) {
+      return std::nullopt;
+    }
+    l(j, j) = std::sqrt(pivot);
+    for (std::size_t i = j + 1; i < N; ++i) {
+      double sum = a(i, j);
+      for (std::size_t k = 0; k < j; ++k) {
+        sum -= l(i, k) * l(j, k);
+      }
+      l(i, j) = sum / l(j, j);
+    }
+  }
+  return l;
+}
+
+// Solves L w = b for lower-triangular L with a non-zero diagonal.
+template <std::size_t N>
+Matrix<N, 1> forward_substitute(const Matrix<N, N>& lower, const Matrix<N, 1>& b) {
+  Matrix<N, 1> w;
+  for (std::size_t i = 0; i < N; ++i) {
+    double sum = b(i, 0);
+    for (std::size_t k = 0; k < i; ++k) {
+      sum -= lower(i, k) * w(k, 0);
+    }
+    w(i, 0) = sum / lower(i, i);
+  }
+  return w;
 }
 
 }  // namespace kite

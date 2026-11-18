@@ -2,6 +2,7 @@
 
 #include <array>
 #include <limits>
+#include <optional>
 #include <stdexcept>
 
 #include <gtest/gtest.h>
@@ -90,6 +91,34 @@ TEST(Matrix, InverseRejectsSingularAndNonFiniteMatrices) {
   EXPECT_THROW(kite::inverse(Matrix<2, 2>{{inf, 0, 0, 1}}), std::domain_error);
   const double nan = std::numeric_limits<double>::quiet_NaN();
   EXPECT_THROW(kite::inverse(Matrix<2, 2>{{nan, 0, 0, 1}}), std::domain_error);
+}
+
+// L = [2 0 0; 1 3 0; -1 2 4] gives A = L L^T = [4 2 -2; 2 10 5; -2 5 21].
+const Matrix<3, 3> kLower{{2, 0, 0, 1, 3, 0, -1, 2, 4}};
+const Matrix<3, 3> kPositiveDefinite{{4, 2, -2, 2, 10, 5, -2, 5, 21}};
+
+TEST(Matrix, CholeskyFactorsAPositiveDefiniteMatrix) {
+  // Pivots: sqrt(4) = 2; 10 - 1^2 = 9, sqrt 3; 21 - (-1)^2 - 2^2 = 16, sqrt 4.
+  // Below them: 2/2 = 1, -2/2 = -1, (5 - (-1)(1)) / 3 = 2.
+  const std::optional<Matrix<3, 3>> l = kite::cholesky(kPositiveDefinite);
+  ASSERT_TRUE(l.has_value());
+  EXPECT_EQ(l->values, kLower.values);
+}
+
+TEST(Matrix, CholeskyRejectsMatricesThatAreNotPositiveDefinite) {
+  // [1 2; 2 1] has eigenvalues 3 and -1: second pivot 1 - 2^2 = -3.
+  EXPECT_FALSE(kite::cholesky(Matrix<2, 2>{{1, 2, 2, 1}}).has_value());
+  // [1 1; 1 1] is only semi-definite: second pivot 1 - 1^2 = 0.
+  EXPECT_FALSE(kite::cholesky(Matrix<2, 2>{{1, 1, 1, 1}}).has_value());
+  EXPECT_FALSE(kite::cholesky(Matrix<2, 2>{{-1, 0, 0, 1}}).has_value());
+  const double nan = std::numeric_limits<double>::quiet_NaN();
+  EXPECT_FALSE(kite::cholesky(Matrix<2, 2>{{nan, 0, 0, 1}}).has_value());
+}
+
+TEST(Matrix, ForwardSubstituteSolvesALowerTriangularSystem) {
+  // b = L w for w = [1, -1, 2]: [2, 1 - 3, -1 - 2 + 8] = [2, -2, 5].
+  const Matrix<3, 1> b{{2, -2, 5}};
+  EXPECT_EQ(kite::forward_substitute(kLower, b).values, (std::array<double, 3>{1, -1, 2}));
 }
 
 }  // namespace
