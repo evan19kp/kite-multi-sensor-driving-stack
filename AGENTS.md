@@ -235,6 +235,13 @@ Each item that introduces a lasting rule adds a "## Standing rules (R<n>)" secti
 - The sprint progress file `.run/sprint-<name>-progress.md` is append-only and its last line is always
   `<!-- progress end -->`; each new line is added by editing that marker into "new line + marker".
 
+## Standing rules (R13)
+
+- Optimal matching within a gate (most pairs, then least total cost) uses `kite::solve_assignment`;
+  no item adds a second optimal solver. The greedy `NearestNeighbourBaseline` is deliberate.
+- `kite_core` builds with `-ffp-contract=off`, like `kite_sim`, so its floating-point results do not
+  depend on the compiler's fused multiply-add choices.
+
 ## Simulator files (hard rule)
 
 - Never read, list, search, copy, launch or write about the simulator's install folder, its user
