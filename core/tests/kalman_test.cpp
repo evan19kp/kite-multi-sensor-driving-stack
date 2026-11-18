@@ -14,20 +14,17 @@
 #include <gtest/gtest.h>
 
 #include "kite/generator.hpp"
+#include "test_helpers.hpp"
 
 namespace {
 
 using kite::ConstantVelocityKalman;
 using kite::Matrix;
 using kite::Vec2;
+using kite::test_helpers::kInf;
+using kite::test_helpers::uniform01;
 
 constexpr double kNan = std::numeric_limits<double>::quiet_NaN();
-constexpr double kInf = std::numeric_limits<double>::infinity();
-
-// The raw-bits uniform documented in kite/generator.hpp: (raw >> 11) * 2^-53, in [0, 1).
-double uniform01(std::mt19937_64& rng) {
-  return static_cast<double>(rng() >> 11) * (1.0 / 9007199254740992.0);
-}
 
 // e^T P^-1 e = |w|^2 where P = L L^T and L w = e, since P^-1 = L^-T L^-1.
 double normalised_error_squared(const Matrix<4, 1>& e, const Matrix<4, 4>& p) {

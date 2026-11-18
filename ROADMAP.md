@@ -169,7 +169,7 @@ change; every existing test passes unchanged.
   confirmation step kept and a track switching labels; `cholesky` result is lower triangular.
   Tests: each new test mutation-checked; total test count before and after; existing tests
   unchanged.
-- [ ] **R26 Remove duplicate helpers** (refactor, Sonnet): one shared test helper header for
+- [x] **R26 Remove duplicate helpers** (refactor, Sonnet): one shared test helper header for
   `uniform01` and `kInf` (the generator's own `uniform01` untouched); one shared `format_int` in
   `tools/` with byte-identical output; unused `<cmath>` removed from
   `tools/kite_association_study.cpp`; the misleading `core/src/kalman_tracker.cpp` error message
