@@ -92,6 +92,20 @@ TEST(Pid, IntegralStopsWhileSaturatedAndUnwindsAtOnce) {
   EXPECT_EQ(pid.update(-1.0, 0.0, 1.0), -1.0);
 }
 
+TEST(Pid, IntegralStopsWhileSaturatedAtTheMinAndUnwindsAtOnce) {
+  // The mirror at the lower limit: ki = 1, limits [-1, 1], error -1, dt 1. The first update
+  // integrates to -1 and outputs -1. From then on the output before integration is at the min and
+  // the error is negative, so the sum stays -1. When the error turns to 1 the sum rises to 0 at once
+  // and the output is 0; the next update takes it to 1. A plain integrator would reach -10 after 10
+  // updates and still output -1.
+  Pid pid{{0.0, 1.0, 0.0}, {-1.0, 1.0}};
+  for (int i = 0; i < 10; ++i) {
+    EXPECT_EQ(pid.update(-1.0, 0.0, 1.0), -1.0) << "update " << i;
+  }
+  EXPECT_EQ(pid.update(1.0, 0.0, 1.0), 0.0);
+  EXPECT_EQ(pid.update(1.0, 0.0, 1.0), 1.0);
+}
+
 TEST(Pid, ResetBehavesLikeANewController) {
   const auto run = [](Pid& pid) {
     std::vector<double> outputs;
@@ -229,8 +243,8 @@ StepResponse step_response(const std::vector<double>& speeds) {
 
 // Gains for the closed loop. The output is in m/s^2 and the error in m/s, so kp is in 1/s, ki in
 // 1/s^2 and kd has no unit:
-//   kp = 1 1/s: the loop crosses over near 1 rad/s, a third of the actuator's 1 / tau = 3.3 rad/s,
-//     so the lag costs little phase;
+//   kp = 1 1/s: keeps the loop's crossover well below the actuator's 1 / tau, so the lag costs
+//     little phase;
 //   ki = 0.3 1/s^2: the integral zero at ki / kp = 0.3 rad/s sits below crossover and removes the
 //     0.75 m/s^2 drag offset;
 //   kd = 0.1 with tf = 0.05 s: a little damping from the filtered rate of the measured speed.
