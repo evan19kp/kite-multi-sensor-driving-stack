@@ -11,3 +11,4 @@ This file records, per module or item, who built it (agent role), with which mod
 | R5 | `AGENTS.md`, `ROADMAP.md`, `docs/BUILD-LOG.md` | builder agent | Sonnet | this PR | 2026-11-18 |
 | R6 | `AGENTS.md`, `CLAUDE.md`, `ROADMAP.md`, `docs/BUILD-LOG.md` | builder agent | Sonnet | this PR | 2026-11-18 |
 | R7 | `scripts/ci_paths.json`, `scripts/ci_changes.py`, `scripts/test_ci_changes.py`, `ROADMAP.md`, `docs/BUILD-LOG.md` | builder agent | Sonnet | this PR | 2026-11-18 |
+| R8 | `core/include/kite/types.hpp`, `core/include/kite/log.hpp`, `core/src/log.cpp`, `core/tests/log_test.cpp`, `core/CMakeLists.txt`, `docs/LOG-FORMAT.md`, `AGENTS.md`, `ROADMAP.md`, `docs/BUILD-LOG.md` | builder agent | Sonnet | this PR | 2026-11-18 |
