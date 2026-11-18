@@ -3,8 +3,8 @@ name: CI
 # - gitleaks (light, GitHub-hosted) classifies the changed files and scans for secrets on every event.
 # - Heavy jobs run only on pull requests (main already passed them on the PR head) and only when the
 #   classifier did not say 'false' for them.
-# - Heavy jobs use the HEAVY_RUNNER expression in runs-on. The variable stays unset, so they run on
-#   GitHub-hosted runners. There is no self-hosted runner (public repo).
+# - app and python use the HEAVY_RUNNER expression in runs-on; the variable stays unset, so they run
+#   on GitHub-hosted runners. app-windows runs on windows-latest. No self-hosted runner (public repo).
 # - app builds and tests C++ with g++ on Linux; app-windows does the same with MSVC.
 # - Every job has timeout-minutes (the agent token cannot cancel runs).
 

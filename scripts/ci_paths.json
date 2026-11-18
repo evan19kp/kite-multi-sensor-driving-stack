@@ -11,7 +11,7 @@
     {"prefix": "backend/", "jobs": ["app", "app-windows"]},
     {"prefix": "src/", "jobs": ["app", "app-windows"]},
     {"prefix": "scripts/", "jobs": ["python"]},
-    {"prefix": "docs/", "jobs": ["app", "app-windows"]}
+    {"prefix": "docs/", "jobs": ["app"]}
   ],
   "md_read_by_tests": {},
   "seed_paths": ["package-lock.json", "frontend/package-lock.json", "backend/pom.xml", ".github/workflows/"]
