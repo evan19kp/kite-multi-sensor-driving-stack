@@ -263,6 +263,18 @@ Each item that introduces a lasting rule adds a "## Standing rules (R<n>)" secti
 - Controller performance numbers (rise time, overshoot, steady-state error) in docs or PRs are
   copied from a test's printed output, never computed or estimated by hand.
 
+## Standing rules (R21)
+
+- The `KalmanTracker` step record is off by default and never changes any output; the test
+  `KalmanTracker.StepRecordNeverChangesOutputOnTheTuningSeeds` enforces it.
+- `AssociationMode::two_stage` stays the default; other association modes are for studies.
+- Study tools may use ground truth only to label and classify; they never pass truth, actor ids or
+  the scenario config to a tracker.
+- `kite_baseline` and the study tools take the scenario and Kalman parameters from
+  `tools/baseline_setup.hpp`; no tool keeps its own copy.
+- Tables in `docs/INVESTIGATION-ASSOCIATION.md` change only by pasting the tool's output; a
+  doc-matches CTest test enforces each one.
+
 ## Simulator files (hard rule)
 
 - Never read, list, search, copy, launch or write about the simulator's install folder, its user

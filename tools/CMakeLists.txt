@@ -10,6 +10,12 @@ add_executable(kite_baseline kite_baseline.cpp)
 target_link_libraries(kite_baseline PRIVATE kite_sim kite_eval kite_core)
 kite_enable_warnings(kite_baseline)
 
+add_executable(kite_association_study kite_association_study.cpp)
+target_link_libraries(kite_association_study PRIVATE kite_sim kite_eval kite_core)
+target_compile_options(kite_association_study
+                       PRIVATE $<$<CXX_COMPILER_ID:GNU,Clang,AppleClang>:-ffp-contract=off>)
+kite_enable_warnings(kite_association_study)
+
 if(KITE_BUILD_TESTS)
   function(kite_exit_test name tool expect args)
     add_test(NAME ${name}
@@ -121,4 +127,21 @@ if(KITE_BUILD_TESTS)
             -DDOC=${PROJECT_SOURCE_DIR}/docs/BASELINE.md
             -P ${CMAKE_CURRENT_SOURCE_DIR}/doc_contains.cmake)
   set_tests_properties(kite_baseline_kalman_doc_matches PROPERTIES FIXTURES_REQUIRED kite_kalman_table)
+
+  kite_exit_test(kite_association_study_help kite_association_study 0 "--help")
+  kite_exit_test(kite_association_study_unknown_flag kite_association_study 2 "--bogus")
+
+  add_test(NAME kite_association_study_output
+    COMMAND ${CMAKE_COMMAND} -DEXE=$<TARGET_FILE:kite_association_study>
+            -DOUT=${CMAKE_CURRENT_BINARY_DIR}/association_study.md
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/run_to_file.cmake)
+  set_tests_properties(kite_association_study_output
+                       PROPERTIES FIXTURES_SETUP kite_association_study_tables)
+
+  add_test(NAME kite_association_study_doc_matches
+    COMMAND ${CMAKE_COMMAND} -DTABLE=${CMAKE_CURRENT_BINARY_DIR}/association_study.md
+            -DDOC=${PROJECT_SOURCE_DIR}/docs/INVESTIGATION-ASSOCIATION.md
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/doc_contains.cmake)
+  set_tests_properties(kite_association_study_doc_matches
+                       PROPERTIES FIXTURES_REQUIRED kite_association_study_tables)
 endif()

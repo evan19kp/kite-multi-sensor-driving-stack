@@ -10,6 +10,7 @@
 #include <system_error>
 #include <vector>
 
+#include "baseline_setup.hpp"
 #include "kite/baseline_tracker.hpp"
 #include "kite/generator.hpp"
 #include "kite/kalman_tracker.hpp"
@@ -18,22 +19,7 @@
 
 namespace {
 
-constexpr int kVehicles = 5;
-constexpr double kDurationS = 30.0;
-constexpr double kDtS = 0.1;
-constexpr double kNoiseM = 1.0;
-constexpr double kDetectionProbability = 0.95;
-constexpr double kAreaHalfWidthM = 100.0;
 constexpr double kTrackerGateM = 5.0;
-// The sensor's noise spec, which the tracker is given rather than reading it from the scenario.
-constexpr double kKalmanMeasurementSigmaM = 1.0;
-constexpr double kKalmanQ = 0.01;
-constexpr double kKalmanVelocitySigma = 10.0;
-constexpr double kKalmanGateChi2 = 9.21;
-constexpr int kKalmanConfirmHits = 3;
-constexpr int kKalmanConfirmWindow = 5;
-constexpr int kKalmanMaxMisses = 5;
-constexpr double kMatchGateM = 3.0;
 constexpr int kDefaultSeeds = 20;
 
 constexpr const char* kUsage =
@@ -123,18 +109,15 @@ Options parse_options(int argc, char** argv) {
 
 std::unique_ptr<kite::Tracker> make_tracker(TrackerKind kind) {
   if (kind == TrackerKind::kalman) {
-    return std::make_unique<kite::KalmanTracker>(kKalmanQ, kKalmanMeasurementSigmaM,
-                                                 kKalmanVelocitySigma,
-                                                 kKalmanGateChi2, kKalmanConfirmHits,
-                                                 kKalmanConfirmWindow, kKalmanMaxMisses);
+    return std::make_unique<kite::KalmanTracker>(
+        kite::baseline_setup::make_kalman_tracker(kite::AssociationMode::two_stage));
   }
   return std::make_unique<kite::NearestNeighbourBaseline>(kTrackerGateM);
 }
 
 kite::ScoreResult run_seed(std::uint64_t seed, TrackerKind kind) {
-  const kite::ScenarioConfig config{seed,    kVehicles, kDurationS, kDtS,
-                                    kNoiseM, kDetectionProbability, kAreaHalfWidthM};
-  const kite::GeneratedScenario scenario = kite::generate(config);
+  const kite::GeneratedScenario scenario =
+      kite::generate(kite::baseline_setup::scenario_config(seed));
 
   const std::unique_ptr<kite::Tracker> tracker = make_tracker(kind);
   std::vector<kite::GroundTruthState> truth;
@@ -144,7 +127,7 @@ kite::ScoreResult run_seed(std::uint64_t seed, TrackerKind kind) {
     tracks.insert(tracks.end(), step_tracks.begin(), step_tracks.end());
     truth.insert(truth.end(), step.truth.begin(), step.truth.end());
   }
-  return kite::score(truth, tracks, kMatchGateM);
+  return kite::score(truth, tracks, kite::baseline_setup::kMatchGateM);
 }
 
 std::string format_int(std::int64_t value) {

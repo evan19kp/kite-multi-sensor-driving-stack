@@ -123,7 +123,7 @@ its own line when it merges. Agents never add items that a brief didn't list.
 Investigation sprint: measure the Kalman tracker's association and tentative-track rules; no
 default or parameter changes. Seeds 1-20 never appear in any output.
 
-- [ ] **R21 Association diagnostics: why do tentative tracks steal measurements?** (feat, Opus
+- [x] **R21 Association diagnostics: why do tentative tracks steal measurements?** (feat, Opus
   builder): optional per-step observer record in `KalmanTracker` (off by default; per track id,
   tentative/confirmed, age, hits, misses, predicted position, innovation covariance S, matched
   measurement; per unmatched measurement the tentative track it started); association mode
