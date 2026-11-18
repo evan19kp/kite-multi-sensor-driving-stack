@@ -22,7 +22,7 @@ Single developer machine; all agents run here.
 | Component | Spec |
 |---|---|
 | OS / shell | Windows 11 Home, PowerShell, Git Bash |
-| CPU / RAM / GPU | Intel Core i7-13700K / RAM not recorded / NVIDIA RTX 4070 SUPER 12 GB |
+| CPU / RAM / GPU | Intel Core i7-13700K / 64 GB DDR5 / NVIDIA RTX 4070 SUPER 12 GB |
 | Languages | C++17 (MinGW g++ 13.2 locally, MSVC and g++ in CI), CMake 4.4.4 (minimum 3.20), Ninja 1.13.2, Python 3.13 locally (3.12 in CI) |
 
 - Paths: use forward slashes or Path APIs in code; scripts must work from PowerShell and Git Bash.
@@ -76,14 +76,16 @@ The token cannot read check results, so never use `gh pr checks`. Use workflow r
 3. Make the item's check commands pass locally. Capture real command output as evidence.
 4. Tick the item's checkbox in ROADMAP.md in the same branch, never in a separate commit to main.
 5. Push once per build round, when that round's local checks pass. The first push opens the PR as
-   a **draft** (`gh pr create --draft`): what changed, how to verify, Evidence, NEEDS HUMAN.
+   a **draft**. The PR body lives in `.run/pr-body-<item>.md` and is passed with
+   `gh pr create --draft --body-file .run/pr-body-<item>.md`. It has what changed, how to verify,
+   Evidence, NEEDS HUMAN. The PR body is the evidence record.
 6. Review by a separate fresh reviewer (not the author): the diff against the item, the brief and
    these rules. Reviewers list the checks they ran and reply PASS or FAIL with reasons.
 7. On PASS the conductor marks the PR ready (`gh pr ready <n>`), updates it from main, and waits
    for the workflow run on the exact head commit (see "Checking CI"); it must be green.
-8. Copy evidence from the worktree into the main checkout's `scratch/<item>/` (file by file).
-   Merge: `gh pr merge --squash --delete-branch`, then `python scripts/stop_all.py` in the worktree,
-   `python scripts/worktree.py remove <item-id>`, `git checkout main`, `git pull`.
+8. Merge: `gh pr merge --squash --delete-branch`, then
+   `python .worktrees/<item>/scripts/stop_all.py`, `python scripts/worktree.py remove <item-id>`,
+   `git checkout main`, `git pull`.
 9. **Repo scripts:** run them by path **relative to the repo root**, never by absolute path:
    `python scripts/<x>.py` for the main checkout's copy, `python .worktrees/<item>/scripts/<x>.py`
    for a worktree's copy. Absolute paths are denied.
@@ -98,9 +100,10 @@ The token cannot read check results, so never use `gh pr checks`. Use workflow r
 - PR bodies have an "Evidence" section with real command output.
 - Endpoint changes are verified with real HTTP requests against a running server in a test.
 - Never edit `.claude/`, `.gitattributes`, or human-owned scripts listed here: `scripts/check_forbidden_files.py`, `scripts/forbidden_files.json`, `third_party/` (only its vendoring script changes it).
-- Scratch work goes only in `scratch/<item>/` (gitignored). During a sprint a guard blocks edits and
-  test runs in the main checkout except in `.run/` and `scratch/` (the hook's `--allow scratch`); if
-  the project's scratch folder has another name, change both here and in the hook entry.
+- `scratch/<item>/` (gitignored) is an optional work area only, not an evidence store; evidence goes
+  in the PR body. During a sprint a guard blocks edits and test runs in the main checkout except in
+  `.run/` and `scratch/` (the hook's `--allow scratch`); if the project's scratch folder has another
+  name, change both here and in the hook entry.
 - Fail loudly: missing inputs or unknown ids are errors with a non-zero exit, never silent skips.
 - Check content, not just format.
 - AGENTS.md is append-only for agents. Never remove or weaken an existing rule unless the brief
@@ -192,6 +195,10 @@ Each item that introduces a lasting rule adds a "## Standing rules (R<n>)" secti
 
 - The merging, repo-script and PR-body rules under "Checking CI" and "Protocol (per item)" are standing.
 - This repository is public (see Project): committed files, PR titles, bodies and comments never contain secrets or the simulator's install paths, drive letters or environment variable names.
+
+## Standing rules (R6)
+
+- Repo scripts always run by path relative to the repo root, never by absolute path.
 
 ## Simulator files (hard rule)
 
