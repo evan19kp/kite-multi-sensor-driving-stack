@@ -118,6 +118,38 @@ its own line when it merges. Agents never add items that a brief didn't list.
   cases, clamping, anti-windup against a plain integrator, no derivative kick, closed loop 0 to
   15 m/s within 2 % with printed rise time, overshoot and steady-state error.
 
+## Sprint 0A.2.1
+
+Investigation sprint: measure the Kalman tracker's association and tentative-track rules; no
+default or parameter changes. Seeds 1-20 never appear in any output.
+
+- [ ] **R21 Association diagnostics: why do tentative tracks steal measurements?** (feat, Opus
+  builder): optional per-step observer record in `KalmanTracker` (off by default; per track id,
+  tentative/confirmed, age, hits, misses, predicted position, innovation covariance S, matched
+  measurement; per unmatched measurement the tentative track it started); association mode
+  constructor parameter (`two_stage` default, byte-identical; `joint`: one `solve_assignment` over
+  all tracks, same costs and gate, shared lifecycle code); study tool `tools/kite_association_study`
+  (CTest only) on seeds 101-120 that labels measurements with truth (3 m gate, 1 m margin, else
+  ambiguous), finds steals, classifies them H1 / nearer / other, counts duplicates and ambiguous
+  labels; `docs/INVESTIGATION-ASSOCIATION.md` section "R21: why measurements get stolen" with
+  doc-matches tests. Tests: observer on/off identical on seeds 101-120; default outputs unchanged;
+  hand-made two-track steal with both scores' arithmetic in comments.
+- [ ] **R22 Compare association methods on the tuning seeds** (feat, Opus builder; needs R21):
+  third mode `joint_likelihood` (cost d² + ln(det S / det R), derivation in the header; gate stays
+  d² <= gate_chi2 in every mode); `kite_baseline --association two_stage|joint|joint_likelihood`
+  (default `two_stage`, only with `--tracker kalman`); `docs/INVESTIGATION-ASSOCIATION.md` section
+  "R22: comparison on seeds 101-120" with three doc-matched tables (`two_stage` mean row equals
+  `kite_baseline_kalman_tuning`'s) and steals, duplicates and reverse steals per mode. No winner
+  chosen, no default changed. Tests: hand-made cases where the modes pair differently; gate test in
+  all three modes; mode parsing and usage errors.
+- [ ] **R23 Measure how often a real car's new track is dropped** (test, Sonnet; needs R21): Monte
+  Carlo with the 0A.1 generator, 1 vehicle, default tracker, p in {0.95, 0.90, 0.80, 0.70}, 20,000
+  seeds per p from 100001 (exact ranges stated): births, dropped, rate with 95 % Wilson interval,
+  the M-of-N formula value, and miss causes (no measurement vs outside gate); on seeds 101-120 the
+  dropped tentative tracks split into real births lost vs the rest, and mean steps to confirmation;
+  `docs/INVESTIGATION-ASSOCIATION.md` section "R23: tentative tracks dropped" with doc-matches
+  tests. No parameter or drop-rule change.
+
 ## Later
 
 Planned, not scheduled. Do not pick these up as roadmap items.
