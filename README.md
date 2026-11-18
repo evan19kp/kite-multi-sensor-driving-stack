@@ -1,6 +1,6 @@
 # Kite Multi-Sensor Driving Stack
 
-A modular autonomous-driving software stack (perception, tracking, prediction, planning, control), developed and tested in simulation in BeamNG.tech. It is an independent, non-commercial student project. Status: setup stage, nothing runs yet.
+A modular autonomous-driving software stack (perception, tracking, prediction, planning, control), developed and tested in simulation in BeamNG.tech. It is an independent, non-commercial student project. Status: Phase 0A, core modules (Kalman filter, multi-vehicle tracker, PID controller) tested on synthetic data; see ROADMAP.md and docs/BASELINE.md.
 
 ## Planned architecture
 
