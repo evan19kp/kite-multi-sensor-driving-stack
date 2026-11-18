@@ -19,9 +19,18 @@ import sys
 import tarfile
 import tempfile
 import urllib.request
+import zlib
+from pathlib import Path
 
-HERE = os.path.dirname(os.path.abspath(__file__))
-REPO_ROOT = os.path.dirname(HERE)
+
+def repo_root() -> Path:
+    for parent in Path(__file__).resolve().parents:
+        if (parent / "AGENTS.md").is_file():
+            return parent
+    raise RuntimeError("AGENTS.md not found above " + __file__)
+
+
+REPO_ROOT = str(repo_root())
 DEFAULT_DEST = os.path.join(REPO_ROOT, "third_party", "googletest")
 URL_TEMPLATE = "https://github.com/google/googletest/archive/refs/tags/{tag}.tar.gz"
 KEEP = ("CMakeLists.txt", "LICENSE", "googletest", "googlemock")
@@ -91,7 +100,7 @@ def extract(archive: str, dest: str) -> int:
     with tar:
         try:
             selected = select_members(tar)
-        except tarfile.TarError as e:
+        except (tarfile.TarError, EOFError, zlib.error, OSError) as e:
             raise VendorError(f"cannot read archive {archive}: {e}") from e
         present = {parts[0] for _, parts in selected}
         missing = [name for name in KEEP if name not in present]
@@ -104,16 +113,17 @@ def extract(archive: str, dest: str) -> int:
         files = 0
         for member, parts in selected:
             target = os.path.realpath(os.path.join(dest, *parts))
-            if os.path.commonpath([dest_real, target]) != dest_real:
+            try:
+                inside = os.path.commonpath([dest_real, target]) == dest_real
+            except ValueError:
+                inside = False
+            if not inside:
                 raise VendorError(f"unsafe archive member: {member.name!r}")
             if member.isdir():
                 os.makedirs(target, exist_ok=True)
                 continue
             os.makedirs(os.path.dirname(target), exist_ok=True)
-            source = tar.extractfile(member)
-            if source is None:
-                raise VendorError(f"cannot read archive member: {member.name!r}")
-            with source, open(target, "wb") as out:
+            with tar.extractfile(member) as source, open(target, "wb") as out:
                 shutil.copyfileobj(source, out)
             files += 1
     return files

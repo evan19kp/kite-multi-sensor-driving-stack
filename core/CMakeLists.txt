@@ -1,5 +1,4 @@
 add_library(kite_core src/angles.cpp)
-add_library(kite::core ALIAS kite_core)
 target_include_directories(kite_core PUBLIC include)
 target_compile_features(kite_core PUBLIC cxx_std_17)
 kite_enable_warnings(kite_core)

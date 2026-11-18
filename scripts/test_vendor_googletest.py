@@ -5,7 +5,9 @@ import os
 import tarfile
 import tempfile
 import unittest
+import urllib.error
 from pathlib import Path
+from unittest import mock
 
 import vendor_googletest
 
@@ -159,6 +161,57 @@ class VendorGoogletestTest(unittest.TestCase):
         code, _, err = self.vendor(archive=str(bad))
         self.assertEqual(code, 1)
         self.assertIn("cannot read archive", err)
+
+    def test_fails_on_truncated_archive(self):
+        full = make_archive(
+            str(self.tmp / "full.tar.gz"), files={**GOOD_FILES, "googletest/src/big.bin": os.urandom(200_000)}
+        )
+        data = Path(full).read_bytes()
+        cut = self.tmp / "cut.tar.gz"
+        cut.write_bytes(data[: len(data) // 2])
+        code, _, err = self.vendor(archive=str(cut))
+        self.assertEqual(code, 1)
+        self.assertIn("cannot read archive", err)
+        self.assertFalse(self.dest.exists())
+
+    @unittest.skipUnless(os.name == "nt", "a drive letter inside a member name only escapes the destination on Windows")
+    def test_refuses_member_on_another_drive(self):
+        other = "Z:" if os.path.splitdrive(str(self.dest))[0].upper() != "Z:" else "Y:"
+        bad = make_archive(str(self.tmp / "bad.tar.gz"), extra=[(f"{PREFIX}/googletest/{other}/evil.txt", b"x")])
+        code, _, err = self.vendor(archive=bad)
+        self.assertEqual(code, 1)
+        self.assertIn("unsafe", err)
+
+    def test_refuses_destination_that_is_a_file(self):
+        self.dest.parent.mkdir(parents=True)
+        self.dest.write_text("keep", encoding="utf-8")
+        code, _, err = self.vendor()
+        self.assertEqual(code, 1)
+        self.assertIn("not a folder", err)
+        self.assertEqual(self.dest.read_text(encoding="utf-8"), "keep")
+
+    def test_download_writes_response_to_target(self):
+        target = self.tmp / "dl.tar.gz"
+        with mock.patch("vendor_googletest.urllib.request.urlopen", return_value=io.BytesIO(b"payload")) as urlopen:
+            vendor_googletest.download("https://example.invalid/x.tar.gz", str(target))
+        self.assertEqual(urlopen.call_args.args[0], "https://example.invalid/x.tar.gz")
+        self.assertEqual(target.read_bytes(), b"payload")
+
+    def test_download_failure_becomes_vendor_error(self):
+        for error in (urllib.error.URLError("offline"), OSError("reset")):
+            target = self.tmp / "dl.tar.gz"
+            with mock.patch("vendor_googletest.urllib.request.urlopen", side_effect=error):
+                with self.assertRaises(vendor_googletest.VendorError) as ctx:
+                    vendor_googletest.download("https://example.invalid/x.tar.gz", str(target))
+            self.assertIn("download failed", str(ctx.exception))
+            self.assertFalse(target.exists())
+
+    def test_download_failure_leaves_destination_uncreated(self):
+        with mock.patch("vendor_googletest.urllib.request.urlopen", side_effect=urllib.error.URLError("offline")):
+            code, _, err = run_main("--tag", "v9.9.9", "--dest", str(self.dest))
+        self.assertEqual(code, 1)
+        self.assertIn("download failed", err)
+        self.assertFalse(self.dest.exists())
 
     def test_archive_url_for_tag(self):
         self.assertEqual(
