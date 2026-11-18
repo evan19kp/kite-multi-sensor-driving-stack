@@ -6,7 +6,7 @@ its own line when it merges. Agents never add items that a brief didn't list.
 
 ## Sprint 0
 
-- [ ] **R2 C++ build skeleton with vendored GoogleTest** (build): `scripts/vendor_googletest.py`
+- [x] **R2 C++ build skeleton with vendored GoogleTest** (build): `scripts/vendor_googletest.py`
   (stdlib only; downloads the pinned GoogleTest release tag from GitHub, prints its SHA-256,
   extracts only `CMakeLists.txt`, `LICENSE`, `googletest/`, `googlemock/`, refuses absolute or
   `..` members and non-empty destinations without `--force`, writes `VENDORED.md`) with offline

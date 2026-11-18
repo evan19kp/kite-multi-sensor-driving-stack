@@ -1,0 +1,11 @@
+add_library(kite_core src/angles.cpp)
+target_include_directories(kite_core PUBLIC include)
+target_compile_features(kite_core PUBLIC cxx_std_17)
+kite_enable_warnings(kite_core)
+
+if(KITE_BUILD_TESTS)
+  add_executable(kite_core_tests tests/angles_test.cpp)
+  target_link_libraries(kite_core_tests PRIVATE kite_core GTest::gmock_main)
+  kite_enable_warnings(kite_core_tests)
+  gtest_discover_tests(kite_core_tests)
+endif()
