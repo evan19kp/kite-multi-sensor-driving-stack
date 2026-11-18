@@ -1,5 +1,6 @@
 #include "kite/kalman_tracker.hpp"
 
+#include <algorithm>
 #include <cmath>
 #include <cstddef>
 #include <stdexcept>
@@ -14,6 +15,7 @@ KalmanTracker::KalmanTracker(double q, double measurement_sigma, double initial_
                              double gate_chi2, int confirm_hits, int confirm_window,
                              int max_misses, AssociationMode association)
     : new_filter_(q, measurement_sigma),
+      det_r_(measurement_sigma * measurement_sigma * (measurement_sigma * measurement_sigma)),
       initial_velocity_sigma_(initial_velocity_sigma),
       gate_chi2_(gate_chi2),
       confirm_hits_(confirm_hits),
@@ -68,7 +70,8 @@ std::vector<std::vector<std::size_t>> KalmanTracker::association_passes(
   switch (association_) {
     case AssociationMode::two_stage:
       return {confirmed, tentative};
-    case AssociationMode::joint: {
+    case AssociationMode::joint:
+    case AssociationMode::joint_likelihood: {
       std::vector<std::size_t> all;
       for (std::size_t i = 0; i < tracks.size(); ++i) {
         all.push_back(i);
@@ -77,6 +80,51 @@ std::vector<std::vector<std::size_t>> KalmanTracker::association_passes(
     }
   }
   throw std::logic_error("unknown association mode");
+}
+
+KalmanTracker::PassCosts KalmanTracker::pass_costs(const std::vector<Track>& tracks,
+                                                   const std::vector<std::size_t>& rows,
+                                                   const std::vector<Measurement>& measurements,
+                                                   const std::vector<std::size_t>& columns) const {
+  CostMatrix cost{rows.size(), columns.size(), {}};
+  cost.values.reserve(rows.size() * columns.size());
+  for (const std::size_t i : rows) {
+    for (const std::size_t m : columns) {
+      cost.values.push_back(tracks[i].filter.innovation_mahalanobis2(measurements[m].position));
+    }
+  }
+  if (association_ != AssociationMode::joint_likelihood) {
+    return {std::move(cost), gate_chi2_};
+  }
+
+  const std::vector<double> d2 = cost.values;
+  const auto inside = [&](std::size_t k) { return d2[k] <= gate_chi2_; };
+  double gate = 0.0;
+  for (std::size_t row = 0; row < rows.size(); ++row) {
+    // The log needs no clamp. x and y never mix, so S's off-diagonal entries are exactly 0 and
+    // each S_ii = P_ii + r >= r. Rounding is monotone, so S00 * S11 rounds to >= det_r_ = r * r,
+    // the ratio to >= 1 and its log to >= 0.
+    const Matrix<2, 2> s = tracks[rows[row]].filter.innovation_covariance();
+    const double log_det_ratio =
+        std::log((s(0, 0) * s(1, 1) - s(0, 1) * s(1, 0)) / det_r_);
+    for (std::size_t column = 0; column < columns.size(); ++column) {
+      const std::size_t k = row * columns.size() + column;
+      if (inside(k)) {
+        cost.values[k] = d2[k] + log_det_ratio;
+        gate = std::max(gate, cost.values[k]);
+      }
+    }
+  }
+  const double outside = 2.0 * gate + 1.0;
+  if (!std::isfinite(outside)) {
+    throw std::domain_error("joint_likelihood: a cost inside the gate is not finite");
+  }
+  for (std::size_t k = 0; k < d2.size(); ++k) {
+    if (!inside(k)) {
+      cost.values[k] = outside;
+    }
+  }
+  return {std::move(cost), gate};
 }
 
 std::vector<TrackState> KalmanTracker::update(double t,
@@ -126,14 +174,8 @@ std::vector<TrackState> KalmanTracker::update(double t,
         columns.push_back(m);
       }
     }
-    CostMatrix cost{rows.size(), columns.size(), {}};
-    cost.values.reserve(rows.size() * columns.size());
-    for (const std::size_t i : rows) {
-      for (const std::size_t m : columns) {
-        cost.values.push_back(tracks[i].filter.innovation_mahalanobis2(measurements[m].position));
-      }
-    }
-    for (const Assignment& pair : solve_assignment(cost, gate_chi2_)) {
+    const PassCosts pass = pass_costs(tracks, rows, measurements, columns);
+    for (const Assignment& pair : solve_assignment(pass.cost, pass.gate)) {
       Track& track = tracks[rows[pair.row]];
       const Measurement& z = measurements[columns[pair.column]];
       track.filter.update(z.position);

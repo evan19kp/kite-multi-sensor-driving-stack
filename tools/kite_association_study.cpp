@@ -8,6 +8,7 @@
 #include <limits>
 #include <map>
 #include <optional>
+#include <set>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -30,11 +31,51 @@ constexpr double kLabelMarginM = 1.0;
 constexpr std::size_t kDuplicateWindowSteps = 5;
 
 constexpr const char* kUsage =
-    "usage: kite_association_study [--help]\n"
-    "Runs KalmanTracker with association joint and the kite_baseline scenario and parameters on\n"
-    "seeds 101-120, labels each measurement with a truth vehicle (nearest within 3 m and at least\n"
-    "1 m nearer than the second nearest, else ambiguous), and prints Markdown tables of the\n"
-    "measurements that tentative tracks took from confirmed tracks of the same vehicle.\n";
+    "usage: kite_association_study [--association MODE] [--summary]\n"
+    "Runs KalmanTracker with the kite_baseline scenario and parameters on seeds 101-120, labels\n"
+    "each measurement with a truth vehicle (nearest within 3 m and at least 1 m nearer than the\n"
+    "second nearest, else ambiguous), and prints Markdown tables of the measurements that\n"
+    "tentative tracks took from confirmed tracks of the same vehicle.\n"
+    "  --association  two_stage, joint (default) or joint_likelihood\n"
+    "  --summary      print only one table of steals, duplicates and reverse steals per seed\n"
+    "  --help         print this text\n";
+
+class UsageError : public std::runtime_error {
+ public:
+  using std::runtime_error::runtime_error;
+};
+
+struct Options {
+  kite::AssociationMode association = kite::AssociationMode::joint;
+  bool summary = false;
+};
+
+Options parse_options(int argc, char** argv) {
+  Options options;
+  std::set<std::string_view> seen;
+  for (int i = 1; i < argc; ++i) {
+    const std::string_view flag = argv[i];
+    if (flag != "--association" && flag != "--summary") {
+      throw UsageError("unknown argument: " + std::string(flag));
+    }
+    if (!seen.insert(flag).second) {
+      throw UsageError("duplicate argument: " + std::string(flag));
+    }
+    if (flag == "--summary") {
+      options.summary = true;
+      continue;
+    }
+    if (++i == argc) {
+      throw UsageError("missing value for --association");
+    }
+    const std::optional<kite::AssociationMode> mode = parse_association(argv[i]);
+    if (!mode) {
+      throw UsageError("invalid value for --association: '" + std::string(argv[i]) + "'");
+    }
+    options.association = *mode;
+  }
+  return options;
+}
 
 using CarLabel = std::optional<int>;
 
@@ -78,6 +119,7 @@ struct SeedResult {
   int measurements;
   int ambiguous;
   std::vector<Steal> steals;
+  int reverse_steals;
 };
 
 double distance(kite::Vec2 a, kite::Vec2 b) {
@@ -163,13 +205,13 @@ bool duplicate_follows(const std::vector<std::vector<CarLabel>>& confirmed_label
   return false;
 }
 
-SeedResult run_seed(int seed) {
+SeedResult run_seed(int seed, kite::AssociationMode association) {
   const kite::GeneratedScenario scenario =
       kite::generate(scenario_config(static_cast<std::uint64_t>(seed)));
-  kite::KalmanTracker tracker = make_kalman_tracker(kite::AssociationMode::joint);
+  kite::KalmanTracker tracker = make_kalman_tracker(association);
   tracker.record_steps(true);
 
-  SeedResult result{seed, 0, 0, {}};
+  SeedResult result{seed, 0, 0, {}, 0};
   std::map<int, CarLabel> latest_label;
   std::map<int, Birth> births;
   std::vector<std::vector<CarLabel>> confirmed_labels;
@@ -208,9 +250,15 @@ SeedResult run_seed(int seed) {
     }
 
     for (const kite::TrackRecord& track : record.tracks) {
-      if (track.measurement) {
-        latest_label[track.track_id] = labels[*track.measurement];
+      if (!track.measurement) {
+        continue;
       }
+      const CarLabel taken = labels[*track.measurement];
+      CarLabel& previous = latest_label.at(track.track_id);
+      if (track.stage == kite::TrackStage::confirmed && taken && previous && taken != previous) {
+        ++result.reverse_steals;
+      }
+      previous = taken;
     }
     for (std::size_t m = 0; m < step.measurements.size(); ++m) {
       if (const std::optional<int> id = record.started_track[m]) {
@@ -300,6 +348,13 @@ std::string seed_row(const std::string& label, const std::vector<Steal>& steals,
   return row(cells);
 }
 
+std::string summary_row(const std::string& label, const std::vector<Steal>& steals,
+                        int measurements, int ambiguous, int reverse_steals) {
+  return row({label, count(measurements), count(ambiguous), count(static_cast<int>(steals.size())),
+              count(count_if(steals, [](const Steal& s) { return s.duplicate; })),
+              count(reverse_steals)});
+}
+
 std::string score_row(const std::string& label, const std::vector<Steal>& steals) {
   std::vector<std::string> cells{
       label, count(static_cast<int>(steals.size())),
@@ -331,25 +386,43 @@ int main(int argc, char** argv) {
     std::cout << kUsage;
     return 0;
   }
-  if (argc != 1) {
-    std::cerr << "unknown argument: " << argv[1] << "\n" << kUsage;
+  Options options;
+  try {
+    options = parse_options(argc, argv);
+  } catch (const UsageError& error) {
+    std::cerr << error.what() << "\n" << kUsage;
     return 2;
   }
 
   std::vector<SeedResult> seeds;
   for (int seed = kFirstSeed; seed <= kLastSeed; ++seed) {
-    seeds.push_back(run_seed(seed));
+    seeds.push_back(run_seed(seed, options.association));
   }
   std::vector<Steal> all;
   int measurements = 0;
   int ambiguous = 0;
+  int reverse_steals = 0;
   for (const SeedResult& seed : seeds) {
     all.insert(all.end(), seed.steals.begin(), seed.steals.end());
     measurements += seed.measurements;
     ambiguous += seed.ambiguous;
+    reverse_steals += seed.reverse_steals;
   }
-  const std::string caption = "Association joint, seeds 101-120: " + count(measurements) +
-                              " measurements, " + count(ambiguous) + " ambiguous.\n\n";
+  const std::string caption = "Association " + std::string(association_name(options.association)) +
+                              ", seeds 101-120: " + count(measurements) + " measurements, " +
+                              count(ambiguous) + " ambiguous.\n\n";
+
+  if (options.summary) {
+    std::string out = caption + table_header({"seed", "measurements", "ambiguous", "steals",
+                                              "duplicates", "reverse steals"});
+    for (const SeedResult& seed : seeds) {
+      out += summary_row(count(seed.seed), seed.steals, seed.measurements, seed.ambiguous,
+                         seed.reverse_steals);
+    }
+    out += summary_row("total", all, measurements, ambiguous, reverse_steals);
+    std::cout << out;
+    return 0;
+  }
 
   std::string out = caption + table_header({"seed", "measurements", "ambiguous", "steals", "H1",
                                             "nearer", "other", "duplicates"});

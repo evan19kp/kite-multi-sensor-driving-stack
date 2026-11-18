@@ -472,6 +472,89 @@ TEST(KalmanTracker, TwoStageAssociationGivesTheSameMeasurementToTheConfirmedTrac
   EXPECT_NEAR(tracks[0].position.x, 7.0 / 3.0, 1e-12);
 }
 
+std::vector<TrackState> steal_outcome(AssociationMode association, double x) {
+  KalmanTracker tracker = steal_tracker(association);
+  tracker.update(0.0, steal_step(0));
+  tracker.update(1.0, steal_step(1));
+  return tracker.update(2.0, {at(2.0, x, 0.0)});
+}
+
+// joint_likelihood adds ln(det S / det R) with R = I: ln(4.5^2) = ln 20.25 = 3.0082 for track 0
+// and ln(6^2) = ln 36 = 3.5835 for track 1.
+// At (3, 0): track 0 scores 9 / 4.5 = 2.0000 and costs 2.0000 + 3.0082 = 5.0082; track 1 scores
+// 10.89 / 6 = 1.8150 and costs 1.8150 + 3.5835 = 5.3985. joint takes the lower score (track 1);
+// joint_likelihood takes the lower cost (track 0), as two_stage does.
+TEST(KalmanTracker, LikelihoodCostKeepsAMeasurementThatJointGivesToAWideTentativeTrack) {
+  for (const AssociationMode mode :
+       {AssociationMode::two_stage, AssociationMode::joint_likelihood}) {
+    const auto tracks = steal_outcome(mode, 3.0);
+    ASSERT_EQ(tracks.size(), 1u);
+    EXPECT_EQ(tracks[0].track_id, 0);
+    EXPECT_NEAR(tracks[0].position.x, 7.0 / 3.0, 1e-12);
+  }
+
+  const auto joint = steal_outcome(AssociationMode::joint, 3.0);
+
+  ASSERT_EQ(joint.size(), 2u);
+  EXPECT_EQ(joint[0], (TrackState{2.0, 0, 0, {0.0, 0.0}, {0.0, 0.0}}));
+  EXPECT_EQ(joint[1].track_id, 1);
+  EXPECT_NEAR(joint[1].position.x, 3.55, 1e-12);
+}
+
+// At (3.5, 0): track 0 scores 12.25 / 4.5 = 2.7222 and costs 2.7222 + 3.0082 = 5.7304; track 1
+// scores 2.8^2 / 6 = 7.84 / 6 = 1.3067 and costs 1.3067 + 3.5835 = 4.8902. Both joint modes give
+// it to track 1, which moves 5/6 of -2.8 m to 6.3 - 7/3 = 3.9667 and is confirmed. two_stage gives
+// it to confirmed track 0, inside its gate, which moves 3.5/4.5 of 3.5 m to 49/18.
+TEST(KalmanTracker, LikelihoodCostGivesAMeasurementToAWideTentativeTrackThatTwoStageDoesNot) {
+  for (const AssociationMode mode : {AssociationMode::joint, AssociationMode::joint_likelihood}) {
+    const auto tracks = steal_outcome(mode, 3.5);
+    ASSERT_EQ(tracks.size(), 2u);
+    EXPECT_EQ(tracks[0], (TrackState{2.0, 0, 0, {0.0, 0.0}, {0.0, 0.0}}));
+    EXPECT_EQ(tracks[1].track_id, 1);
+    EXPECT_NEAR(tracks[1].position.x, 6.3 - 7.0 / 3.0, 1e-12);
+  }
+
+  const auto two_stage = steal_outcome(AssociationMode::two_stage, 3.5);
+
+  ASSERT_EQ(two_stage.size(), 1u);
+  EXPECT_EQ(two_stage[0].track_id, 0);
+  EXPECT_NEAR(two_stage[0].position.x, 49.0 / 18.0, 1e-12);
+}
+
+// New tracks at (0, 0) and (20, 0) with the steal_tracker parameters. At t = 1 both have S = 6 I,
+// so ln(det S / det R) = ln 36 = 3.5835.
+// (7, 0): d^2 = 49 / 6 = 8.1667 to track 0, inside the 9.21 gate, although its joint_likelihood
+//   cost 8.1667 + 3.5835 = 11.7502 is above 9.21; to track 1, 169 / 6 = 28.167, outside.
+// (27.5, 0): d^2 = 56.25 / 6 = 9.375 to track 1, just outside; to track 0, 756.25 / 6 = 126.04.
+// Pairing (27.5, 0) with track 1 would give two pairs instead of one, but it is outside the gate,
+// so track 1 misses and is dropped. Track 0 takes (7, 0), moves 5/6 of 7 m to 35/6 and is
+// confirmed.
+TEST(KalmanTracker, EveryModeGatesOnTheSquaredDistanceAlone) {
+  for (const AssociationMode mode : {AssociationMode::two_stage, AssociationMode::joint,
+                                     AssociationMode::joint_likelihood}) {
+    KalmanTracker tracker = steal_tracker(mode);
+    tracker.update(0.0, {at(0.0, 0.0, 0.0), at(0.0, 20.0, 0.0)});
+
+    const auto tracks = tracker.update(1.0, {at(1.0, 7.0, 0.0), at(1.0, 27.5, 0.0)});
+
+    ASSERT_EQ(tracks.size(), 1u) << static_cast<int>(mode);
+    EXPECT_EQ(tracks[0].track_id, 0);
+    EXPECT_NEAR(tracks[0].position.x, 35.0 / 6.0, 1e-12);
+  }
+}
+
+// measurement_sigma 1e-100 gives R = 1e-200 I, and det R = 1e-400 underflows to 0. After 0.1 s a
+// new track's S is about I (initial velocity sigma 10 m/s), so det S / det R is infinite.
+TEST(KalmanTracker, JointLikelihoodThrowsWhenACostInsideTheGateIsNotFinite) {
+  KalmanTracker likelihood{0.0, 1e-100, 10.0, 9.21, 3, 5, 5, AssociationMode::joint_likelihood};
+  KalmanTracker joint{0.0, 1e-100, 10.0, 9.21, 3, 5, 5, AssociationMode::joint};
+  likelihood.update(0.0, {at(0.0, 0.0, 0.0)});
+  joint.update(0.0, {at(0.0, 0.0, 0.0)});
+
+  EXPECT_THROW(likelihood.update(0.1, {at(0.1, 0.0, 0.0)}), std::domain_error);
+  EXPECT_NO_THROW(joint.update(0.1, {at(0.1, 0.0, 0.0)}));
+}
+
 TEST(KalmanTracker, StepRecordDescribesEveryTrackAndEveryBirth) {
   KalmanTracker tracker = steal_tracker(AssociationMode::joint);
   tracker.record_steps(true);
@@ -507,7 +590,8 @@ TEST(KalmanTracker, StepRecordDescribesEveryTrackAndEveryBirth) {
 }
 
 TEST(KalmanTracker, StepRecordNeverChangesOutputOnTheTuningSeeds) {
-  for (const AssociationMode mode : {AssociationMode::two_stage, AssociationMode::joint}) {
+  for (const AssociationMode mode : {AssociationMode::two_stage, AssociationMode::joint,
+                                     AssociationMode::joint_likelihood}) {
     for (std::uint64_t seed = 101; seed <= 120; ++seed) {
       const GeneratedScenario scenario = generate(baseline_setup::scenario_config(seed));
       KalmanTracker off = baseline_setup::make_kalman_tracker(mode);
