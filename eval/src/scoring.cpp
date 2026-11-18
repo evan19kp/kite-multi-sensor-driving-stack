@@ -4,10 +4,11 @@
 #include <charconv>
 #include <cmath>
 #include <cstddef>
-#include <limits>
 #include <map>
 #include <stdexcept>
 #include <utility>
+
+#include "kite/assignment.hpp"
 
 namespace kite {
 
@@ -17,60 +18,6 @@ struct Step {
   std::vector<const GroundTruthState*> truth;
   std::vector<const TrackState*> tracks;
 };
-
-std::vector<std::size_t> min_cost_assignment(const std::vector<double>& cost, std::size_t n) {
-  const double inf = std::numeric_limits<double>::infinity();
-  std::vector<double> u(n + 1, 0.0);
-  std::vector<double> v(n + 1, 0.0);
-  std::vector<std::size_t> row_of_column(n + 1, 0);
-  std::vector<std::size_t> way(n + 1, 0);
-  for (std::size_t row = 1; row <= n; ++row) {
-    row_of_column[0] = row;
-    std::size_t column = 0;
-    std::vector<double> min_slack(n + 1, inf);
-    std::vector<bool> used(n + 1, false);
-    do {
-      used[column] = true;
-      const std::size_t r = row_of_column[column];
-      double delta = inf;
-      std::size_t next = 0;
-      for (std::size_t c = 1; c <= n; ++c) {
-        if (used[c]) {
-          continue;
-        }
-        const double slack = cost[(r - 1) * n + (c - 1)] - u[r] - v[c];
-        if (slack < min_slack[c]) {
-          min_slack[c] = slack;
-          way[c] = column;
-        }
-        if (min_slack[c] < delta) {
-          delta = min_slack[c];
-          next = c;
-        }
-      }
-      for (std::size_t c = 0; c <= n; ++c) {
-        if (used[c]) {
-          u[row_of_column[c]] += delta;
-          v[c] -= delta;
-        } else {
-          min_slack[c] -= delta;
-        }
-      }
-      column = next;
-    } while (row_of_column[column] != 0);
-    do {
-      const std::size_t previous = way[column];
-      row_of_column[column] = row_of_column[previous];
-      column = previous;
-    } while (column != 0);
-  }
-
-  std::vector<std::size_t> column_of_row(n, 0);
-  for (std::size_t c = 1; c <= n; ++c) {
-    column_of_row[row_of_column[c] - 1] = c - 1;
-  }
-  return column_of_row;
-}
 
 }
 
@@ -115,28 +62,20 @@ ScoreResult score(const std::vector<GroundTruthState>& truth, const std::vector<
 
     const std::size_t truths = step.truth.size();
     const std::size_t track_count = step.tracks.size();
-    const std::size_t n = std::max(truths, track_count);
-    const double costlier_than_any_in_gate_total = match_gate_m * static_cast<double>(n + 1) + 1.0;
-
-    std::vector<double> distance(n * n, 0.0);
-    std::vector<double> cost(n * n, 0.0);
+    CostMatrix distance{truths, track_count, std::vector<double>(truths * track_count, 0.0)};
     for (std::size_t i = 0; i < truths; ++i) {
       for (std::size_t j = 0; j < track_count; ++j) {
-        const double d = std::hypot(step.truth[i]->position.x - step.tracks[j]->position.x,
-                                    step.truth[i]->position.y - step.tracks[j]->position.y);
-        distance[i * n + j] = d;
-        cost[i * n + j] = d <= match_gate_m ? d : costlier_than_any_in_gate_total;
+        distance.values[i * track_count + j] =
+            std::hypot(step.truth[i]->position.x - step.tracks[j]->position.x,
+                       step.truth[i]->position.y - step.tracks[j]->position.y);
       }
     }
 
-    const std::vector<std::size_t> column_of_row = min_cost_assignment(cost, n);
     int matched_here = 0;
-    for (std::size_t i = 0; i < truths; ++i) {
-      const std::size_t j = column_of_row[i];
-      if (j >= track_count || !(distance[i * n + j] <= match_gate_m)) {
-        continue;
-      }
-      const double d = distance[i * n + j];
+    for (const Assignment& pair : solve_assignment(distance, match_gate_m)) {
+      const std::size_t i = pair.row;
+      const std::size_t j = pair.column;
+      const double d = distance.values[i * track_count + j];
       ++matched_here;
       squared_distance_sum += d * d;
 
