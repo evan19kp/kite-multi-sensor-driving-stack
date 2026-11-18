@@ -97,7 +97,7 @@ its own line when it merges. Agents never add items that a brief didn't list.
   gates. Tests: `core/tests/assignment_bruteforce_test.cpp` compares 5,000 seeded random cases
   (0-6 rows, 0-6 columns, rectangular and empty) with a brute-force solver; every scoring test and
   `kite_baseline_doc_matches` pass unchanged.
-- [ ] **R14 Constant-velocity Kalman filter** (feat, Opus builder): `ConstantVelocityKalman` in
+- [x] **R14 Constant-velocity Kalman filter** (feat, Opus builder): `ConstantVelocityKalman` in
   `core/include/kite/kalman.hpp` + `core/src/kalman.cpp` (state `[x, y, vx, vy]`, white-noise
   acceleration `predict(dt)`, Joseph-form `update`, `innovation_mahalanobis2`, `initialize`); small
   fixed-size matrix helpers in `core/`, each tested. Tests (with derivations): exact noiseless
