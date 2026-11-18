@@ -34,21 +34,7 @@ bool operator<(const GatedCost& a, const GatedCost& b) {
   return a.outside_gate < b.outside_gate || (a.outside_gate == b.outside_gate && a.total < b.total);
 }
 
-constexpr int kMaxExponent = 500;
-
 bool within_gate(double value, double gate) { return std::isfinite(value) && value <= gate; }
-
-int exponent_to_scale_down_by(const std::vector<double>& values, double gate) {
-  double largest = 0.0;
-  for (const double value : values) {
-    if (within_gate(value, gate)) {
-      largest = std::max(largest, std::fabs(value));
-    }
-  }
-  int exponent = 0;
-  std::frexp(largest, &exponent);
-  return exponent > kMaxExponent ? exponent : 0;
-}
 
 std::vector<std::size_t> min_cost_assignment(const std::vector<GatedCost>& cost, std::size_t n) {
   const double inf = std::numeric_limits<double>::infinity();
@@ -123,14 +109,12 @@ std::vector<Assignment> solve_assignment(const CostMatrix& cost, double gate) {
     return {};
   }
 
-  const int scale_down = exponent_to_scale_down_by(cost.values, gate);
   const std::size_t n = std::max(cost.rows, cost.columns);
   std::vector<GatedCost> padded(n * n, GatedCost{0.0, 0.0});
   for (std::size_t r = 0; r < cost.rows; ++r) {
     for (std::size_t c = 0; c < cost.columns; ++c) {
       const double value = cost.values[r * cost.columns + c];
-      padded[r * n + c] = within_gate(value, gate) ? GatedCost{0.0, std::ldexp(value, -scale_down)}
-                                                   : GatedCost{1.0, 0.0};
+      padded[r * n + c] = within_gate(value, gate) ? GatedCost{0.0, value} : GatedCost{1.0, 0.0};
     }
   }
 

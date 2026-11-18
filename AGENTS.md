@@ -237,7 +237,8 @@ Each item that introduces a lasting rule adds a "## Standing rules (R<n>)" secti
 
 ## Standing rules (R13)
 
-- Matching within a gate uses `kite::solve_assignment`; there is no second assignment solver.
+- Optimal matching within a gate (most pairs, then least total cost) uses `kite::solve_assignment`;
+  no item adds a second optimal solver. The greedy `NearestNeighbourBaseline` is deliberate.
 - `kite_core` builds with `-ffp-contract=off`, like `kite_sim`, so its floating-point results do not
   depend on the compiler's fused multiply-add choices.
 

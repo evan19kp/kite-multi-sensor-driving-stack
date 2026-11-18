@@ -25,8 +25,8 @@ struct Assignment {
 // negative. Among equal-cost solutions the choice is deterministic but not specified.
 //
 // An infinite gate admits every finite cost. A negative gate is legal and admits only costs <= gate,
-// which are negative. Infinite costs are never admissible. Arithmetic does not overflow for any
-// finite costs, however large.
+// which are negative. Infinite costs are never admissible. Gates and costs as large as DBL_MAX are
+// admitted and ranked like any others.
 //
 // Throws std::invalid_argument for a NaN gate, a NaN cost, or values.size() != rows * columns.
 std::vector<Assignment> solve_assignment(const CostMatrix& cost, double gate);
