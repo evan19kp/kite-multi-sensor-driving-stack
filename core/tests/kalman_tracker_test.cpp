@@ -1,12 +1,17 @@
 #include <gtest/gtest.h>
 
+#include <array>
 #include <cmath>
 #include <cstddef>
+#include <cstdint>
 #include <limits>
+#include <optional>
 #include <stdexcept>
 #include <vector>
 
+#include "baseline_setup.hpp"
 #include "kite/baseline_tracker.hpp"
+#include "kite/generator.hpp"
 #include "kite/kalman_tracker.hpp"
 
 namespace kite {
@@ -385,6 +390,145 @@ TEST(KalmanTracker, EmptyFirstUpdateStillStartsTheClock) {
   tracker.update(1.0, {});
 
   EXPECT_THROW(tracker.update(0.5, {at(0.5, 0.0, 0.0)}), std::invalid_argument);
+}
+
+TEST(KalmanTracker, StepRecordIsOffByDefaultAndClearedWhenTurnedOff) {
+  KalmanTracker tracker = make_tracker();
+  tracker.update(0.0, {at(0.0, 0.0, 0.0)});
+  EXPECT_FALSE(tracker.step_record().has_value());
+
+  tracker.record_steps(true);
+  tracker.update(1.0, {at(1.0, 0.0, 0.0)});
+  EXPECT_TRUE(tracker.step_record().has_value());
+
+  tracker.record_steps(false);
+  EXPECT_FALSE(tracker.step_record().has_value());
+  tracker.update(2.0, {at(2.0, 0.0, 0.0)});
+  EXPECT_FALSE(tracker.step_record().has_value());
+}
+
+// q = 0, measurement sigma 1 (R = I), initial velocity sigma 2, confirmation at 2 hits in 2 steps.
+// Per axis, a new track has P = [[1, 0], [0, 4]] over (position, velocity).
+//
+// t = 0: (0, 0) starts track 0.
+// t = 1: track 0 predicts to P = [[5, 4], [4, 4]], S = 5 + 1 = 6. (0, 0) scores 0 and (6.3, 0)
+//        scores 6.3^2 / 6 = 6.615, both inside the 9.21 gate; track 0 takes (0, 0) (least cost),
+//        reaches 2 hits and is confirmed. (6.3, 0) starts tentative track 1. Track 0's update has
+//        zero innovation, so it stays at (0, 0) with zero velocity, and K = (5/6, 4/6) leaves
+//        P = [[5 - 25/6, 4 - 20/6], [., 4 - 16/6]] = [[5/6, 4/6], [4/6, 8/6]].
+// t = 2: one measurement at (3, 0).
+//        Track 0 (confirmed): P_pos = 5/6 + 2 * 4/6 + 8/6 = 21/6 = 3.5, S = 4.5 I.
+//          It is 3 m away and scores 3^2 / 4.5 = 2.000.
+//        Track 1 (tentative): P_pos = 1 + 4 = 5, S = 6 I.
+//          It is 3.3 m away and scores 3.3^2 / 6 = 10.89 / 6 = 1.815.
+//        Track 0 is physically nearer, but track 1 scores lower because its S is larger.
+//        Joint: track 1 takes it and moves 5/6 of -3.3 m to 3.55. Two stages: track 0 takes it
+//        and moves 3.5/4.5 of 3 m to 7/3, and track 1 misses and is dropped.
+std::vector<Measurement> steal_step(int k) {
+  if (k == 0) {
+    return {at(0.0, 0.0, 0.0)};
+  }
+  if (k == 1) {
+    return {at(1.0, 0.0, 0.0), at(1.0, 6.3, 0.0)};
+  }
+  return {at(2.0, 3.0, 0.0)};
+}
+
+KalmanTracker steal_tracker(AssociationMode association) {
+  return KalmanTracker{0.0, 1.0, 2.0, 9.21, 2, 2, 5, association};
+}
+
+TEST(KalmanTracker, JointAssociationLetsAWideTentativeTrackStealFromANearerConfirmedTrack) {
+  KalmanTracker tracker = steal_tracker(AssociationMode::joint);
+  tracker.record_steps(true);
+  tracker.update(0.0, steal_step(0));
+  tracker.update(1.0, steal_step(1));
+
+  const auto tracks = tracker.update(2.0, steal_step(2));
+
+  ASSERT_EQ(tracks.size(), 2u);
+  EXPECT_EQ(tracks[0], (TrackState{2.0, 0, 0, {0.0, 0.0}, {0.0, 0.0}}));
+  EXPECT_EQ(tracks[1].track_id, 1);
+  EXPECT_NEAR(tracks[1].position.x, 3.55, 1e-12);
+  const StepRecord& record = tracker.step_record().value();
+  ASSERT_EQ(record.tracks.size(), 2u);
+  EXPECT_EQ(record.tracks[0].stage, TrackStage::confirmed);
+  EXPECT_FALSE(record.tracks[0].measurement.has_value());
+  EXPECT_NEAR(record.tracks[0].innovation_covariance(0, 0), 4.5, 1e-12);
+  EXPECT_EQ(record.tracks[1].stage, TrackStage::tentative);
+  EXPECT_EQ(record.tracks[1].measurement, std::optional<std::size_t>(0));
+  EXPECT_EQ(record.tracks[1].innovation_covariance(0, 0), 6.0);
+}
+
+TEST(KalmanTracker, TwoStageAssociationGivesTheSameMeasurementToTheConfirmedTrack) {
+  KalmanTracker tracker = steal_tracker(AssociationMode::two_stage);
+  tracker.update(0.0, steal_step(0));
+  tracker.update(1.0, steal_step(1));
+
+  const auto tracks = tracker.update(2.0, steal_step(2));
+
+  ASSERT_EQ(tracks.size(), 1u);
+  EXPECT_EQ(tracks[0].track_id, 0);
+  EXPECT_NEAR(tracks[0].position.x, 7.0 / 3.0, 1e-12);
+}
+
+TEST(KalmanTracker, StepRecordDescribesEveryTrackAndEveryBirth) {
+  KalmanTracker tracker = steal_tracker(AssociationMode::joint);
+  tracker.record_steps(true);
+  tracker.update(0.0, steal_step(0));
+  const StepRecord first = tracker.step_record().value();
+  tracker.update(1.0, steal_step(1));
+  const StepRecord second = tracker.step_record().value();
+  tracker.update(2.0, steal_step(2));
+  const StepRecord third = tracker.step_record().value();
+
+  EXPECT_TRUE(first.tracks.empty());
+  EXPECT_EQ(first.started_track, (std::vector<std::optional<int>>{0}));
+
+  ASSERT_EQ(second.tracks.size(), 1u);
+  const TrackRecord& young = second.tracks[0];
+  EXPECT_EQ(young.track_id, 0);
+  EXPECT_EQ(young.stage, TrackStage::tentative);
+  EXPECT_EQ(young.hits, 1);
+  EXPECT_EQ(young.misses, 0);
+  EXPECT_EQ(young.age_steps(), 1);
+  EXPECT_EQ(young.predicted, (Vec2{0.0, 0.0}));
+  EXPECT_EQ(young.innovation_covariance.values, (std::array<double, 4>{6.0, 0.0, 0.0, 6.0}));
+  EXPECT_EQ(young.measurement, std::optional<std::size_t>(0));
+  EXPECT_EQ(second.started_track, (std::vector<std::optional<int>>{std::nullopt, 1}));
+
+  ASSERT_EQ(third.tracks.size(), 2u);
+  EXPECT_EQ(third.tracks[0].hits, 2);
+  EXPECT_EQ(third.tracks[0].age_steps(), 2);
+  EXPECT_EQ(third.tracks[1].track_id, 1);
+  EXPECT_EQ(third.tracks[1].hits, 1);
+  EXPECT_EQ(third.tracks[1].predicted, (Vec2{6.3, 0.0}));
+  EXPECT_EQ(third.started_track, (std::vector<std::optional<int>>{std::nullopt}));
+}
+
+TEST(KalmanTracker, StepRecordNeverChangesOutputOnTheTuningSeeds) {
+  for (const AssociationMode mode : {AssociationMode::two_stage, AssociationMode::joint}) {
+    for (std::uint64_t seed = 101; seed <= 120; ++seed) {
+      const GeneratedScenario scenario = generate(baseline_setup::scenario_config(seed));
+      KalmanTracker off = baseline_setup::make_kalman_tracker(mode);
+      KalmanTracker on = baseline_setup::make_kalman_tracker(mode);
+      on.record_steps(true);
+      for (const ScenarioStep& step : scenario.steps) {
+        const auto expected = off.update(step.t, step.measurements);
+        ASSERT_EQ(on.update(step.t, step.measurements), expected) << "seed " << seed;
+        const StepRecord& record = on.step_record().value();
+        std::vector<int> uses(step.measurements.size(), 0);
+        for (const TrackRecord& track : record.tracks) {
+          if (track.measurement) {
+            ++uses.at(*track.measurement);
+          }
+        }
+        for (std::size_t m = 0; m < uses.size(); ++m) {
+          ASSERT_EQ(uses[m] + (record.started_track[m] ? 1 : 0), 1) << "seed " << seed;
+        }
+      }
+    }
+  }
 }
 
 }

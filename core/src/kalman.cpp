@@ -41,10 +41,15 @@ struct Innovation {
   Matrix<2, 2> s;
 };
 
+Matrix<2, 2> innovation_covariance_of(const Matrix<4, 4>& p, double r) {
+  const Matrix<2, 4> h = position_rows();
+  return h * p * transpose(h) + measurement_noise(r);
+}
+
 Innovation innovation(const Matrix<4, 1>& x, const Matrix<4, 4>& p, Vec2 z, double r) {
   const Matrix<2, 4> h = position_rows();
   const Matrix<2, 1> measured{{z.x, z.y}};
-  return {measured - h * x, h * p * transpose(h) + measurement_noise(r)};
+  return {measured - h * x, innovation_covariance_of(p, r)};
 }
 
 }  // namespace
@@ -121,6 +126,10 @@ double ConstantVelocityKalman::innovation_mahalanobis2(Vec2 z) const {
   const Estimate& estimate = require_initialized(estimate_);
   const Innovation inn = innovation(estimate.x, estimate.p, z, r_);
   return (transpose(inn.y) * inverse(inn.s) * inn.y)(0, 0);
+}
+
+Matrix<2, 2> ConstantVelocityKalman::innovation_covariance() const {
+  return innovation_covariance_of(require_initialized(estimate_).p, r_);
 }
 
 const Matrix<4, 1>& ConstantVelocityKalman::state() const {

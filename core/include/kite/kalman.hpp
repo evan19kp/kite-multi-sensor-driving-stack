@@ -16,10 +16,10 @@ namespace kite {
 // Measurement: z = H x + noise with H = [I 0] and noise covariance R = sigma^2 I.
 //
 // The filter receives measurements only. It starts without an estimate: given valid arguments,
-// predict, update, innovation_mahalanobis2, state and covariance throw std::logic_error until
-// initialize is called. Invalid arguments throw std::invalid_argument first. update and
-// innovation_mahalanobis2 throw std::domain_error when S = H P H^T + R has a zero or non-finite
-// determinant.
+// predict, update, innovation_mahalanobis2, innovation_covariance, state and covariance throw
+// std::logic_error until initialize is called. Invalid arguments throw std::invalid_argument first.
+// update and innovation_mahalanobis2 throw std::domain_error when S = H P H^T + R has a zero or
+// non-finite determinant.
 class ConstantVelocityKalman {
  public:
   // Throws std::invalid_argument unless q is finite and >= 0, and measurement_sigma > 0 with
@@ -43,6 +43,9 @@ class ConstantVelocityKalman {
   // y^T S^-1 y with innovation y = z - H x and S = H P H^T + R; under the model it is chi-square
   // with 2 degrees of freedom. Throws std::invalid_argument for a non-finite z.
   double innovation_mahalanobis2(Vec2 z) const;
+
+  // S = H P H^T + R, the innovation covariance that innovation_mahalanobis2 uses.
+  Matrix<2, 2> innovation_covariance() const;
 
   const Matrix<4, 1>& state() const;
   const Matrix<4, 4>& covariance() const;
