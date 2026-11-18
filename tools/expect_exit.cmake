@@ -1,0 +1,10 @@
+execute_process(COMMAND ${EXE} ${ARGS}
+  RESULT_VARIABLE rc OUTPUT_VARIABLE out ERROR_VARIABLE err)
+message("stdout: ${out}")
+message("stderr: ${err}")
+if(NOT rc STREQUAL EXPECT)
+  message(FATAL_ERROR "exit code ${rc}, expected ${EXPECT}")
+endif()
+if(EXPECT STREQUAL "2" AND NOT err MATCHES "usage: kite_gen")
+  message(FATAL_ERROR "exit code 2 without the usage text on stderr")
+endif()
