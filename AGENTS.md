@@ -159,6 +159,11 @@ Each item that introduces a lasting rule adds a "## Standing rules (R<n>)" secti
 - A new top-level folder gets a rule in `scripts/ci_paths.json`; C++ folders map to both `app` and `app-windows`.
 - No self-hosted runner: `HEAVY_RUNNER` stays unset and every job runs on a GitHub-hosted runner.
 
+## Standing rules (R4)
+
+- Planned folders say "planned" in their README until code lands there.
+- The principles in `docs/PROJECT.md` are standing: ground truth scores, never drives; every number names the test that produced it.
+
 ## Simulator files (hard rule)
 
 - Never read, list, search, copy, launch or write about the simulator's install folder, its user
