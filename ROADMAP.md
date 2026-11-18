@@ -51,7 +51,7 @@ its own line when it merges. Agents never add items that a brief didn't list.
   kept. CLAUDE.md graphify section replaced by "Graphify: not set up yet (the director says when).
   Until then, read files directly." with no absolute path. Tests: CLAUDE.md has no `C:/` and no
   drive letter; reviewer diffs AGENTS.md line by line; forbidden-files check passes.
-- [ ] **R7 CI path rules for the real folders** (ci): `scripts/ci_paths.json` drops the
+- [x] **R7 CI path rules for the real folders** (ci): `scripts/ci_paths.json` drops the
   `frontend/`, `backend/`, `src/` rules and npm/maven `seed_paths` (keeps `.github/workflows/`);
   adds `sim/`, `eval/`, `tools/` to `app` and `app-windows`; `bridge/`, `perception/`,
   `scenarios/`, `viewer/` to `python`; `docs/` stays `["app"]`. `scripts/ci_changes.py` docstring

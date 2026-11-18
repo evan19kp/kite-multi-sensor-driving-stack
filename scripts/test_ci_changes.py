@@ -6,7 +6,16 @@ from pathlib import Path
 
 import ci_changes
 
-ROOT = Path(__file__).resolve().parents[1]
+
+def find_repo_root() -> Path:
+    here = Path(__file__).resolve().parent
+    for folder in (here, *here.parents):
+        if (folder / "AGENTS.md").is_file():
+            return folder
+    raise FileNotFoundError("AGENTS.md not found above " + str(here))
+
+
+ROOT = find_repo_root()
 WORKFLOW = ROOT / ".github" / "workflows" / "ci.yml"
 
 CFG = {
@@ -65,6 +74,41 @@ class ClassifyTest(unittest.TestCase):
             ci_changes.classify(["scripts/x.py"], ci_changes.load()),
             {"app": False, "app-windows": False, "python": True},
         )
+
+    def test_repo_config_cpp_folders_trigger_both_builds_only(self):
+        cfg = ci_changes.load()
+        for path in ["sim/gen.cpp", "eval/score.cpp", "tools/gen.py"]:
+            self.assertEqual(ci_changes.jobs_for(path, cfg), frozenset({"app", "app-windows"}), path)
+            self.assertEqual(ci_changes.classify([path], cfg), {"app": True, "app-windows": True, "python": False}, path)
+
+    def test_repo_config_python_folders_trigger_python_only(self):
+        cfg = ci_changes.load()
+        for path in ["bridge/x.py", "perception/x.py", "scenarios/x.py", "viewer/x.py"]:
+            self.assertEqual(ci_changes.jobs_for(path, cfg), frozenset({"python"}), path)
+            self.assertEqual(ci_changes.classify([path], cfg), {"app": False, "app-windows": False, "python": True}, path)
+
+    def test_repo_config_backslash_paths_match_new_folders(self):
+        cfg = ci_changes.load()
+        self.assertEqual(ci_changes.jobs_for("sim\\a.cpp", cfg), frozenset({"app", "app-windows"}))
+        self.assertEqual(ci_changes.jobs_for("viewer\\a.py", cfg), frozenset({"python"}))
+
+    def test_repo_config_docs_still_trigger_app_only(self):
+        cfg = ci_changes.load()
+        self.assertEqual(ci_changes.jobs_for("docs/diagram.png", cfg), frozenset({"app"}))
+
+    def test_repo_config_removed_folders_fall_back_to_every_job(self):
+        cfg = ci_changes.load()
+        everything = frozenset(cfg["jobs"])
+        for path in ["frontend/app.ts", "backend/Main.java", "src/a.ts"]:
+            self.assertEqual(ci_changes.jobs_for(path, cfg), everything, path)
+            self.assertTrue(all(ci_changes.classify([path], cfg).values()), path)
+
+    def test_repo_config_removed_seed_paths_no_longer_seed(self):
+        cfg = ci_changes.load()
+        for path in ["package-lock.json", "frontend/package-lock.json", "backend/pom.xml"]:
+            self.assertFalse(ci_changes.needs_seed([path], cfg), path)
+        self.assertTrue(ci_changes.needs_seed([".github/workflows/ci.yml"], cfg))
+        self.assertFalse(ci_changes.needs_seed(["sim/a.cpp"], cfg))
 
 
 @unittest.skipUnless(WORKFLOW.is_file(), "no ci.yml")
