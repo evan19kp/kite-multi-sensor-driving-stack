@@ -434,6 +434,14 @@ TEST(ConstantVelocityKalman, EverythingButInitializeThrowsBeforeInitialize) {
   EXPECT_NO_THROW(filter.predict(1.0));
 }
 
+TEST(ConstantVelocityKalman, InvalidArgumentsThrowInvalidArgumentBeforeInitialize) {
+  ConstantVelocityKalman filter{1.0, 1.0};
+  EXPECT_THROW(filter.predict(-1.0), std::invalid_argument);
+  EXPECT_THROW(filter.predict(kNan), std::invalid_argument);
+  EXPECT_THROW(filter.update({kNan, 0.0}), std::invalid_argument);
+  EXPECT_THROW(filter.innovation_mahalanobis2({0.0, kInf}), std::invalid_argument);
+}
+
 TEST(ConstantVelocityKalman, InitializeAgainRestartsTheEstimate) {
   // A second initialize with sigma = 2 and velocity_sigma = 0.5 must give state (-4, 6, 0, 0) and
   // P = diag(4, 4, 0.25, 0.25), as on a new filter.
