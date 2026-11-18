@@ -21,7 +21,7 @@ its own line when it merges. Agents never add items that a brief didn't list.
   bumped to their newest major tags. No self-hosted runner; `gitleaks` job name unchanged. Tests:
   PR CI shows `app` and `app-windows` green with the R2 tests in their logs; Python script tests
   pass.
-- [ ] **R4 Folder stubs and project overview** (docs): `bridge/`, `perception/`, `scenarios/`,
+- [x] **R4 Folder stubs and project overview** (docs): `bridge/`, `perception/`, `scenarios/`,
   `eval/` and `viewer/` READMEs saying what is planned there; `docs/PROJECT.md` (project
   paragraph, planned stages, folder map, standing principles). Only .md files. Tests:
   forbidden-files check passes; reviewer checks every stub says planned.
