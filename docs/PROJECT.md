@@ -23,7 +23,7 @@ All of these are planned; none is built yet.
 | `bridge/` | Python bridge to the simulator and the core | planned |
 | `perception/` | Python camera, lidar and radar processing | planned |
 | `scenarios/` | scripted test scenarios | planned |
-| `eval/` | scoring against simulator ground truth | planned |
+| `eval/` | scoring against simulator ground truth | exists |
 | `viewer/` | Rerun visualization of logs | planned |
 
 ## Standing principles

@@ -27,4 +27,5 @@ endif()
 
 add_subdirectory(core)
 add_subdirectory(sim)
+add_subdirectory(eval)
 add_subdirectory(tools)

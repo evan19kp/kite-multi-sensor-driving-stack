@@ -96,6 +96,11 @@ class ClassifyTest(unittest.TestCase):
         cfg = ci_changes.load()
         self.assertEqual(ci_changes.jobs_for("docs/diagram.png", cfg), frozenset({"app"}))
 
+    def test_repo_config_markdown_read_by_ctest_triggers_both_builds_only(self):
+        cfg = ci_changes.load()
+        for path in ["docs/BASELINE.md", "eval/README.md"]:
+            self.assertEqual(ci_changes.classify([path], cfg), {"app": True, "app-windows": True, "python": False}, path)
+
     def test_repo_config_removed_folders_fall_back_to_every_job(self):
         cfg = ci_changes.load()
         everything = frozenset(cfg["jobs"])

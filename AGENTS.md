@@ -218,6 +218,13 @@ Each item that introduces a lasting rule adds a "## Standing rules (R<n>)" secti
 - Trackers implement `kite::Tracker` and receive only measurements: never ground truth, actor ids
   or the scenario config.
 
+## Standing rules (R11)
+
+- Ground truth reaches only the scorer (`kite_eval`); it is never passed to a tracker.
+- The table in `docs/BASELINE.md` changes only by pasting `kite_baseline` output. The CTest test
+  `kite_baseline_doc_matches` enforces this.
+- The baseline is never tuned to score better.
+
 ## Simulator files (hard rule)
 
 - Never read, list, search, copy, launch or write about the simulator's install folder, its user

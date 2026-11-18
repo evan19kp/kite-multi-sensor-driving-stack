@@ -74,7 +74,7 @@ its own line when it merges. Agents never add items that a brief didn't list.
   `NearestNeighbourBaseline` (greedy nearest-neighbour within a gate, velocity by difference, ids
   never reused). Tests: new track, kept id and velocity, beyond gate, crossing case, empty input,
   no id reuse.
-- [ ] **R11 Scoring harness and the measured baseline** (feat, Opus builder; needs R8, R9, R10):
+- [x] **R11 Scoring harness and the measured baseline** (feat, Opus builder; needs R8, R9, R10):
   library `kite_eval` in `eval/` (`score`, Hungarian matching within a gate; matched, missed, false,
   position RMSE, identity switches, steps); CLIs `kite_score` and `kite_baseline`;
   `docs/BASELINE.md` with the command and its real output. Tests: hand-made scoring cases including
