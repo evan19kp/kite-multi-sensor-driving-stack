@@ -97,6 +97,20 @@ TEST(SolveAssignment, HugeCostsStillRankByTotal) {
   EXPECT_THAT(solve({2, 2, {1e307, 9e307, 9e307, 2e307}}, kInf), ElementsAre(Pair(0, 0), Pair(1, 1)));
 }
 
+TEST(SolveAssignment, OppositeSignCostsNearTheLargestDoubleStillGiveTheMostPairs) {
+  const CostMatrix cost{2, 2, {9e307, -9e307, 9e307, -1.1e308}};
+  EXPECT_EQ(solve(cost, kInf).size(), 2u);
+  EXPECT_EQ(solve(cost, kMax).size(), 2u);
+}
+
+TEST(SolveAssignment, TiedSolutionsGiveTheSameAnswerOnEveryCall) {
+  const CostMatrix cost{3, 3, {1, 1, 1, 1, 1, 1, 1, 1, 1}};
+  const auto first = solve(cost, kInf);
+  for (int call = 0; call < 5; ++call) {
+    EXPECT_EQ(solve(cost, kInf), first);
+  }
+}
+
 TEST(SolveAssignment, SmallGateWithHugeOutOfGateCosts) {
   EXPECT_THAT(solve({2, 2, {kMax, 5.0, 1.0, kMax}}, 10.0), ElementsAre(Pair(0, 1), Pair(1, 0)));
 }

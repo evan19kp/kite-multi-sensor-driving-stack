@@ -21,12 +21,13 @@ struct Assignment {
 // Pairs rows with distinct columns. A pair is admissible when its cost is finite and <= gate; only
 // admissible pairs are returned, ordered by row.
 //
-// The result has as many pairs as possible, then the least total cost among those. Costs may be
-// negative. Among equal-cost solutions the choice is deterministic but not specified.
+// The result has as many pairs as possible for any gate, including infinity and DBL_MAX. Among
+// those it has the least total cost while differences between costs stay finite. With costs of both
+// signs near DBL_MAX the total may not be the least. Costs may be negative. Among equal-cost
+// solutions the choice is deterministic but not specified.
 //
 // An infinite gate admits every finite cost. A negative gate is legal and admits only costs <= gate,
-// which are negative. Infinite costs are never admissible. Gates and costs as large as DBL_MAX are
-// admitted and ranked like any others.
+// which are negative. Infinite costs are never admissible.
 //
 // Throws std::invalid_argument for a NaN gate, a NaN cost, or values.size() != rows * columns.
 std::vector<Assignment> solve_assignment(const CostMatrix& cost, double gate);
