@@ -1,10 +1,15 @@
 {
-  "jobs": ["app", "python", "e2e"],
+  "jobs": ["app", "app-windows", "python"],
   "always_all": [".github/workflows/", "scripts/ci_changes.py", "scripts/ci_paths.json", "scripts/test_ci_changes.py"],
   "rules": [
-    {"prefix": "frontend/", "jobs": ["app", "e2e"]},
-    {"prefix": "backend/", "jobs": ["app", "e2e"]},
-    {"prefix": "src/", "jobs": ["app", "e2e"]},
+    {"prefix": "core/", "jobs": ["app", "app-windows"]},
+    {"prefix": "third_party/", "jobs": ["app", "app-windows"]},
+    {"prefix": "CMakeLists.txt", "jobs": ["app", "app-windows"]},
+    {"prefix": "CMakePresets.json", "jobs": ["app", "app-windows"]},
+    {"prefix": "cmake/", "jobs": ["app", "app-windows"]},
+    {"prefix": "frontend/", "jobs": ["app", "app-windows"]},
+    {"prefix": "backend/", "jobs": ["app", "app-windows"]},
+    {"prefix": "src/", "jobs": ["app", "app-windows"]},
     {"prefix": "scripts/", "jobs": ["python"]},
     {"prefix": "docs/", "jobs": ["app"]}
   ],
