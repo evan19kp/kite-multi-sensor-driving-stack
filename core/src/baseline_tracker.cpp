@@ -32,12 +32,15 @@ NearestNeighbourBaseline::NearestNeighbourBaseline(double gate) : gate_(gate) {
 
 std::vector<TrackState> NearestNeighbourBaseline::update(
     double t, const std::vector<Measurement>& measurements) {
+  if (!std::isfinite(t)) {
+    throw std::invalid_argument("update time must be finite");
+  }
   double dt = 0.0;
-  if (has_previous_) {
-    if (!(t > previous_t_)) {
+  if (previous_t_) {
+    if (!(t > *previous_t_)) {
       throw std::invalid_argument("update time must increase");
     }
-    dt = t - previous_t_;
+    dt = t - *previous_t_;
   }
 
   std::vector<Candidate> candidates;
@@ -64,6 +67,7 @@ std::vector<TrackState> NearestNeighbourBaseline::update(
 
   std::vector<TrackState> tracks;
   tracks.reserve(measurements.size());
+  int next_id = next_id_;
   for (std::size_t m = 0; m < measurements.size(); ++m) {
     const Measurement& z = measurements[m];
     TrackState track{t, z.ego_id, 0, z.position, {0.0, 0.0}};
@@ -72,16 +76,16 @@ std::vector<TrackState> NearestNeighbourBaseline::update(
       track.velocity = {(z.position.x - match[m]->position.x) / dt,
                         (z.position.y - match[m]->position.y) / dt};
     } else {
-      track.track_id = next_id_++;
+      track.track_id = next_id++;
     }
     tracks.push_back(track);
   }
   std::sort(tracks.begin(), tracks.end(),
             [](const TrackState& a, const TrackState& b) { return a.track_id < b.track_id; });
 
-  has_previous_ = true;
-  previous_t_ = t;
   previous_ = tracks;
+  previous_t_ = t;
+  next_id_ = next_id;
   return tracks;
 }
 

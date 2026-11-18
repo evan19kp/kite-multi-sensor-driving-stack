@@ -82,12 +82,9 @@ TEST(BaselineTracker, ZeroGateMatchesOnlyIdenticalPosition) {
   EXPECT_EQ(moved[0].track_id, 1);
 }
 
-// Track 0 is at (0, 0) and track 1 is at (2, 0). The measurements arrive as (1.2, 0), then (0.9, 0).
-// Pair distances in ascending order are 0.8 for (1.2, 0) and track 1, 0.9 for (0.9, 0) and
-// track 0, 1.1 for (0.9, 0) and track 1, and 1.2 for (1.2, 0) and track 0. Greedy takes the
-// closest pair first, so (1.2, 0) keeps id 1 and (0.9, 0) keeps id 0, although the measurement
-// order is the reverse of the track order.
-TEST(BaselineTracker, CrossingMeasurementsKeepIdOfClosestPreviousTrackGreedily) {
+// Tracks 0 and 1 start at (0, 0) and (2, 0). Measurements arrive in the reverse order: (1.2, 0)
+// keeps id 1 and (0.9, 0) keeps id 0.
+TEST(BaselineTracker, CrossingMeasurementsKeepIdOfClosestPreviousTrack) {
   auto tracker = make_tracker(5.0);
   tracker->update(0.0, {at(0.0, 0.0, 0.0), at(0.0, 2.0, 0.0)});
 
@@ -100,6 +97,36 @@ TEST(BaselineTracker, CrossingMeasurementsKeepIdOfClosestPreviousTrackGreedily) 
   EXPECT_EQ(tracks[1].track_id, 1);
   EXPECT_EQ(tracks[1].position, (Vec2{1.2, 0.0}));
   EXPECT_NEAR(tracks[1].velocity.x, -1.6, 1e-12);
+}
+
+TEST(BaselineTracker, ClosestPairWinsEvenWhenItsMeasurementComesLater) {
+  auto tracker = make_tracker(5.0);
+  tracker->update(0.0, {at(0.0, 0.0, 0.0)});
+
+  const auto tracks = tracker->update(1.0, {at(1.0, 1.0, 0.0), at(1.0, 0.5, 0.0)});
+
+  ASSERT_EQ(tracks.size(), 2u);
+  EXPECT_EQ(tracks[0].track_id, 0);
+  EXPECT_EQ(tracks[0].position, (Vec2{0.5, 0.0}));
+  EXPECT_EQ(tracks[0].velocity, (Vec2{0.5, 0.0}));
+  EXPECT_EQ(tracks[1].track_id, 1);
+  EXPECT_EQ(tracks[1].position, (Vec2{1.0, 0.0}));
+  EXPECT_EQ(tracks[1].velocity, (Vec2{0.0, 0.0}));
+}
+
+TEST(BaselineTracker, ClosestPairWinsEvenWhenItsTrackHasHigherId) {
+  auto tracker = make_tracker(5.0);
+  tracker->update(0.0, {at(0.0, 0.0, 0.0), at(0.0, 2.0, 0.0)});
+
+  const auto tracks = tracker->update(1.0, {at(1.0, 1.5, 0.0), at(1.0, -2.0, 0.0)});
+
+  ASSERT_EQ(tracks.size(), 2u);
+  EXPECT_EQ(tracks[0].track_id, 0);
+  EXPECT_EQ(tracks[0].position, (Vec2{-2.0, 0.0}));
+  EXPECT_EQ(tracks[0].velocity, (Vec2{-2.0, 0.0}));
+  EXPECT_EQ(tracks[1].track_id, 1);
+  EXPECT_EQ(tracks[1].position, (Vec2{1.5, 0.0}));
+  EXPECT_EQ(tracks[1].velocity, (Vec2{-0.5, 0.0}));
 }
 
 TEST(BaselineTracker, EqualDistanceToTwoTracksGoesToLowerTrackId) {
@@ -212,11 +239,49 @@ TEST(BaselineTracker, UpdateTimeThatDoesNotIncreaseThrowsAndLeavesStateUnchanged
   EXPECT_EQ(tracks[0].velocity, (Vec2{1.0, 0.0}));
 }
 
-TEST(BaselineTracker, InvalidGateThrows) {
-  EXPECT_THROW(NearestNeighbourBaseline(-0.1), std::invalid_argument);
-  EXPECT_THROW(NearestNeighbourBaseline(std::numeric_limits<double>::infinity()),
+TEST(BaselineTracker, EmptyFirstUpdateStillStartsTheClock) {
+  auto tracker = make_tracker(5.0);
+  tracker->update(1.0, {});
+
+  EXPECT_THROW(tracker->update(0.5, {at(0.5, 0.0, 0.0)}), std::invalid_argument);
+}
+
+TEST(BaselineTracker, NonFiniteUpdateTimeThrowsOnFirstCallAndTrackerStaysUsable) {
+  auto tracker = make_tracker(5.0);
+
+  EXPECT_THROW(tracker->update(std::numeric_limits<double>::quiet_NaN(), {at(0.0, 0.0, 0.0)}),
                std::invalid_argument);
-  EXPECT_THROW(NearestNeighbourBaseline(std::numeric_limits<double>::quiet_NaN()),
+  EXPECT_THROW(tracker->update(std::numeric_limits<double>::infinity(), {at(0.0, 0.0, 0.0)}),
+               std::invalid_argument);
+
+  const auto first = tracker->update(0.0, {at(0.0, 0.0, 0.0)});
+  const auto second = tracker->update(1.0, {at(1.0, 1.0, 0.0)});
+
+  ASSERT_EQ(first.size(), 1u);
+  EXPECT_EQ(first[0], (TrackState{0.0, 0, 0, {0.0, 0.0}, {0.0, 0.0}}));
+  ASSERT_EQ(second.size(), 1u);
+  EXPECT_EQ(second[0], (TrackState{1.0, 0, 0, {1.0, 0.0}, {1.0, 0.0}}));
+}
+
+TEST(BaselineTracker, NonFiniteUpdateTimeThrowsAfterFirstCallAndLeavesStateUnchanged) {
+  auto tracker = make_tracker(5.0);
+  tracker->update(0.0, {at(0.0, 0.0, 0.0)});
+
+  EXPECT_THROW(tracker->update(std::numeric_limits<double>::quiet_NaN(), {at(0.0, 9.0, 0.0)}),
+               std::invalid_argument);
+  EXPECT_THROW(tracker->update(std::numeric_limits<double>::infinity(), {at(0.0, 9.0, 0.0)}),
+               std::invalid_argument);
+
+  const auto tracks = tracker->update(1.0, {at(1.0, 1.0, 0.0)});
+  ASSERT_EQ(tracks.size(), 1u);
+  EXPECT_EQ(tracks[0], (TrackState{1.0, 0, 0, {1.0, 0.0}, {1.0, 0.0}}));
+}
+
+TEST(BaselineTracker, InvalidGateThrows) {
+  EXPECT_THROW(NearestNeighbourBaseline{-0.1}, std::invalid_argument);
+  EXPECT_THROW(NearestNeighbourBaseline{std::numeric_limits<double>::infinity()},
+               std::invalid_argument);
+  EXPECT_THROW(NearestNeighbourBaseline{std::numeric_limits<double>::quiet_NaN()},
                std::invalid_argument);
 }
 

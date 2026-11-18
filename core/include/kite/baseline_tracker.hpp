@@ -1,5 +1,6 @@
 #pragma once
 
+#include <optional>
 #include <vector>
 
 #include "kite/tracker.hpp"
@@ -16,7 +17,8 @@ namespace kite {
 // order, never reused); unmatched tracks are dropped. Output is sorted by track id.
 //
 // Throws std::invalid_argument for a negative or non-finite gate, and from update() when t is not
-// greater than the previous update's t.
+// finite or not greater than the previous update's t. A throwing update() leaves the state as it
+// was.
 class NearestNeighbourBaseline : public Tracker {
  public:
   explicit NearestNeighbourBaseline(double gate);
@@ -25,8 +27,7 @@ class NearestNeighbourBaseline : public Tracker {
 
  private:
   double gate_;
-  bool has_previous_ = false;
-  double previous_t_ = 0.0;
+  std::optional<double> previous_t_;
   int next_id_ = 0;
   std::vector<TrackState> previous_;
 };
