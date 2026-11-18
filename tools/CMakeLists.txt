@@ -128,8 +128,82 @@ if(KITE_BUILD_TESTS)
             -P ${CMAKE_CURRENT_SOURCE_DIR}/doc_contains.cmake)
   set_tests_properties(kite_baseline_kalman_doc_matches PROPERTIES FIXTURES_REQUIRED kite_kalman_table)
 
+  kite_exit_test(kite_baseline_association_without_tracker kite_baseline 2 "--association;joint")
+  kite_exit_test(kite_baseline_association_with_baseline_tracker kite_baseline 2
+    "--tracker;baseline;--association;joint")
+  kite_exit_test(kite_baseline_association_bad_value kite_baseline 2
+    "--tracker;kalman;--association;bogus")
+  kite_exit_test(kite_baseline_association_missing_value kite_baseline 2
+    "--tracker;kalman;--association")
+  kite_exit_test(kite_baseline_association_duplicate kite_baseline 2
+    "--tracker;kalman;--association;joint;--association;joint")
+  kite_exit_test(kite_baseline_association_before_tracker kite_baseline 0
+    "--association;joint_likelihood;--seeds;101-101;--tracker;kalman")
+
+  foreach(mode two_stage joint joint_likelihood)
+    set(expect_match "")
+    if(mode STREQUAL "two_stage")
+      set(expect_match
+        "-DEXPECT_MATCH=[|] mean [|] 1494[.]100 [|] 10[.]900 [|] 0[.]050 [|] 0[.]414 [|] 0[.]000 [|] 301[.]000 [|]")
+    endif()
+    add_test(NAME kite_baseline_association_${mode}_output
+      COMMAND ${CMAKE_COMMAND} -DEXE=$<TARGET_FILE:kite_baseline>
+              "-DARGS=--tracker;kalman;--association;${mode};--seeds;101-120"
+              ${expect_match}
+              -DOUT=${CMAKE_CURRENT_BINARY_DIR}/kalman_${mode}_tuning.md
+              -P ${CMAKE_CURRENT_SOURCE_DIR}/run_to_file.cmake)
+    set_tests_properties(kite_baseline_association_${mode}_output
+                         PROPERTIES FIXTURES_SETUP kite_baseline_association_${mode}_table)
+    add_test(NAME kite_baseline_association_${mode}_doc_matches
+      COMMAND ${CMAKE_COMMAND} -DTABLE=${CMAKE_CURRENT_BINARY_DIR}/kalman_${mode}_tuning.md
+              -DHEADING=${mode}:
+              -DDOC=${PROJECT_SOURCE_DIR}/docs/INVESTIGATION-ASSOCIATION.md
+              -P ${CMAKE_CURRENT_SOURCE_DIR}/doc_contains.cmake)
+    set_tests_properties(kite_baseline_association_${mode}_doc_matches
+                         PROPERTIES FIXTURES_REQUIRED kite_baseline_association_${mode}_table)
+
+    add_test(NAME kite_association_study_${mode}_summary_output
+      COMMAND ${CMAKE_COMMAND} -DEXE=$<TARGET_FILE:kite_association_study>
+              "-DARGS=--association;${mode};--summary"
+              "-DEXPECT_MATCH=^Association ${mode}, seeds 101-120:"
+              -DOUT=${CMAKE_CURRENT_BINARY_DIR}/association_study_${mode}_summary.md
+              -P ${CMAKE_CURRENT_SOURCE_DIR}/run_to_file.cmake)
+    set_tests_properties(kite_association_study_${mode}_summary_output
+                         PROPERTIES FIXTURES_SETUP kite_association_study_${mode}_summary)
+    add_test(NAME kite_association_study_${mode}_summary_doc_matches
+      COMMAND ${CMAKE_COMMAND}
+              -DTABLE=${CMAKE_CURRENT_BINARY_DIR}/association_study_${mode}_summary.md
+              -DDOC=${PROJECT_SOURCE_DIR}/docs/INVESTIGATION-ASSOCIATION.md
+              -P ${CMAKE_CURRENT_SOURCE_DIR}/doc_contains.cmake)
+    set_tests_properties(kite_association_study_${mode}_summary_doc_matches
+                         PROPERTIES FIXTURES_REQUIRED kite_association_study_${mode}_summary)
+  endforeach()
+
   kite_exit_test(kite_association_study_help kite_association_study 0 "--help")
   kite_exit_test(kite_association_study_unknown_flag kite_association_study 2 "--bogus")
+  kite_exit_test(kite_association_study_association_bad_value kite_association_study 2
+    "--association;bogus")
+  kite_exit_test(kite_association_study_association_missing_value kite_association_study 2
+    "--summary;--association")
+  kite_exit_test(kite_association_study_association_duplicate kite_association_study 2
+    "--association;joint;--association;two_stage")
+  kite_exit_test(kite_association_study_summary_duplicate kite_association_study 2
+    "--summary;--summary")
+  kite_exit_test(kite_association_study_help_with_another_flag kite_association_study 2
+    "--help;--summary")
+
+  add_test(NAME kite_association_study_joint_output
+    COMMAND ${CMAKE_COMMAND} -DEXE=$<TARGET_FILE:kite_association_study> "-DARGS=--association;joint"
+            -DOUT=${CMAKE_CURRENT_BINARY_DIR}/association_study_joint.md
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/run_to_file.cmake)
+  set_tests_properties(kite_association_study_joint_output
+                       PROPERTIES FIXTURES_SETUP kite_association_study_joint_tables)
+  add_test(NAME kite_association_study_joint_doc_matches
+    COMMAND ${CMAKE_COMMAND} -DTABLE=${CMAKE_CURRENT_BINARY_DIR}/association_study_joint.md
+            -DDOC=${PROJECT_SOURCE_DIR}/docs/INVESTIGATION-ASSOCIATION.md
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/doc_contains.cmake)
+  set_tests_properties(kite_association_study_joint_doc_matches
+                       PROPERTIES FIXTURES_REQUIRED kite_association_study_joint_tables)
 
   add_test(NAME kite_association_study_output
     COMMAND ${CMAKE_COMMAND} -DEXE=$<TARGET_FILE:kite_association_study>

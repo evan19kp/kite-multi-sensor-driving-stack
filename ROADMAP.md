@@ -134,7 +134,7 @@ default or parameter changes. Seeds 1-20 never appear in any output.
   labels; `docs/INVESTIGATION-ASSOCIATION.md` section "R21: why measurements get stolen" with
   doc-matches tests. Tests: observer on/off identical on seeds 101-120; default outputs unchanged;
   hand-made two-track steal with both scores' arithmetic in comments.
-- [ ] **R22 Compare association methods on the tuning seeds** (feat, Opus builder; needs R21):
+- [x] **R22 Compare association methods on the tuning seeds** (feat, Opus builder; needs R21):
   third mode `joint_likelihood` (cost d² + ln(det S / det R), derivation in the header; gate stays
   d² <= gate_chi2 in every mode); `kite_baseline --association two_stage|joint|joint_likelihood`
   (default `two_stage`, only with `--tracker kalman`); `docs/INVESTIGATION-ASSOCIATION.md` section

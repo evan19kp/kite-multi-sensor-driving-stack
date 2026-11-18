@@ -1,13 +1,17 @@
+#include <algorithm>
+#include <array>
 #include <charconv>
 #include <cstdint>
 #include <cstddef>
 #include <iostream>
 #include <memory>
 #include <optional>
+#include <set>
 #include <stdexcept>
 #include <string>
 #include <string_view>
 #include <system_error>
+#include <utility>
 #include <vector>
 
 #include "baseline_setup.hpp"
@@ -23,14 +27,17 @@ constexpr double kTrackerGateM = 5.0;
 constexpr int kDefaultSeeds = 20;
 
 constexpr const char* kUsage =
-    "usage: kite_baseline [--tracker baseline|kalman] [--seeds N | --seeds A-B]\n"
-    "  --tracker  baseline (default): NearestNeighbourBaseline with gate 5 m\n"
-    "             kalman: KalmanTracker with q 0.01 m^2/s^3, measurement sigma 1.0 m,\n"
-    "             initial velocity sigma 10 m/s, chi-square gate 9.21; a new track is\n"
-    "             confirmed by 3 hits in its first 5 steps or dropped once it cannot be,\n"
-    "             and a confirmed track is deleted after 5 consecutive misses\n"
-    "  --seeds    run seeds 1..N with N >= 1, or A..B with 1 <= A <= B (default 1..20)\n"
-    "  --help     print this text\n"
+    "usage: kite_baseline [--tracker baseline|kalman] [--association MODE]\n"
+    "                     [--seeds N | --seeds A-B]\n"
+    "  --tracker      baseline (default): NearestNeighbourBaseline with gate 5 m\n"
+    "                 kalman: KalmanTracker with q 0.01 m^2/s^3, measurement sigma 1.0 m,\n"
+    "                 initial velocity sigma 10 m/s, chi-square gate 9.21; a new track is\n"
+    "                 confirmed by 3 hits in its first 5 steps or dropped once it cannot be,\n"
+    "                 and a confirmed track is deleted after 5 consecutive misses\n"
+    "  --association  KalmanTracker association mode, only with --tracker kalman:\n"
+    "                 two_stage (default), joint or joint_likelihood\n"
+    "  --seeds        run seeds 1..N with N >= 1, or A..B with 1 <= A <= B (default 1..20)\n"
+    "  --help         print this text\n"
     "Fixed config for every seed: 5 vehicles, 30 s, dt 0.1 s, noise 1.0 m, pd 0.95,\n"
     "half-width 100 m. Scoring: match gate 3 m.\n"
     "Prints a Markdown table with one row per seed and a mean row.\n";
@@ -44,6 +51,7 @@ enum class TrackerKind { baseline, kalman };
 
 struct Options {
   TrackerKind tracker = TrackerKind::baseline;
+  std::optional<kite::AssociationMode> association;
   int first_seed = 1;
   int last_seed = kDefaultSeeds;
 };
@@ -81,45 +89,57 @@ void parse_tracker(std::string_view value, Options& options) {
   }
 }
 
+void parse_association(std::string_view value, Options& options) {
+  options.association = kite::baseline_setup::parse_association(value);
+  if (!options.association) {
+    throw UsageError("invalid value for --association: '" + std::string(value) + "'");
+  }
+}
+
+using FlagParser = void (*)(std::string_view, Options&);
+constexpr std::array<std::pair<std::string_view, FlagParser>, 3> kFlags = {{
+    {"--tracker", parse_tracker},
+    {"--association", parse_association},
+    {"--seeds", parse_seeds},
+}};
+
 Options parse_options(int argc, char** argv) {
   Options options;
-  bool seen_seeds = false;
-  bool seen_tracker = false;
+  std::set<std::string_view> seen;
   for (int i = 1; i < argc; i += 2) {
-    const std::string flag = argv[i];
-    bool* seen = flag == "--seeds" ? &seen_seeds : flag == "--tracker" ? &seen_tracker : nullptr;
-    if (seen == nullptr) {
-      throw UsageError("unknown argument: " + flag);
+    const std::string_view flag = argv[i];
+    const auto known = std::find_if(kFlags.begin(), kFlags.end(),
+                                    [flag](const auto& entry) { return entry.first == flag; });
+    if (known == kFlags.end()) {
+      throw UsageError("unknown argument: " + std::string(flag));
     }
-    if (*seen) {
-      throw UsageError("duplicate argument: " + flag);
+    if (!seen.insert(flag).second) {
+      throw UsageError("duplicate argument: " + std::string(flag));
     }
-    *seen = true;
     if (i + 1 == argc) {
-      throw UsageError("missing value for " + flag);
+      throw UsageError("missing value for " + std::string(flag));
     }
-    if (flag == "--seeds") {
-      parse_seeds(argv[i + 1], options);
-    } else {
-      parse_tracker(argv[i + 1], options);
-    }
+    known->second(argv[i + 1], options);
+  }
+  if (options.association && options.tracker != TrackerKind::kalman) {
+    throw UsageError("--association needs --tracker kalman");
   }
   return options;
 }
 
-std::unique_ptr<kite::Tracker> make_tracker(TrackerKind kind) {
-  if (kind == TrackerKind::kalman) {
-    return std::make_unique<kite::KalmanTracker>(
-        kite::baseline_setup::make_kalman_tracker(kite::AssociationMode::two_stage));
+std::unique_ptr<kite::Tracker> make_tracker(const Options& options) {
+  if (options.tracker == TrackerKind::kalman) {
+    return std::make_unique<kite::KalmanTracker>(kite::baseline_setup::make_kalman_tracker(
+        options.association.value_or(kite::AssociationMode::two_stage)));
   }
   return std::make_unique<kite::NearestNeighbourBaseline>(kTrackerGateM);
 }
 
-kite::ScoreResult run_seed(std::uint64_t seed, TrackerKind kind) {
+kite::ScoreResult run_seed(std::uint64_t seed, const Options& options) {
   const kite::GeneratedScenario scenario =
       kite::generate(kite::baseline_setup::scenario_config(seed));
 
-  const std::unique_ptr<kite::Tracker> tracker = make_tracker(kind);
+  const std::unique_ptr<kite::Tracker> tracker = make_tracker(options);
   std::vector<kite::GroundTruthState> truth;
   std::vector<kite::TrackState> tracks;
   for (const kite::ScenarioStep& step : scenario.steps) {
@@ -169,7 +189,7 @@ int main(int argc, char** argv) {
   double id_switches = 0.0;
   double steps = 0.0;
   for (std::int64_t seed = options.first_seed; seed <= options.last_seed; ++seed) {
-    const kite::ScoreResult result = run_seed(static_cast<std::uint64_t>(seed), options.tracker);
+    const kite::ScoreResult result = run_seed(static_cast<std::uint64_t>(seed), options);
     table += row(format_int(seed),
                  {format_int(result.matched), format_int(result.missed),
                   format_int(result.false_tracks), kite::format_fixed(result.rmse_m),

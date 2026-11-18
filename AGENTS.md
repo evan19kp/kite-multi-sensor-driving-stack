@@ -275,6 +275,13 @@ Each item that introduces a lasting rule adds a "## Standing rules (R<n>)" secti
 - Tables in `docs/INVESTIGATION-ASSOCIATION.md` change only by pasting the tool's output; a
   doc-matches CTest test enforces each one.
 
+## Standing rules (R22)
+
+- Every `KalmanTracker` association mode gates on d² <= gate_chi2 alone; a mode may change the
+  cost of a pair inside the gate, never which pairs are inside. The test
+  `KalmanTracker.EveryModeGatesOnTheSquaredDistanceAlone` covers every mode.
+- Every cost passed to `kite::solve_assignment` is finite and >= 0.
+
 ## Simulator files (hard rule)
 
 - Never read, list, search, copy, launch or write about the simulator's install folder, its user
