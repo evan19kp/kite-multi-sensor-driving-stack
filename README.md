@@ -43,4 +43,4 @@ This project is not affiliated with or endorsed by BeamNG GmbH.
 
 ## Licence
 
-No licence yet: all rights reserved until one is chosen.
+All rights reserved; see LICENSE.
