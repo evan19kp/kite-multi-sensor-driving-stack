@@ -15,6 +15,7 @@
 #include <vector>
 
 #include "baseline_setup.hpp"
+#include "format.hpp"
 #include "kite/baseline_tracker.hpp"
 #include "kite/generator.hpp"
 #include "kite/kalman_tracker.hpp"
@@ -22,6 +23,8 @@
 #include "kite/tracker.hpp"
 
 namespace {
+
+using kite::tool_format::format_int;
 
 constexpr double kTrackerGateM = 5.0;
 constexpr int kDefaultSeeds = 20;
@@ -148,12 +151,6 @@ kite::ScoreResult run_seed(std::uint64_t seed, const Options& options) {
     truth.insert(truth.end(), step.truth.begin(), step.truth.end());
   }
   return kite::score(truth, tracks, kite::baseline_setup::kMatchGateM);
-}
-
-std::string format_int(std::int64_t value) {
-  char buffer[32];
-  const auto result = std::to_chars(buffer, buffer + sizeof(buffer), value);
-  return std::string(buffer, result.ptr);
 }
 
 std::string row(const std::string& label, const std::vector<std::string>& cells) {

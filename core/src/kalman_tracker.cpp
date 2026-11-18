@@ -117,7 +117,9 @@ KalmanTracker::PassCosts KalmanTracker::pass_costs(const std::vector<Track>& tra
   }
   const double outside = 2.0 * gate + 1.0;
   if (!std::isfinite(outside)) {
-    throw std::domain_error("joint_likelihood: a cost inside the gate is not finite");
+    throw std::domain_error(
+        "joint_likelihood: the cost outside the gate (2 * the largest cost inside the gate + 1) is "
+        "not finite");
   }
   for (std::size_t k = 0; k < d2.size(); ++k) {
     if (!inside(k)) {

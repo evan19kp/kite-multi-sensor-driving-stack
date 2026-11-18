@@ -8,10 +8,13 @@
 #include <string_view>
 #include <system_error>
 
+#include "format.hpp"
 #include "kite/log.hpp"
 #include "kite/scoring.hpp"
 
 namespace {
+
+using kite::tool_format::format_int;
 
 constexpr const char* kUsage =
     "usage: kite_score --log <file> [--gate M]\n"
@@ -62,12 +65,6 @@ Arguments parse_arguments(int argc, char** argv) {
     throw UsageError("missing argument: --log");
   }
   return args;
-}
-
-std::string format_int(int value) {
-  char buffer[16];
-  const auto result = std::to_chars(buffer, buffer + sizeof(buffer), value);
-  return std::string(buffer, result.ptr);
 }
 
 }

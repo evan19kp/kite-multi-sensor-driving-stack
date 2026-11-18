@@ -10,12 +10,14 @@
 
 #include <gtest/gtest.h>
 
+#include "test_helpers.hpp"
+
 namespace {
 
 using kite::Pid;
+using kite::test_helpers::kInf;
 
 constexpr double kNan = std::numeric_limits<double>::quiet_NaN();
-constexpr double kInf = std::numeric_limits<double>::infinity();
 constexpr kite::PidLimits kWide{-100.0, 100.0};
 
 void construct(double kp, double ki, double kd, double min, double max, double tf) {

@@ -10,19 +10,18 @@
 
 #include <gtest/gtest.h>
 
+#include "test_helpers.hpp"
+
 namespace {
 
 using kite::Assignment;
 using kite::CostMatrix;
+using kite::test_helpers::kInf;
+using kite::test_helpers::uniform01;
 
-constexpr double kInf = std::numeric_limits<double>::infinity();
 constexpr double kTolerance = 1e-9;
 constexpr std::uint64_t kBaseSeed = 20260000;
 constexpr int kCases = 5000;
-
-double uniform01(std::mt19937_64& rng) {
-  return static_cast<double>(rng() >> 11) * (1.0 / 9007199254740992.0);
-}
 
 struct Best {
   std::size_t pairs = 0;

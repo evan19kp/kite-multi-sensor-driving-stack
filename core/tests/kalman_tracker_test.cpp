@@ -1,3 +1,4 @@
+#include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
 #include <array>
@@ -13,12 +14,14 @@
 #include "kite/baseline_tracker.hpp"
 #include "kite/generator.hpp"
 #include "kite/kalman_tracker.hpp"
+#include "test_helpers.hpp"
 
 namespace kite {
 namespace {
 
+using test_helpers::kInf;
+
 constexpr double kNan = std::numeric_limits<double>::quiet_NaN();
-constexpr double kInf = std::numeric_limits<double>::infinity();
 
 KalmanTracker make_tracker() { return KalmanTracker{0.01, 1.0, 2.0}; }
 
@@ -641,6 +644,32 @@ TEST(KalmanTracker, JointLikelihoodThrowsWhenACostInsideTheGateIsNotFinite) {
 
   EXPECT_THROW(likelihood.update(0.1, {at(0.1, 0.0, 0.0)}), std::domain_error);
   EXPECT_NO_THROW(joint.update(0.1, {at(0.1, 0.0, 0.0)}));
+}
+
+TEST(KalmanTracker, JointLikelihoodErrorNamesTheOutsideCostWhenOnlyItOverflows) {
+  constexpr double gate = 1e308;
+  constexpr double far_x = 2.4e154;
+  ConstantVelocityKalman filter{0.0, 1.0};
+  filter.initialize({0.0, 0.0}, 2.0);
+  filter.predict(1.0);
+  const double d2 = filter.innovation_mahalanobis2({far_x, 0.0});
+  ASSERT_TRUE(std::isfinite(d2));
+  ASSERT_LE(d2, gate);
+  ASSERT_TRUE(std::isinf(2.0 * d2 + 1.0));
+
+  KalmanTracker likelihood{0.0, 1.0, 2.0, gate, 2, 2, 5, AssociationMode::joint_likelihood};
+  KalmanTracker joint{0.0, 1.0, 2.0, gate, 2, 2, 5, AssociationMode::joint};
+  likelihood.update(0.0, {at(0.0, 0.0, 0.0)});
+  joint.update(0.0, {at(0.0, 0.0, 0.0)});
+
+  EXPECT_NO_THROW(joint.update(1.0, {at(1.0, far_x, 0.0)}));
+  try {
+    likelihood.update(1.0, {at(1.0, far_x, 0.0)});
+    ADD_FAILURE() << "expected std::domain_error";
+  } catch (const std::domain_error& error) {
+    EXPECT_THAT(error.what(), testing::HasSubstr("cost outside the gate"));
+    EXPECT_THAT(error.what(), testing::HasSubstr("2 * the largest cost inside the gate + 1"));
+  }
 }
 
 TEST(KalmanTracker, StepRecordDescribesEveryTrackAndEveryBirth) {

@@ -289,6 +289,12 @@ Each item that introduces a lasting rule adds a "## Standing rules (R<n>)" secti
 - Monte Carlo studies draw seeds from 100001 up and state the exact ranges in their output; seeds
   1-20 stay the reporting set.
 
+## Standing rules (R26)
+
+- Test helpers shared by several core test files live in `core/tests/test_helpers.hpp`; tools
+  share formatting helpers from `tools/format.hpp`. Add to those headers instead of copying a
+  helper into a second file.
+
 ## Simulator files (hard rule)
 
 - Never read, list, search, copy, launch or write about the simulator's install folder, its user

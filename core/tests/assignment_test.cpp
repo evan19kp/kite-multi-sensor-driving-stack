@@ -9,6 +9,8 @@
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
+#include "test_helpers.hpp"
+
 namespace {
 
 using kite::Assignment;
@@ -16,8 +18,8 @@ using kite::CostMatrix;
 using testing::ElementsAre;
 using testing::IsEmpty;
 using testing::Pair;
+using kite::test_helpers::kInf;
 
-constexpr double kInf = std::numeric_limits<double>::infinity();
 constexpr double kNaN = std::numeric_limits<double>::quiet_NaN();
 constexpr double kMax = std::numeric_limits<double>::max();
 
