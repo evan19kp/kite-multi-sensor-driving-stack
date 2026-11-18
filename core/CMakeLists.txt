@@ -9,7 +9,7 @@ if(KITE_BUILD_TESTS)
   add_executable(kite_core_tests tests/angles_test.cpp tests/assignment_bruteforce_test.cpp
                  tests/assignment_test.cpp tests/baseline_tracker_test.cpp tests/drop_study_test.cpp
                  tests/kalman_test.cpp tests/kalman_tracker_test.cpp tests/log_test.cpp
-                 tests/matrix_test.cpp tests/pid_test.cpp)
+                 tests/matrix_test.cpp tests/pid_test.cpp tests/steal_class_test.cpp)
   # kite_sim supplies generator data to the NEES and step-record tests; kite_core never links it.
   target_link_libraries(kite_core_tests PRIVATE kite_core kite_sim GTest::gmock_main)
   target_include_directories(kite_core_tests PRIVATE ${PROJECT_SOURCE_DIR}/tools)

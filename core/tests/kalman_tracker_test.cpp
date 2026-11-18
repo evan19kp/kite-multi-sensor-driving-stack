@@ -543,6 +543,94 @@ TEST(KalmanTracker, EveryModeGatesOnTheSquaredDistanceAlone) {
   }
 }
 
+// Tracks at (0, 0) and (14.5, 0), then one measurement at (6.8, 0); both tracks have S = 6 I, so
+// ln(det S / det R) = 3.5835.
+// Track 0: d^2 = 6.8^2 / 6 = 7.7067, inside the 9.21 gate, and costs 7.7067 + 3.5835 = 11.2902.
+// Track 1: d^2 = 7.7^2 / 6 = 9.8817, outside the gate, but below track 0's cost. A mode that let
+// the raw d^2 compete with the likelihood costs would give the measurement to track 1.
+TEST(KalmanTracker, AnOutsideGatePairWithTheLowerLikelihoodCostNeverBeatsAPairInsideTheGate) {
+  for (const AssociationMode mode : {AssociationMode::two_stage, AssociationMode::joint,
+                                     AssociationMode::joint_likelihood}) {
+    KalmanTracker tracker = steal_tracker(mode);
+    tracker.update(0.0, {at(0.0, 0.0, 0.0), at(0.0, 14.5, 0.0)});
+
+    const auto tracks = tracker.update(1.0, {at(1.0, 6.8, 0.0)});
+
+    ASSERT_EQ(tracks.size(), 1u) << static_cast<int>(mode);
+    EXPECT_EQ(tracks[0].track_id, 0) << static_cast<int>(mode);
+    EXPECT_NEAR(tracks[0].position.x, 6.8 * 5.0 / 6.0, 1e-12) << static_cast<int>(mode);
+  }
+}
+
+// A track born at (0, 0) and predicted one second ahead has S = 6 I with these parameters, so a
+// measurement at (7, 0) has d^2 = 49 / 6. With confirm_hits 2 in 2 steps, the track is confirmed
+// (and output as id 0) only if it takes the measurement.
+bool track_takes_the_measurement(AssociationMode mode, double gate_chi2) {
+  KalmanTracker tracker{0.0, 1.0, 2.0, gate_chi2, 2, 2, 5, mode};
+  tracker.update(0.0, {at(0.0, 0.0, 0.0)});
+  const auto tracks = tracker.update(1.0, {at(1.0, 7.0, 0.0)});
+  return tracks.size() == 1 && tracks[0].track_id == 0;
+}
+
+// The gate is set bit for bit to the d^2 the filter reports, and to the next double below it.
+TEST(KalmanTracker, APairExactlyOnTheGateIsMatchableAndOneJustOutsideIsNot) {
+  ConstantVelocityKalman filter{0.0, 1.0};
+  filter.initialize({0.0, 0.0}, 2.0);
+  filter.predict(1.0);
+  const double d2 = filter.innovation_mahalanobis2({7.0, 0.0});
+  ASSERT_GT(d2, 0.0);
+  ASSERT_LT(d2, 9.21);
+  const double just_below = std::nextafter(d2, 0.0);
+
+  for (const AssociationMode mode : {AssociationMode::two_stage, AssociationMode::joint,
+                                     AssociationMode::joint_likelihood}) {
+    EXPECT_TRUE(track_takes_the_measurement(mode, d2)) << static_cast<int>(mode);
+    EXPECT_FALSE(track_takes_the_measurement(mode, just_below)) << static_cast<int>(mode);
+  }
+}
+
+void expect_same_record(const StepRecord& actual, const StepRecord& expected) {
+  EXPECT_EQ(actual.started_track, expected.started_track);
+  ASSERT_EQ(actual.tracks.size(), expected.tracks.size());
+  for (std::size_t i = 0; i < actual.tracks.size(); ++i) {
+    const TrackRecord& a = actual.tracks[i];
+    const TrackRecord& e = expected.tracks[i];
+    EXPECT_EQ(a.track_id, e.track_id);
+    EXPECT_EQ(a.stage, e.stage);
+    EXPECT_EQ(a.hits, e.hits);
+    EXPECT_EQ(a.misses, e.misses);
+    EXPECT_EQ(a.predicted, e.predicted);
+    EXPECT_EQ(a.innovation_covariance.values, e.innovation_covariance.values);
+    EXPECT_EQ(a.measurement, e.measurement);
+  }
+}
+
+// The 1e-100 sigma makes the last update throw std::domain_error after the tracker has built that
+// step's record: track 0 predicts onto (0, 0), where the measurement sits, inside its gate with an
+// infinite cost.
+TEST(KalmanTracker, AThrowingUpdateLeavesThePreviousStepRecordUnchanged) {
+  KalmanTracker tracker{0.0, 1e-100, 10.0, 9.21, 3, 5, 5, AssociationMode::joint_likelihood};
+  tracker.record_steps(true);
+  tracker.update(0.0, {at(0.0, 0.0, 0.0)});
+  tracker.update(0.1, {at(0.1, 1000.0, 0.0)});
+  ASSERT_TRUE(tracker.step_record().has_value());
+  const StepRecord before = *tracker.step_record();
+  ASSERT_EQ(before.tracks.size(), 1u);
+
+  EXPECT_THROW(tracker.update(0.1, {at(0.1, 0.0, 0.0)}), std::invalid_argument);
+  ASSERT_TRUE(tracker.step_record().has_value());
+  expect_same_record(*tracker.step_record(), before);
+  EXPECT_THROW(tracker.update(kNan, {at(0.2, 0.0, 0.0)}), std::invalid_argument);
+  ASSERT_TRUE(tracker.step_record().has_value());
+  expect_same_record(*tracker.step_record(), before);
+  EXPECT_THROW(tracker.update(0.2, {at(0.2, kNan, 0.0)}), std::invalid_argument);
+  ASSERT_TRUE(tracker.step_record().has_value());
+  expect_same_record(*tracker.step_record(), before);
+  EXPECT_THROW(tracker.update(0.2, {at(0.2, 0.0, 0.0)}), std::domain_error);
+  ASSERT_TRUE(tracker.step_record().has_value());
+  expect_same_record(*tracker.step_record(), before);
+}
+
 // measurement_sigma 1e-100 gives R = 1e-200 I, and det R = 1e-400 underflows to 0. After 0.1 s a
 // new track's S is about I (initial velocity sigma 10 m/s), so det S / det R is infinite.
 TEST(KalmanTracker, JointLikelihoodThrowsWhenACostInsideTheGateIsNotFinite) {
