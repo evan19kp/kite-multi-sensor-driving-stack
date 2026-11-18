@@ -162,7 +162,7 @@ change; every existing test passes unchanged.
   `docs/INVESTIGATION-ASSOCIATION.md`; the R21 sentence about the 314 ambiguous measurements
   reworded (prose only, no table or number change). Tests: every doc-matches test passes
   unchanged; forbidden-files check passes; reviewer checks each new sentence against the code.
-- [ ] **R25 Missing tests the reviewers flagged** (test, Sonnet): unit tests only, no production
+- [x] **R25 Missing tests the reviewers flagged** (test, Sonnet): unit tests only, no production
   change: `KalmanTracker` gate boundary at `gate_chi2`; a `joint_likelihood`-only gate case where
   the outside-gate pair has the lower cost; a throwing `update()` leaves the previous step record
   unchanged; R21 steal classification (nearer / H1 / other) on hand-made records; R23 first
