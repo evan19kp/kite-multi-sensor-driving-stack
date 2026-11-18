@@ -242,6 +242,13 @@ Each item that introduces a lasting rule adds a "## Standing rules (R<n>)" secti
 - `kite_core` builds with `-ffp-contract=off`, like `kite_sim`, so its floating-point results do not
   depend on the compiler's fused multiply-add choices.
 
+## Standing rules (R14)
+
+- Filters receive measurements only; only tests and the scorer compare filter output against
+  ground truth.
+- Fixed-size matrix code lives in `core/include/kite/matrix.hpp`; no item adds a second matrix
+  library.
+
 ## Simulator files (hard rule)
 
 - Never read, list, search, copy, launch or write about the simulator's install folder, its user
