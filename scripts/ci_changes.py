@@ -8,11 +8,11 @@ checks). An empty output (this script crashed) is not 'false', so every job runs
 
 The mapping lives in scripts/ci_paths.json:
   {
-    "jobs": ["app", "e2e"],                              every gated job name in ci.yml
+    "jobs": ["app", "app-windows", "python"],            every gated job name in ci.yml
     "always_all": [".github/workflows/", "scripts/ci_changes.py", "scripts/ci_paths.json"],
-    "rules": [{"prefix": "src/", "jobs": ["app", "e2e"]}, ...],   first matching prefix wins
+    "rules": [{"prefix": "core/", "jobs": ["app", "app-windows"]}, ...],   first matching prefix wins
     "md_read_by_tests": {"DESIGN.md": ["app"]},          Markdown files that tests read
-    "seed_paths": ["package-lock.json", ".github/workflows/"]   inputs of the dependency caches
+    "seed_paths": [".github/workflows/"]                 inputs of the dependency caches
   }
 Rules, in order: always_all → every job; md_read_by_tests → its jobs; any other *.md → nothing; the first
 rule whose prefix matches → its jobs; an unknown path → every job, so nothing slips through. No files at all

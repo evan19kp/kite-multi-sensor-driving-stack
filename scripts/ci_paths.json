@@ -7,12 +7,16 @@
     {"prefix": "CMakeLists.txt", "jobs": ["app", "app-windows"]},
     {"prefix": "CMakePresets.json", "jobs": ["app", "app-windows"]},
     {"prefix": "cmake/", "jobs": ["app", "app-windows"]},
-    {"prefix": "frontend/", "jobs": ["app", "app-windows"]},
-    {"prefix": "backend/", "jobs": ["app", "app-windows"]},
-    {"prefix": "src/", "jobs": ["app", "app-windows"]},
+    {"prefix": "sim/", "jobs": ["app", "app-windows"]},
+    {"prefix": "eval/", "jobs": ["app", "app-windows"]},
+    {"prefix": "tools/", "jobs": ["app", "app-windows"]},
+    {"prefix": "bridge/", "jobs": ["python"]},
+    {"prefix": "perception/", "jobs": ["python"]},
+    {"prefix": "scenarios/", "jobs": ["python"]},
+    {"prefix": "viewer/", "jobs": ["python"]},
     {"prefix": "scripts/", "jobs": ["python"]},
     {"prefix": "docs/", "jobs": ["app"]}
   ],
   "md_read_by_tests": {},
-  "seed_paths": ["package-lock.json", "frontend/package-lock.json", "backend/pom.xml", ".github/workflows/"]
+  "seed_paths": [".github/workflows/"]
 }
