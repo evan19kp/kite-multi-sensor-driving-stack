@@ -5,11 +5,15 @@ override any earlier handoff notes. A sprint brief overrides this file for that 
 
 ## Project
 
-Driving Stack: FILL: one paragraph on what it is, who uses it, and what is out of scope.
+Driving Stack: a modular autonomous-driving software stack (perception, tracking, prediction,
+planning, control), developed and tested in the BeamNG.tech simulator. It is an independent,
+non-commercial student project. Out of scope: real vehicles, real-world data and commercial use.
 
-Stack: FILL (folders and what lives in each).
+Stack: `core/` (C++17 library and tests), `third_party/` (vendored GoogleTest, never edited by
+hand), `bridge/`, `perception/`, `scenarios/`, `eval/`, `viewer/`, `scripts/` (repo tooling),
+`docs/`.
 
-Personal use / private repo unless PRODUCT.md says otherwise.
+Public repository: everything committed, including PR text, is visible to anyone.
 
 ## Hardware & local environment
 
@@ -17,9 +21,9 @@ Single developer machine; all agents run here.
 
 | Component | Spec |
 |---|---|
-| OS / shell | FILL (Windows 11, PowerShell; Git Bash available) |
-| CPU / RAM / GPU | FILL |
-| Languages | FILL (versions) |
+| OS / shell | Windows 11 Home, PowerShell, Git Bash |
+| CPU / RAM / GPU | Intel Core i7-13700K / RAM not recorded / NVIDIA RTX 4070 SUPER 12 GB |
+| Languages | C++17 (MinGW g++ 13.2 locally, MSVC and g++ in CI), CMake 4.4.4 (minimum 3.20), Ninja 1.13.2, Python 3.13 locally (3.12 in CI) |
 
 - Paths: use forward slashes or Path APIs in code; scripts must work from PowerShell and Git Bash.
 
@@ -35,8 +39,19 @@ Single developer machine; all agents run here.
 The repo root is the directory containing `AGENTS.md`. Code and tests find the root by walking up
 to `AGENTS.md`, never by counting `../`.
 
-- FILL: the exact install, lint, test and build commands per area.
+- C++ with the `dev` preset, run from the repo root against a worktree (the build stays in
+  `.worktrees/<item>/build/dev`):
+  - `cmake -S .worktrees/<item> --preset dev`
+  - `cmake --build .worktrees/<item>/build/dev`
+  - `ctest --test-dir .worktrees/<item>/build/dev --output-on-failure`
+- C++ without the preset (same steps as the README's "Without the preset" block):
+  - `cmake -S .worktrees/<item> -B .worktrees/<item>/build/dev -G Ninja -DCMAKE_BUILD_TYPE=Debug`
+  - `cmake --build .worktrees/<item>/build/dev`
+  - `ctest --test-dir .worktrees/<item>/build/dev --output-on-failure`
 - Python script tests (from repo root; stdlib only): `python -m unittest discover -s scripts -v`.
+  Against a worktree: `python -m unittest discover -s .worktrees/<item>/scripts -v`.
+- Forbidden-files check: `python scripts/check_forbidden_files.py`. Against a worktree:
+  `python .worktrees/<item>/scripts/check_forbidden_files.py`.
 
 ## Checking CI
 
@@ -47,6 +62,11 @@ The token cannot read check results, so never use `gh pr checks`. Use workflow r
 3. `gh run view <run-id> --log-failed` to see the failures.
 4. A known flaky test may be rerun once: `gh run rerun <run-id> --failed`, both runs logged. A second
    failure is real. Never cancel runs.
+5. **Merging:** `gh pr ready <n>` starts a new CI run. After marking ready: wait about 20 s,
+   `gh run list --branch <branch> --limit 3`, then `gh run watch <run-id> --exit-status` on that new
+   run; merge only after it is green. If `gh pr merge` is refused with "base branch policy prohibits
+   the merge", re-check that run and the branch's freshness (update from main if needed) once; a
+   second refusal is NEEDS HUMAN with the exact message.
 
 ## Protocol (per item)
 
@@ -64,6 +84,11 @@ The token cannot read check results, so never use `gh pr checks`. Use workflow r
 8. Copy evidence from the worktree into the main checkout's `scratch/<item>/` (file by file).
    Merge: `gh pr merge --squash --delete-branch`, then `python scripts/stop_all.py` in the worktree,
    `python scripts/worktree.py remove <item-id>`, `git checkout main`, `git pull`.
+9. **Repo scripts:** run them by path **relative to the repo root**, never by absolute path:
+   `python scripts/<x>.py` for the main checkout's copy, `python .worktrees/<item>/scripts/<x>.py`
+   for a worktree's copy. Absolute paths are denied.
+10. **PR bodies:** always `gh pr create --body-file <file in the worktree>` (inline bodies with `#`
+    lines are refused). The body file is not committed.
 
 ## Working rules
 
@@ -72,7 +97,7 @@ The token cannot read check results, so never use `gh pr checks`. Use workflow r
 - Reviewers use the strongest allowed model; builders a mid-tier model unless the item says otherwise.
 - PR bodies have an "Evidence" section with real command output.
 - Endpoint changes are verified with real HTTP requests against a running server in a test.
-- Never edit `.claude/`, `.gitattributes`, or human-owned scripts listed here: FILL.
+- Never edit `.claude/`, `.gitattributes`, or human-owned scripts listed here: `scripts/check_forbidden_files.py`, `scripts/forbidden_files.json`, `third_party/` (only its vendoring script changes it).
 - Scratch work goes only in `scratch/<item>/` (gitignored). During a sprint a guard blocks edits and
   test runs in the main checkout except in `.run/` and `scratch/` (the hook's `--allow scratch`); if
   the project's scratch folder has another name, change both here and in the hook entry.
@@ -133,9 +158,8 @@ item. Never loop.
 ## CI cost rules
 
 - Builders open draft PRs and push once per build round; never push work in progress to see CI.
-- e2e runs only on ready PRs. Pushes to main run only the light checks.
-- Heavy jobs use the `HEAVY_RUNNER` repository variable (self-hosted), with the fork guard in
-  `runs-on`. Light jobs stay on GitHub-hosted runners.
+- Pushes to main run only the light checks.
+- No self-hosted runner (public repo); `HEAVY_RUNNER` stays unset, so heavy jobs run on GitHub-hosted runners.
 - `scripts/ci_paths.json` maps changed paths to jobs; update it when you add a top-level folder.
 
 ## Standing rules
@@ -163,6 +187,11 @@ Each item that introduces a lasting rule adds a "## Standing rules (R<n>)" secti
 
 - Planned folders say "planned" in their README until code lands there.
 - The principles in `docs/PROJECT.md` are standing: ground truth scores, never drives; every number names the test that produced it.
+
+## Standing rules (R5)
+
+- The merging, repo-script and PR-body rules under "Checking CI" and "Protocol (per item)" are standing.
+- This repository is public (see Project): committed files, PR titles, bodies and comments never contain secrets or the simulator's install paths, drive letters or environment variable names.
 
 ## Simulator files (hard rule)
 

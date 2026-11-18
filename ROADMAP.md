@@ -25,7 +25,7 @@ its own line when it merges. Agents never add items that a brief didn't list.
   `eval/` and `viewer/` READMEs saying what is planned there; `docs/PROJECT.md` (project
   paragraph, planned stages, folder map, standing principles). Only .md files. Tests:
   forbidden-files check passes; reviewer checks every stub says planned.
-- [ ] **R5 AGENTS.md filled in and protocol fixes** (docs): project, stack, public-repo line,
+- [x] **R5 AGENTS.md filled in and protocol fixes** (docs): project, stack, public-repo line,
   machine table, check commands, human-owned files, CI cost rules and the three new protocol rules
   (merging after `gh pr ready`, repo scripts by relative path, PR bodies with `--body-file`). Only
   AGENTS.md, ROADMAP.md and `docs/BUILD-LOG.md`. Tests: no `FILL` left; reviewer compares old and
