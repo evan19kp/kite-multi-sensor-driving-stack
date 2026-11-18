@@ -347,8 +347,8 @@ void filter_generated_scenario(const kite::GeneratedScenario& scenario,
 // Bit-exact pins, checked on every CI platform (Linux g++ and MSVC). The generator uses only
 // IEEE-exact operations (see kite/generator.hpp), the filter only +, -, * and /, and the NEES adds
 // one sqrt per Cholesky pivot. Each is correctly rounded and their order is fixed, so with
-// floating-point contraction off (kite_core and this test target) the bits cannot differ between
-// platforms. The values were printed with %a by a MinGW g++ 13.2 build.
+// floating-point contraction off in kite_core and in this test target the bits cannot differ
+// between platforms. The values were printed with %a by a MinGW g++ 13.2 build.
 TEST(ConstantVelocityKalman, GeneratedRunMatchesPinnedBits) {
   const kite::GeneratedScenario scenario = generated_scenario(20261500);
   ConstantVelocityKalman filter{kGeneratedQ, kGeneratedSigma};
