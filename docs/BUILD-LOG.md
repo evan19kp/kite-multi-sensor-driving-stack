@@ -9,3 +9,4 @@ This file records, per module or item, who built it (agent role), with which mod
 | R3 | `.github/workflows/ci.yml`, `scripts/ci_paths.json`, `scripts/test_ci_changes.py`, `AGENTS.md`, `ROADMAP.md`, `docs/BUILD-LOG.md` | builder agent | Sonnet | this PR | 2026-11-18 |
 | R4 | `bridge/README.md`, `perception/README.md`, `scenarios/README.md`, `eval/README.md`, `viewer/README.md`, `docs/PROJECT.md`, `AGENTS.md`, `ROADMAP.md`, `docs/BUILD-LOG.md` | builder agent | Sonnet | this PR | 2026-11-18 |
 | R5 | `AGENTS.md`, `ROADMAP.md`, `docs/BUILD-LOG.md` | builder agent | Sonnet | this PR | 2026-11-18 |
+| R6 | `AGENTS.md`, `CLAUDE.md`, `ROADMAP.md`, `docs/BUILD-LOG.md` | builder agent | Sonnet | this PR | 2026-11-18 |
