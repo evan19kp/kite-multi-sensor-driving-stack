@@ -291,9 +291,7 @@ Each item that introduces a lasting rule adds a "## Standing rules (R<n>)" secti
 
 ## Standing rules (R26)
 
-- Test helpers shared by several core test files live in `core/tests/test_helpers.hpp`; tools
-  share formatting helpers from `tools/format.hpp`. Add to those headers instead of copying a
-  helper into a second file.
+- Test helpers shared by several core test files live in `core/tests/test_helpers.hpp`. A helper shared by several tools lives in one header in `tools/` (`tools/format.hpp` for `format_int`, `tools/study_common.hpp` for the study tools' table helpers). Add to the matching header instead of copying a helper into a second file.
 
 ## Simulator files (hard rule)
 
