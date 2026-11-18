@@ -155,7 +155,7 @@ default or parameter changes. Seeds 1-20 never appear in any output.
 Safe cleanup sprint: docs, missing tests and duplicate helpers. No behaviour or printed-output
 change; every existing test passes unchanged.
 
-- [ ] **R24 Docs refresh** (docs, Sonnet): README.md line 3 and `docs/PROJECT.md` line 3 status
+- [x] **R24 Docs refresh** (docs, Sonnet): README.md line 3 and `docs/PROJECT.md` line 3 status
   line updated to the Phase 0A status (nothing else in README.md); `eval/README.md` describes
   `kite_baseline`'s `--tracker`, `--seeds` and `--association` options from its usage text and adds
   `tools/kite_association_study` and `tools/kite_drop_study` with a pointer to
