@@ -149,6 +149,18 @@ TEST(ConstantVelocityKalman, InnovationMahalanobisDistance) {
   EXPECT_EQ(filter.innovation_mahalanobis2({1.0, 1.0}), 0.0);
 }
 
+TEST(ConstantVelocityKalman, InnovationCovarianceIsPositionCovariancePlusR) {
+  ConstantVelocityKalman filter{0.0, 1.0};
+  filter.initialize({0.0, 0.0}, 2.0);
+  const Matrix<2, 2> at_start = filter.innovation_covariance();
+  filter.predict(1.0);
+  const Matrix<2, 2> predicted = filter.innovation_covariance();
+
+  EXPECT_EQ(at_start.values, (std::array<double, 4>{2.0, 0.0, 0.0, 2.0}));
+  EXPECT_EQ(predicted.values, (std::array<double, 4>{6.0, 0.0, 0.0, 6.0}));
+  EXPECT_EQ(filter.innovation_mahalanobis2({3.0, 0.0}), 1.5);
+}
+
 // Runs 1,000 random steps (each a predict with dt in [0, 2) s or an update with a position in
 // [-100, 100) m, with equal odds) and checks after every step that P is symmetric and positive
 // definite.
@@ -428,6 +440,7 @@ TEST(ConstantVelocityKalman, EverythingButInitializeThrowsBeforeInitialize) {
   EXPECT_THROW(filter.predict(1.0), std::logic_error);
   EXPECT_THROW(filter.update({0.0, 0.0}), std::logic_error);
   EXPECT_THROW(filter.innovation_mahalanobis2({0.0, 0.0}), std::logic_error);
+  EXPECT_THROW(filter.innovation_covariance(), std::logic_error);
   EXPECT_THROW(filter.state(), std::logic_error);
   EXPECT_THROW(filter.covariance(), std::logic_error);
   filter.initialize({0.0, 0.0}, 1.0);
