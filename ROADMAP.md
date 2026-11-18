@@ -63,7 +63,7 @@ its own line when it merges. Agents never add items that a brief didn't list.
   records; `std::to_chars` shortest form; `\n` line endings; loud errors naming the line number);
   `docs/LOG-FORMAT.md`. Tests: round trip of every record type, exact bytes of a tiny log, each
   error case.
-- [ ] **R9 Synthetic scenario generator** (feat, needs R8): library `kite_sim` in `sim/`
+- [x] **R9 Synthetic scenario generator** (feat, needs R8): library `kite_sim` in `sim/`
   (`ScenarioConfig`, `generate`), constant-velocity vehicles, Bernoulli detections with Gaussian
   noise, seeded shuffle; one `std::mt19937_64`, own uniform and Box-Muller sampling, no
   `std::*_distribution`; CLI `kite_gen`. Tests: determinism, seed sensitivity, constant velocity,

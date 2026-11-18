@@ -9,7 +9,7 @@ Driving Stack: a modular autonomous-driving software stack (perception, tracking
 planning, control), developed and tested in the BeamNG.tech simulator. It is an independent,
 non-commercial student project. Out of scope: real vehicles, real-world data and commercial use.
 
-Stack: `core/` (C++17 library and tests), `third_party/` (vendored GoogleTest, never edited by
+Stack: `core/` (C++17 library and tests), `sim/`, `tools/`, `third_party/` (vendored GoogleTest, never edited by
 hand), `bridge/`, `perception/`, `scenarios/`, `eval/`, `viewer/`, `scripts/` (repo tooling),
 `docs/`.
 
@@ -204,6 +204,14 @@ Each item that introduces a lasting rule adds a "## Standing rules (R<n>)" secti
 
 - Measurement records and the `Measurement` type never carry a true identity.
 - Any change to the log format bumps its version line and updates `docs/LOG-FORMAT.md` in the same PR.
+
+## Standing rules (R9)
+
+- Generated data uses one `std::mt19937_64` and our own sampling built only from exact operations
+  (+, -, *, /, `sqrt`, `frexp`). Never use `std::*_distribution`, `std::shuffle` or a platform
+  transcendental function (`log`, `sin`, `cos`, `exp`) for generated data.
+- `sim/tests/data/seed42.log` changes only together with a deliberate generator change. Regenerate
+  it with `kite_gen`; never edit it by hand.
 
 ## Simulator files (hard rule)
 
