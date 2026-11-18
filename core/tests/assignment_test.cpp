@@ -57,16 +57,9 @@ TEST(SolveAssignment, TallMatrixLeavesRowsUnused) {
   EXPECT_THAT(solve({3, 2, {5, 5, 1, 9, 9, 9}}, 6.0), ElementsAre(Pair(0, 1), Pair(1, 0)));
 }
 
-TEST(SolveAssignment, NegativeGateAdmitsOnlyNegativeCosts) {
-  const CostMatrix cost{2, 2, {-2, 1, 3, -5}};
-  EXPECT_THAT(solve(cost, -1.0), ElementsAre(Pair(0, 0), Pair(1, 1)));
-  EXPECT_THAT(solve(cost, -3.0), ElementsAre(Pair(1, 1)));
-  EXPECT_THAT(solve(cost, -kInf), IsEmpty());
+TEST(SolveAssignment, NegativeGateAdmitsNothing) {
   EXPECT_THAT(solve({2, 2, {0, 1, 2, 3}}, -1.0), IsEmpty());
-}
-
-TEST(SolveAssignment, NegativeCostsMinimiseTotal) {
-  EXPECT_THAT(solve({2, 2, {-1, -4, -3, -1}}, kInf), ElementsAre(Pair(0, 1), Pair(1, 0)));
+  EXPECT_THAT(solve({2, 2, {0, 1, 2, 3}}, -kInf), IsEmpty());
 }
 
 TEST(SolveAssignment, InfiniteCostIsNeverAdmissible) {
@@ -89,18 +82,11 @@ TEST(SolveAssignment, InfiniteGateDoesNotOverflow) {
 TEST(SolveAssignment, CostsNearTheLargestDoubleDoNotOverflow) {
   EXPECT_EQ(solve({3, 3, {kMax, kMax, kMax, kMax, kMax, kMax, kMax, kMax, kMax}}, kInf).size(), 3u);
   EXPECT_THAT(solve({2, 2, {kMax, 1.0, 2.0, kMax}}, kMax), ElementsAre(Pair(0, 1), Pair(1, 0)));
-  EXPECT_THAT(solve({2, 2, {-kMax, kMax, kMax, -kMax}}, kInf), ElementsAre(Pair(0, 0), Pair(1, 1)));
 }
 
 TEST(SolveAssignment, HugeCostsStillRankByTotal) {
   EXPECT_THAT(solve({2, 2, {9e307, 1e307, 2e307, 9e307}}, kInf), ElementsAre(Pair(0, 1), Pair(1, 0)));
   EXPECT_THAT(solve({2, 2, {1e307, 9e307, 9e307, 2e307}}, kInf), ElementsAre(Pair(0, 0), Pair(1, 1)));
-}
-
-TEST(SolveAssignment, OppositeSignCostsNearTheLargestDoubleStillGiveTheMostPairs) {
-  const CostMatrix cost{2, 2, {9e307, -9e307, 9e307, -1.1e308}};
-  EXPECT_EQ(solve(cost, kInf).size(), 2u);
-  EXPECT_EQ(solve(cost, kMax).size(), 2u);
 }
 
 CostMatrix five_by_five(double x, double b) {
@@ -116,6 +102,14 @@ TEST(SolveAssignment, CostsUpToOneE300GiveTheLeastTotal) {
               ElementsAre(Pair(0, 3), Pair(1, 0), Pair(3, 1), Pair(4, 4)));
   EXPECT_THAT(solve(five_by_five(1e300, 2e300), 1e300),
               ElementsAre(Pair(0, 3), Pair(1, 0), Pair(3, 1), Pair(4, 4)));
+}
+
+TEST(SolveAssignment, OneE300CostsBesideSmallCostsGiveTheLeastTotal) {
+  EXPECT_THAT(solve({2, 2, {1e300, 0, 0, 1e300}}, kInf), ElementsAre(Pair(0, 1), Pair(1, 0)));
+  EXPECT_THAT(solve({2, 2, {1e300, 0, 0, 1e300}}, 1e300), ElementsAre(Pair(0, 1), Pair(1, 0)));
+  EXPECT_THAT(solve({2, 2, {0, 1e300, 1e300, 3}}, kInf), ElementsAre(Pair(0, 0), Pair(1, 1)));
+  EXPECT_THAT(solve({3, 3, {1e300, 1, 2, 3, 1e300, 1e300, 1e300, 4, 1e300}}, kInf),
+              ElementsAre(Pair(0, 2), Pair(1, 0), Pair(2, 1)));
 }
 
 TEST(SolveAssignment, TiedSolutionsGiveTheSameAnswerOnEveryCall) {
@@ -138,6 +132,17 @@ TEST(SolveAssignment, NaNGateThrows) {
 TEST(SolveAssignment, NaNCostThrows) {
   EXPECT_THROW(kite::solve_assignment({2, 2, {1.0, 2.0, kNaN, 4.0}}, 10.0), std::invalid_argument);
   EXPECT_THROW(kite::solve_assignment({1, 1, {kNaN}}, kInf), std::invalid_argument);
+}
+
+TEST(SolveAssignment, NegativeCostThrows) {
+  EXPECT_THROW(kite::solve_assignment({2, 2, {1.0, 2.0, -0.5, 4.0}}, kInf), std::invalid_argument);
+  EXPECT_THROW(kite::solve_assignment({1, 1, {-1.0}}, -kInf), std::invalid_argument);
+}
+
+TEST(SolveAssignment, NegativeInfiniteCostThrows) {
+  EXPECT_THROW(kite::solve_assignment({2, 2, {1.0, -kInf, 3.0, 4.0}}, kInf),
+               std::invalid_argument);
+  EXPECT_THROW(kite::solve_assignment({1, 1, {-kInf}}, 10.0), std::invalid_argument);
 }
 
 TEST(SolveAssignment, WrongValueCountThrows) {

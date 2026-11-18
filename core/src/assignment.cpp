@@ -104,6 +104,9 @@ std::vector<Assignment> solve_assignment(const CostMatrix& cost, double gate) {
     if (std::isnan(value)) {
       throw std::invalid_argument("cost must not be NaN");
     }
+    if (value < 0.0) {
+      throw std::invalid_argument("cost must not be negative");
+    }
   }
   if (cost.rows == 0 || cost.columns == 0) {
     return {};
