@@ -20,14 +20,15 @@
 #include "kite/matrix.hpp"
 #include "kite/scoring.hpp"
 #include "kite/types.hpp"
+#include "study_common.hpp"
 
 namespace {
 
 using namespace kite::baseline_setup;
+using namespace kite::study;
 
 constexpr int kFirstSeed = 101;
 constexpr int kLastSeed = 120;
-constexpr double kLabelMarginM = 1.0;
 constexpr std::size_t kDuplicateWindowSteps = 5;
 
 constexpr const char* kUsage =
@@ -77,8 +78,6 @@ Options parse_options(int argc, char** argv) {
   return options;
 }
 
-using CarLabel = std::optional<int>;
-
 enum class StealClass { h1, nearer, other };
 constexpr std::array<StealClass, 3> kClasses = {StealClass::h1, StealClass::nearer,
                                                 StealClass::other};
@@ -122,38 +121,7 @@ struct SeedResult {
   int reverse_steals;
 };
 
-double distance(kite::Vec2 a, kite::Vec2 b) {
-  const double dx = a.x - b.x;
-  const double dy = a.y - b.y;
-  return std::sqrt(dx * dx + dy * dy);
-}
-
-double mahalanobis2(const kite::TrackRecord& track, kite::Vec2 z) {
-  const kite::Matrix<2, 1> y{{z.x - track.predicted.x, z.y - track.predicted.y}};
-  return (kite::transpose(y) * kite::inverse(track.innovation_covariance) * y)(0, 0);
-}
-
 double det(const kite::Matrix<2, 2>& s) { return s(0, 0) * s(1, 1) - s(0, 1) * s(1, 0); }
-
-CarLabel label_of(kite::Vec2 z, const std::vector<kite::GroundTruthState>& truth) {
-  double nearest = std::numeric_limits<double>::infinity();
-  double second = nearest;
-  int car = -1;
-  for (const kite::GroundTruthState& vehicle : truth) {
-    const double d = distance(z, vehicle.position);
-    if (d < nearest) {
-      second = nearest;
-      nearest = d;
-      car = vehicle.actor_id;
-    } else if (d < second) {
-      second = d;
-    }
-  }
-  if (nearest <= kMatchGateM && second - nearest >= kLabelMarginM) {
-    return car;
-  }
-  return std::nullopt;
-}
 
 bool inside_a_gate(const kite::StepRecord& record, kite::Vec2 z) {
   return std::any_of(record.tracks.begin(), record.tracks.end(),

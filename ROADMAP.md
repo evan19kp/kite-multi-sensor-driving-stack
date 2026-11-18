@@ -142,7 +142,7 @@ default or parameter changes. Seeds 1-20 never appear in any output.
   `kite_baseline_kalman_tuning`'s) and steals, duplicates and reverse steals per mode. No winner
   chosen, no default changed. Tests: hand-made cases where the modes pair differently; gate test in
   all three modes; mode parsing and usage errors.
-- [ ] **R23 Measure how often a real car's new track is dropped** (test, Sonnet; needs R21): Monte
+- [x] **R23 Measure how often a real car's new track is dropped** (test, Sonnet; needs R21): Monte
   Carlo with the 0A.1 generator, 1 vehicle, default tracker, p in {0.95, 0.90, 0.80, 0.70}, 20,000
   seeds per p from 100001 (exact ranges stated): births, dropped, rate with 95 % Wilson interval,
   the M-of-N formula value, and miss causes (no measurement vs outside gate); on seeds 101-120 the

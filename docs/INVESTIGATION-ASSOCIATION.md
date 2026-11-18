@@ -353,3 +353,159 @@ and the mean id switches were 0.000, 2.550 and 0.450. Tentative tracks stole 3 m
 two_stage, 230 with joint and 52 with joint_likelihood. Of those steals, 0, 175 and 24 were
 followed by a duplicate. No mode had a reverse steal. All three runs skipped the same 314 ambiguous
 measurements out of 28590.
+
+## R23: tentative tracks dropped
+
+This section measures how often the tracker drops a tentative track that a real car started. It
+changes no default, no parameter and no drop rule. It uses the default `two_stage` mode and the
+`kite_baseline` scenario and Kalman parameters from `tools/baseline_setup.hpp`.
+
+### Commands
+
+Run these from the repo root after a build with the `dev` preset:
+
+```
+build/dev/tools/kite_drop_study --monte-carlo
+build/dev/tools/kite_drop_study --tuning
+```
+
+The CTest tests `kite_drop_study_monte_carlo_doc_matches` and `kite_drop_study_tuning_doc_matches`
+fail unless the tables below are exactly what the tool prints. `ctest -R kite_drop_study -V` shows
+them.
+
+### The drop rule and the formula
+
+A tentative track is confirmed at its 3rd hit and dropped at its 3rd miss, and the step that
+starts it counts as hit 1. So a track born from a car is dropped exactly when at most M - 2 = 1 of
+the N - 1 = 4 steps after the birth give it a hit, with M = 3 and N = 5. If the car is detected
+at each step with probability p, independently, and the track always gets a detection of its car,
+that chance is the sum for k from 0 to M - 2 of C(N - 1, k) p^k (1 - p)^(N - 1 - k). At p = 0.95
+it is 0.05^4 + 4 * 0.95 * 0.05^3. The tool computes it from the tracker's M and N. The formula
+ignores gating losses and measurements taken by other tracks. The study measures them.
+
+### Monte Carlo
+
+- One vehicle and the `kite_baseline` scenario otherwise. Each seed runs 10 s, which is 101 steps,
+  with the detection probability p from the table. The seeds are 100001-120000 for p = 0.95, 120001-140000 for 0.90,
+  140001-160000 for 0.80 and 160001-180000 for 0.70, so 20000 seeds each.
+- **Birth.** The first tentative track started from the car's measurements, which is the track
+  started at the first step that has a measurement. The tool follows only that track through the
+  tracker's step record. It is confirmed when the tracker's output has it. It is dropped when the
+  next update's record no longer lists it.
+- **Run length.** A birth is confirmed or dropped within 5 updates after the birth step. The run
+  is long enough unless the car's first measurement comes within the last 5 steps. Births still
+  open at the end of the run count as undecided, and seeds in which the car produced no
+  measurement at all count as seeds with no measurement. Both columns are in the second table.
+- **Misses.** Each miss of a dropped birth is "no measurement" when that step had no measurement,
+  "outside gate" when no measurement of that step had a squared Mahalanobis distance of at most
+  9.21 to the track, and "inside gate, taken by another track" when one did but the track did not
+  get it. The distance uses the step record's predicted position and innovation covariance.
+- **Rate.** Births are confirmed plus dropped. The measured rate is dropped over births, with the
+  95 % Wilson interval for z = 1.959963984540054. Rates and interval bounds print as percentages
+  with 3 decimals.
+
+### Monte Carlo tables
+
+Monte Carlo, 1 vehicle, two_stage, 3 hits in 5 steps, 10.000 s per seed, 20000 seeds per detection probability. Rates and bounds are percentages.
+
+| detection probability | seeds | births | dropped | measured rate (%) | Wilson 95 % low (%) | Wilson 95 % high (%) | formula (%) | formula inside interval |
+|---|---|---|---|---|---|---|---|---|
+| 0.950 | 100001-120000 | 20000 | 134 | 0.670 | 0.566 | 0.793 | 0.048 | no |
+| 0.900 | 120001-140000 | 20000 | 207 | 1.035 | 0.904 | 1.185 | 0.370 | no |
+| 0.800 | 140001-160000 | 20000 | 662 | 3.310 | 3.071 | 3.567 | 2.720 | no |
+| 0.700 | 160001-180000 | 20000 | 1841 | 9.205 | 8.812 | 9.614 | 8.370 | no |
+
+Monte Carlo, 1 vehicle, two_stage, 3 hits in 5 steps, 10.000 s per seed, 20000 seeds per detection probability. Rates and bounds are percentages.
+
+| detection probability | confirmed | dropped | seeds with no measurement | undecided | misses: no measurement | misses: outside gate | misses: inside gate, taken by another track |
+|---|---|---|---|---|---|---|---|
+| 0.950 | 19866 | 134 | 0 | 0 | 55 | 133 | 214 |
+| 0.900 | 19793 | 207 | 0 | 0 | 256 | 150 | 215 |
+| 0.800 | 19338 | 662 | 0 | 0 | 1728 | 124 | 134 |
+| 0.700 | 18159 | 1841 | 0 | 0 | 5303 | 108 | 112 |
+
+### Seeds 101-120
+
+The `kite_baseline` scenario, five vehicles, 301 steps, labelled by the R21 rule.
+
+- **Tentative track.** Every track the tracker starts. It is confirmed when the tracker's output
+  has it and dropped when the next update's record no longer lists it. A track dropped by the
+  final update of a run is unresolved, with any track still tentative at the end.
+- **Real birth lost.** A dropped track whose birth measurement is labelled car C, when no
+  confirmed track was labelled C after the birth step's update. A car's confirmed track is a
+  confirmed track whose latest matched measurement is labelled to that car.
+- **Birth to a car with a confirmed track.** A dropped track whose birth measurement is labelled
+  car C, when a confirmed track labelled C existed after the birth step's update. These are the
+  duplicates and strays among the labelled births.
+- **Ambiguous birth.** A dropped track whose birth measurement had no label. The study cannot say
+  whether it belonged to a car, so it is counted apart from the other two.
+- **Steps to confirmation.** For a car, the step of its first measurement with a label, which is
+  its first non-ambiguous labelled measurement, to the first step whose output has a confirmed
+  track labelled to that car. Step 0 is possible when a track was already confirmed. The mean is
+  over the cars that were confirmed; the table counts the cars that never were. Cars are those
+  with at least one labelled measurement.
+
+Tentative tracks, two_stage, seeds 101-120: 28590 measurements, 314 ambiguous.
+
+| seed | tentative tracks | confirmed | dropped | unresolved | real births lost | birth to a car with a confirmed track | ambiguous birth |
+|---|---|---|---|---|---|---|---|
+| 101 | 19 | 5 | 14 | 0 | 0 | 5 | 9 |
+| 102 | 11 | 5 | 5 | 1 | 0 | 1 | 4 |
+| 103 | 18 | 5 | 13 | 0 | 0 | 3 | 10 |
+| 104 | 13 | 5 | 8 | 0 | 0 | 0 | 8 |
+| 105 | 13 | 5 | 8 | 0 | 0 | 0 | 8 |
+| 106 | 22 | 5 | 17 | 0 | 0 | 4 | 13 |
+| 107 | 14 | 5 | 9 | 0 | 0 | 2 | 7 |
+| 108 | 21 | 5 | 16 | 0 | 0 | 3 | 13 |
+| 109 | 15 | 5 | 10 | 0 | 0 | 4 | 6 |
+| 110 | 15 | 5 | 10 | 0 | 0 | 1 | 9 |
+| 111 | 14 | 5 | 9 | 0 | 0 | 1 | 8 |
+| 112 | 15 | 5 | 10 | 0 | 0 | 5 | 5 |
+| 113 | 19 | 5 | 14 | 0 | 0 | 4 | 10 |
+| 114 | 15 | 5 | 10 | 0 | 0 | 1 | 9 |
+| 115 | 15 | 5 | 9 | 1 | 1 | 3 | 5 |
+| 116 | 18 | 5 | 13 | 0 | 0 | 4 | 9 |
+| 117 | 20 | 5 | 15 | 0 | 0 | 4 | 11 |
+| 118 | 17 | 5 | 11 | 1 | 0 | 4 | 7 |
+| 119 | 22 | 5 | 17 | 0 | 0 | 6 | 11 |
+| 120 | 17 | 5 | 12 | 0 | 0 | 1 | 11 |
+| total | 333 | 100 | 230 | 3 | 1 | 56 | 173 |
+
+Tentative tracks, two_stage, seeds 101-120: 28590 measurements, 314 ambiguous.
+
+| seed | measurements | ambiguous | cars | cars never confirmed | mean steps, first measurement to confirmation |
+|---|---|---|---|---|---|
+| 101 | 1433 | 18 | 5 | 0 | 2.200 |
+| 102 | 1433 | 7 | 5 | 0 | 2.000 |
+| 103 | 1426 | 18 | 5 | 0 | 2.400 |
+| 104 | 1415 | 15 | 5 | 0 | 2.200 |
+| 105 | 1435 | 14 | 5 | 0 | 2.000 |
+| 106 | 1413 | 20 | 5 | 0 | 2.200 |
+| 107 | 1427 | 15 | 5 | 0 | 2.600 |
+| 108 | 1426 | 24 | 5 | 0 | 2.400 |
+| 109 | 1427 | 12 | 5 | 0 | 2.200 |
+| 110 | 1438 | 14 | 5 | 0 | 2.000 |
+| 111 | 1425 | 17 | 5 | 0 | 2.200 |
+| 112 | 1435 | 12 | 5 | 0 | 2.000 |
+| 113 | 1439 | 19 | 5 | 0 | 2.000 |
+| 114 | 1428 | 10 | 5 | 0 | 2.400 |
+| 115 | 1421 | 14 | 5 | 0 | 2.000 |
+| 116 | 1431 | 18 | 5 | 0 | 1.800 |
+| 117 | 1427 | 19 | 5 | 0 | 2.400 |
+| 118 | 1432 | 18 | 5 | 0 | 2.000 |
+| 119 | 1441 | 17 | 5 | 0 | 2.000 |
+| 120 | 1438 | 13 | 5 | 0 | 2.000 |
+| total | 28590 | 314 | 100 | 0 | 2.150 |
+
+### What the numbers show
+
+The formula lies outside the 95 % Wilson interval at all four detection probabilities. At p = 0.95
+the tracker dropped 134 of 20000 births, 0.670 % with an interval of 0.566 to 0.793 %, against
+0.048 % from the formula. Of the 402 misses of those 134 dropped births, 55 were steps with no
+measurement, 133 were outside the gate and 214 were inside the gate but taken by another track.
+As p falls to 0.70 the no-measurement misses rise from 55 to 5303 while the outside-gate misses
+stay between 108 and 150. The tables do not show why another track took those measurements. On
+seeds 101-120 the tracker started 333 tentative tracks, confirmed 100 and dropped 230. Of the
+dropped, 1 was a real birth lost, 56 were births to a car that already had a confirmed track and
+173 had an ambiguous birth label. Every one of the 100 cars was confirmed, a mean of 2.150 steps
+after its first labelled measurement.

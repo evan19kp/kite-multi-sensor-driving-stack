@@ -282,6 +282,13 @@ Each item that introduces a lasting rule adds a "## Standing rules (R<n>)" secti
   `KalmanTracker.EveryModeGatesOnTheSquaredDistanceAlone` covers every mode.
 - Every cost passed to `kite::solve_assignment` is finite and >= 0.
 
+## Standing rules (R23)
+
+- The measurement labelling rule, a 3 m gate and a 1 m margin, lives only in
+  `tools/study_common.hpp`. Study tools include it and keep no copy.
+- Monte Carlo studies draw seeds from 100001 up and state the exact ranges in their output; seeds
+  1-20 stay the reporting set.
+
 ## Simulator files (hard rule)
 
 - Never read, list, search, copy, launch or write about the simulator's install folder, its user

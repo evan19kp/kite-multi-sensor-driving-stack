@@ -16,6 +16,12 @@ target_compile_options(kite_association_study
                        PRIVATE $<$<CXX_COMPILER_ID:GNU,Clang,AppleClang>:-ffp-contract=off>)
 kite_enable_warnings(kite_association_study)
 
+add_executable(kite_drop_study kite_drop_study.cpp)
+target_link_libraries(kite_drop_study PRIVATE kite_sim kite_eval kite_core)
+target_compile_options(kite_drop_study
+                       PRIVATE $<$<CXX_COMPILER_ID:GNU,Clang,AppleClang>:-ffp-contract=off>)
+kite_enable_warnings(kite_drop_study)
+
 if(KITE_BUILD_TESTS)
   function(kite_exit_test name tool expect args)
     add_test(NAME ${name}
@@ -218,4 +224,25 @@ if(KITE_BUILD_TESTS)
             -P ${CMAKE_CURRENT_SOURCE_DIR}/doc_contains.cmake)
   set_tests_properties(kite_association_study_doc_matches
                        PROPERTIES FIXTURES_REQUIRED kite_association_study_tables)
+
+  kite_exit_test(kite_drop_study_help kite_drop_study 0 "--help")
+  kite_exit_test(kite_drop_study_no_args kite_drop_study 2 "")
+  kite_exit_test(kite_drop_study_unknown_flag kite_drop_study 2 "--bogus")
+  kite_exit_test(kite_drop_study_two_flags kite_drop_study 2 "--monte-carlo;--tuning")
+
+  foreach(study monte_carlo tuning)
+    string(REPLACE "_" "-" flag "--${study}")
+    add_test(NAME kite_drop_study_${study}_output
+      COMMAND ${CMAKE_COMMAND} -DEXE=$<TARGET_FILE:kite_drop_study> "-DARGS=${flag}"
+              -DOUT=${CMAKE_CURRENT_BINARY_DIR}/drop_study_${study}.md
+              -P ${CMAKE_CURRENT_SOURCE_DIR}/run_to_file.cmake)
+    set_tests_properties(kite_drop_study_${study}_output
+                         PROPERTIES FIXTURES_SETUP kite_drop_study_${study}_tables)
+    add_test(NAME kite_drop_study_${study}_doc_matches
+      COMMAND ${CMAKE_COMMAND} -DTABLE=${CMAKE_CURRENT_BINARY_DIR}/drop_study_${study}.md
+              -DDOC=${PROJECT_SOURCE_DIR}/docs/INVESTIGATION-ASSOCIATION.md
+              -P ${CMAKE_CURRENT_SOURCE_DIR}/doc_contains.cmake)
+    set_tests_properties(kite_drop_study_${study}_doc_matches
+                         PROPERTIES FIXTURES_REQUIRED kite_drop_study_${study}_tables)
+  endforeach()
 endif()
