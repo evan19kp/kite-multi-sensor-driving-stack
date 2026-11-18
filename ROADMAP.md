@@ -43,7 +43,7 @@ its own line when it merges. Agents never add items that a brief didn't list.
 
 ## Sprint 0A.1
 
-- [ ] **R6 AGENTS.md, CLAUDE.md and README fixes** (docs): AGENTS.md machine table RAM "64 GB
+- [x] **R6 AGENTS.md, CLAUDE.md and README fixes** (docs): AGENTS.md machine table RAM "64 GB
   DDR5"; protocol step 5 PR body in `.run/pr-body-<item>.md` with `--body-file` (the body is the
   evidence record); step 8 drops the `scratch/` evidence copy and runs
   `python .worktrees/<item>/scripts/stop_all.py`; `scratch/` stays an optional work area only; new
