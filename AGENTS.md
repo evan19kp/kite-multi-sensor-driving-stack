@@ -257,6 +257,12 @@ Each item that introduces a lasting rule adds a "## Standing rules (R<n>)" secti
 - `kite_baseline` without `--tracker` stays the baseline tracker, so its table and
   `kite_baseline_doc_matches` do not change.
 
+## Standing rules (R16)
+
+- Controllers receive the setpoint and measured state only, never ground truth from a scenario.
+- Controller performance numbers (rise time, overshoot, steady-state error) in docs or PRs are
+  copied from a test's printed output, never computed or estimated by hand.
+
 ## Simulator files (hard rule)
 
 - Never read, list, search, copy, launch or write about the simulator's install folder, its user
