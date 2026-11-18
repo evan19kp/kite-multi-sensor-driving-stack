@@ -213,6 +213,11 @@ Each item that introduces a lasting rule adds a "## Standing rules (R<n>)" secti
 - `sim/tests/data/seed42.log` changes only together with a deliberate generator change. Regenerate
   it with `kite_gen`; never edit it by hand.
 
+## Standing rules (R10)
+
+- Trackers implement `kite::Tracker` and receive only measurements: never ground truth, actor ids
+  or the scenario config.
+
 ## Simulator files (hard rule)
 
 - Never read, list, search, copy, launch or write about the simulator's install folder, its user
