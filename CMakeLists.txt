@@ -1,0 +1,28 @@
+cmake_minimum_required(VERSION 3.20)
+project(kite_driving_stack LANGUAGES CXX)
+
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
+
+option(KITE_BUILD_TESTS "Build the unit tests" ON)
+
+function(kite_enable_warnings target)
+  if(MSVC)
+    target_compile_options(${target} PRIVATE /W4 /WX)
+  else()
+    target_compile_options(${target} PRIVATE -Wall -Wextra -Wpedantic -Werror)
+  endif()
+endfunction()
+
+if(KITE_BUILD_TESTS)
+  set(INSTALL_GTEST OFF CACHE BOOL "" FORCE)
+  if(MSVC)
+    set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
+  endif()
+  add_subdirectory(third_party/googletest)
+  include(GoogleTest)
+  enable_testing()
+endif()
+
+add_subdirectory(core)

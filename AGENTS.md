@@ -147,6 +147,12 @@ Each item that introduces a lasting rule adds a "## Standing rules (R<n>)" secti
 - README stays honest: planned work says planned, no results without a named test, credit line kept.
 - `docs/BUILD-LOG.md` gets a row in every item's PR.
 
+## Standing rules (R2)
+
+- `third_party/googletest` changes only through `scripts/vendor_googletest.py`; never edit it by hand.
+- Warnings are errors on our own targets only (`kite_enable_warnings`), never on GoogleTest.
+- C++ builds and tests stay in `<worktree>/build/` (gitignored); never commit build output.
+
 ## Simulator files (hard rule)
 
 - Never read, list, search, copy, launch or write about the simulator's install folder, its user
