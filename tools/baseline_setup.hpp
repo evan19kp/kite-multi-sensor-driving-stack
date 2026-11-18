@@ -1,6 +1,11 @@
 #pragma once
 
+#include <array>
 #include <cstdint>
+#include <optional>
+#include <stdexcept>
+#include <string_view>
+#include <utility>
 
 #include "kite/generator.hpp"
 #include "kite/kalman_tracker.hpp"
@@ -32,6 +37,30 @@ inline ScenarioConfig scenario_config(std::uint64_t seed) {
 inline KalmanTracker make_kalman_tracker(AssociationMode association) {
   return KalmanTracker(kKalmanQ, kKalmanMeasurementSigmaM, kKalmanVelocitySigma, kKalmanGateChi2,
                        kKalmanConfirmHits, kKalmanConfirmWindow, kKalmanMaxMisses, association);
+}
+
+inline constexpr std::array<std::pair<AssociationMode, std::string_view>, 3> kAssociationNames = {{
+    {AssociationMode::two_stage, "two_stage"},
+    {AssociationMode::joint, "joint"},
+    {AssociationMode::joint_likelihood, "joint_likelihood"},
+}};
+
+inline std::optional<AssociationMode> parse_association(std::string_view name) {
+  for (const auto& [mode, mode_name] : kAssociationNames) {
+    if (name == mode_name) {
+      return mode;
+    }
+  }
+  return std::nullopt;
+}
+
+inline std::string_view association_name(AssociationMode association) {
+  for (const auto& [mode, mode_name] : kAssociationNames) {
+    if (mode == association) {
+      return mode_name;
+    }
+  }
+  throw std::logic_error("unknown association mode");
 }
 
 }

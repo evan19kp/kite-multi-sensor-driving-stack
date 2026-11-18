@@ -140,3 +140,216 @@ tentative track also had the larger det S. No steal fell into "other". A measure
 track's gate started each of the 230 stealing tracks. Of those measurements, 81 were labelled to
 the same car, 149 were ambiguous and 0 were labelled to another car. The tables do not show why
 those measurements fell outside every gate.
+
+## R22: comparison on seeds 101-120
+
+This section runs three association modes on seeds 101-120. It chooses no mode and changes no
+default or parameter.
+
+### Modes
+
+- **two_stage** (the default). Confirmed tracks are assigned first, then tentative tracks get the
+  measurements left over. The cost of a pair is d², the squared Mahalanobis distance.
+- **joint.** One `solve_assignment` over all tracks. The cost is d².
+- **joint_likelihood.** One `solve_assignment` over all tracks. The cost is d² + ln(det S / det R),
+  where R is the measurement noise covariance. This is twice the negative log-likelihood of the
+  measurement under the track's prediction, up to a constant. A track with a larger S pays a larger
+  ln term. The derivation is in `core/include/kite/kalman_tracker.hpp`.
+
+Every mode gates on d² <= 9.21 alone. A pair outside the gate is never matched, and the ln term
+never keeps a pair inside the gate from matching. The CTest test
+`KalmanTracker.EveryModeGatesOnTheSquaredDistanceAlone` checks this in all three modes.
+
+### Commands
+
+Run these from the repo root after a build with the `dev` preset, with `<mode>` set to
+`two_stage`, `joint` or `joint_likelihood`:
+
+```
+build/dev/tools/kite_baseline --tracker kalman --association <mode> --seeds 101-120
+build/dev/tools/kite_association_study --association <mode> --summary
+```
+
+The CTest tests `kite_baseline_association_<mode>_doc_matches` and
+`kite_association_study_<mode>_summary_doc_matches` fail unless the tables below are exactly what
+the tools print. The scoring tables carry no mode name, so their tests also need the `<mode>:`
+line above each table. `kite_baseline_association_two_stage_output` also fails unless its mean row
+equals the one `kite_baseline_kalman_tuning` checks.
+
+### Definitions
+
+Labels, steals and duplicates are as defined in the R21 section.
+
+- **Reverse steal.** At one step, a track that was confirmed at the start of the step is matched to
+  a measurement labelled car C, and the measurement that the track was last started from or updated
+  with is labelled car D, and D is not C. Neither measurement is ambiguous. Each track counts at most
+  once per step.
+
+### Scoring tables
+
+two_stage:
+
+| seed | matched | missed | false | rmse_m | id_switches | steps |
+|---|---|---|---|---|---|---|
+| 101 | 1494 | 11 | 0 | 0.412 | 0 | 301 |
+| 102 | 1494 | 11 | 0 | 0.394 | 0 | 301 |
+| 103 | 1493 | 12 | 0 | 0.411 | 0 | 301 |
+| 104 | 1493 | 12 | 0 | 0.391 | 0 | 301 |
+| 105 | 1495 | 10 | 0 | 0.417 | 0 | 301 |
+| 106 | 1494 | 11 | 0 | 0.393 | 0 | 301 |
+| 107 | 1493 | 12 | 1 | 0.412 | 0 | 301 |
+| 108 | 1494 | 11 | 0 | 0.390 | 0 | 301 |
+| 109 | 1493 | 12 | 0 | 0.463 | 0 | 301 |
+| 110 | 1495 | 10 | 0 | 0.434 | 0 | 301 |
+| 111 | 1494 | 11 | 0 | 0.426 | 0 | 301 |
+| 112 | 1495 | 10 | 0 | 0.405 | 0 | 301 |
+| 113 | 1495 | 10 | 0 | 0.451 | 0 | 301 |
+| 114 | 1493 | 12 | 0 | 0.393 | 0 | 301 |
+| 115 | 1495 | 10 | 0 | 0.410 | 0 | 301 |
+| 116 | 1494 | 11 | 0 | 0.409 | 0 | 301 |
+| 117 | 1493 | 12 | 0 | 0.417 | 0 | 301 |
+| 118 | 1495 | 10 | 0 | 0.414 | 0 | 301 |
+| 119 | 1495 | 10 | 0 | 0.438 | 0 | 301 |
+| 120 | 1495 | 10 | 0 | 0.403 | 0 | 301 |
+| mean | 1494.100 | 10.900 | 0.050 | 0.414 | 0.000 | 301.000 |
+
+joint:
+
+| seed | matched | missed | false | rmse_m | id_switches | steps |
+|---|---|---|---|---|---|---|
+| 101 | 1494 | 11 | 46 | 0.437 | 5 | 301 |
+| 102 | 1494 | 11 | 5 | 0.395 | 0 | 301 |
+| 103 | 1492 | 13 | 23 | 0.442 | 4 | 301 |
+| 104 | 1493 | 12 | 0 | 0.392 | 0 | 301 |
+| 105 | 1495 | 10 | 21 | 0.419 | 0 | 301 |
+| 106 | 1494 | 11 | 66 | 0.414 | 3 | 301 |
+| 107 | 1493 | 12 | 6 | 0.410 | 0 | 301 |
+| 108 | 1494 | 11 | 46 | 0.448 | 4 | 301 |
+| 109 | 1493 | 12 | 51 | 0.486 | 2 | 301 |
+| 110 | 1495 | 10 | 34 | 0.434 | 2 | 301 |
+| 111 | 1494 | 11 | 21 | 0.443 | 1 | 301 |
+| 112 | 1493 | 12 | 21 | 0.415 | 3 | 301 |
+| 113 | 1495 | 10 | 27 | 0.486 | 4 | 301 |
+| 114 | 1493 | 12 | 13 | 0.416 | 1 | 301 |
+| 115 | 1495 | 10 | 50 | 0.433 | 3 | 301 |
+| 116 | 1494 | 11 | 41 | 0.488 | 4 | 301 |
+| 117 | 1493 | 12 | 42 | 0.456 | 7 | 301 |
+| 118 | 1495 | 10 | 99 | 0.435 | 1 | 301 |
+| 119 | 1495 | 10 | 48 | 0.486 | 5 | 301 |
+| 120 | 1495 | 10 | 19 | 0.403 | 2 | 301 |
+| mean | 1493.950 | 11.050 | 33.950 | 0.437 | 2.550 | 301.000 |
+
+joint_likelihood:
+
+| seed | matched | missed | false | rmse_m | id_switches | steps |
+|---|---|---|---|---|---|---|
+| 101 | 1494 | 11 | 0 | 0.415 | 0 | 301 |
+| 102 | 1494 | 11 | 0 | 0.394 | 0 | 301 |
+| 103 | 1493 | 12 | 0 | 0.414 | 0 | 301 |
+| 104 | 1493 | 12 | 0 | 0.391 | 0 | 301 |
+| 105 | 1495 | 10 | 0 | 0.417 | 0 | 301 |
+| 106 | 1494 | 11 | 10 | 0.402 | 0 | 301 |
+| 107 | 1493 | 12 | 1 | 0.412 | 0 | 301 |
+| 108 | 1494 | 11 | 6 | 0.444 | 2 | 301 |
+| 109 | 1493 | 12 | 21 | 0.479 | 1 | 301 |
+| 110 | 1495 | 10 | 0 | 0.436 | 0 | 301 |
+| 111 | 1494 | 11 | 5 | 0.433 | 2 | 301 |
+| 112 | 1495 | 10 | 0 | 0.406 | 0 | 301 |
+| 113 | 1495 | 10 | 0 | 0.451 | 0 | 301 |
+| 114 | 1493 | 12 | 2 | 0.411 | 1 | 301 |
+| 115 | 1495 | 10 | 23 | 0.425 | 0 | 301 |
+| 116 | 1494 | 11 | 8 | 0.416 | 0 | 301 |
+| 117 | 1493 | 12 | 13 | 0.440 | 3 | 301 |
+| 118 | 1495 | 10 | 0 | 0.414 | 0 | 301 |
+| 119 | 1495 | 10 | 6 | 0.445 | 0 | 301 |
+| 120 | 1495 | 10 | 0 | 0.403 | 0 | 301 |
+| mean | 1494.100 | 10.900 | 4.750 | 0.422 | 0.450 | 301.000 |
+
+### Steal tables
+
+Association two_stage, seeds 101-120: 28590 measurements, 314 ambiguous.
+
+| seed | measurements | ambiguous | steals | duplicates | reverse steals |
+|---|---|---|---|---|---|
+| 101 | 1433 | 18 | 0 | 0 | 0 |
+| 102 | 1433 | 7 | 0 | 0 | 0 |
+| 103 | 1426 | 18 | 0 | 0 | 0 |
+| 104 | 1415 | 15 | 0 | 0 | 0 |
+| 105 | 1435 | 14 | 0 | 0 | 0 |
+| 106 | 1413 | 20 | 0 | 0 | 0 |
+| 107 | 1427 | 15 | 0 | 0 | 0 |
+| 108 | 1426 | 24 | 0 | 0 | 0 |
+| 109 | 1427 | 12 | 1 | 0 | 0 |
+| 110 | 1438 | 14 | 1 | 0 | 0 |
+| 111 | 1425 | 17 | 0 | 0 | 0 |
+| 112 | 1435 | 12 | 0 | 0 | 0 |
+| 113 | 1439 | 19 | 0 | 0 | 0 |
+| 114 | 1428 | 10 | 0 | 0 | 0 |
+| 115 | 1421 | 14 | 0 | 0 | 0 |
+| 116 | 1431 | 18 | 1 | 0 | 0 |
+| 117 | 1427 | 19 | 0 | 0 | 0 |
+| 118 | 1432 | 18 | 0 | 0 | 0 |
+| 119 | 1441 | 17 | 0 | 0 | 0 |
+| 120 | 1438 | 13 | 0 | 0 | 0 |
+| total | 28590 | 314 | 3 | 0 | 0 |
+
+Association joint, seeds 101-120: 28590 measurements, 314 ambiguous.
+
+| seed | measurements | ambiguous | steals | duplicates | reverse steals |
+|---|---|---|---|---|---|
+| 101 | 1433 | 18 | 13 | 10 | 0 |
+| 102 | 1433 | 7 | 3 | 2 | 0 |
+| 103 | 1426 | 18 | 13 | 10 | 0 |
+| 104 | 1415 | 15 | 4 | 0 | 0 |
+| 105 | 1435 | 14 | 10 | 8 | 0 |
+| 106 | 1413 | 20 | 18 | 16 | 0 |
+| 107 | 1427 | 15 | 4 | 2 | 0 |
+| 108 | 1426 | 24 | 18 | 14 | 0 |
+| 109 | 1427 | 12 | 14 | 12 | 0 |
+| 110 | 1438 | 14 | 11 | 6 | 0 |
+| 111 | 1425 | 17 | 12 | 8 | 0 |
+| 112 | 1435 | 12 | 10 | 8 | 0 |
+| 113 | 1439 | 19 | 9 | 6 | 0 |
+| 114 | 1428 | 10 | 9 | 6 | 0 |
+| 115 | 1421 | 14 | 11 | 8 | 0 |
+| 116 | 1431 | 18 | 14 | 13 | 0 |
+| 117 | 1427 | 19 | 14 | 10 | 0 |
+| 118 | 1432 | 18 | 13 | 12 | 0 |
+| 119 | 1441 | 17 | 21 | 18 | 0 |
+| 120 | 1438 | 13 | 9 | 6 | 0 |
+| total | 28590 | 314 | 230 | 175 | 0 |
+
+Association joint_likelihood, seeds 101-120: 28590 measurements, 314 ambiguous.
+
+| seed | measurements | ambiguous | steals | duplicates | reverse steals |
+|---|---|---|---|---|---|
+| 101 | 1433 | 18 | 2 | 0 | 0 |
+| 102 | 1433 | 7 | 0 | 0 | 0 |
+| 103 | 1426 | 18 | 2 | 0 | 0 |
+| 104 | 1415 | 15 | 0 | 0 | 0 |
+| 105 | 1435 | 14 | 1 | 0 | 0 |
+| 106 | 1413 | 20 | 5 | 4 | 0 |
+| 107 | 1427 | 15 | 0 | 0 | 0 |
+| 108 | 1426 | 24 | 5 | 4 | 0 |
+| 109 | 1427 | 12 | 3 | 2 | 0 |
+| 110 | 1438 | 14 | 3 | 0 | 0 |
+| 111 | 1425 | 17 | 4 | 2 | 0 |
+| 112 | 1435 | 12 | 1 | 0 | 0 |
+| 113 | 1439 | 19 | 1 | 0 | 0 |
+| 114 | 1428 | 10 | 4 | 2 | 0 |
+| 115 | 1421 | 14 | 5 | 4 | 0 |
+| 116 | 1431 | 18 | 5 | 2 | 0 |
+| 117 | 1427 | 19 | 4 | 2 | 0 |
+| 118 | 1432 | 18 | 1 | 0 | 0 |
+| 119 | 1441 | 17 | 5 | 2 | 0 |
+| 120 | 1438 | 13 | 1 | 0 | 0 |
+| total | 28590 | 314 | 52 | 24 | 0 |
+
+### What the numbers show
+
+The mean matched count was 1494.100 with two_stage and joint_likelihood and 1493.950 with joint.
+The mean false count was 0.050 with two_stage, 33.950 with joint and 4.750 with joint_likelihood,
+and the mean id switches were 0.000, 2.550 and 0.450. Tentative tracks stole 3 measurements with
+two_stage, 230 with joint and 52 with joint_likelihood. Of those steals, 0, 175 and 24 were
+followed by a duplicate. No mode had a reverse steal. All three runs skipped the same 314 ambiguous
+measurements out of 28590.
