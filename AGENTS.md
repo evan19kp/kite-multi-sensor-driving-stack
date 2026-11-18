@@ -191,7 +191,7 @@ Each item that introduces a lasting rule adds a "## Standing rules (R<n>)" secti
 ## Standing rules (R5)
 
 - The merging, repo-script and PR-body rules under "Checking CI" and "Protocol (per item)" are standing.
-- This repository is public: AGENTS.md and every other committed file carry no private paths and no personal data.
+- This repository is public (see Project): committed files, PR titles, bodies and comments never contain secrets or the simulator's install paths, drive letters or environment variable names.
 
 ## Simulator files (hard rule)
 
