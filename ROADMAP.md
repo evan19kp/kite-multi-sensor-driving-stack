@@ -80,6 +80,44 @@ its own line when it merges. Agents never add items that a brief didn't list.
   `docs/BASELINE.md` with the command and its real output. Tests: hand-made scoring cases including
   one where greedy matching is wrong.
 
+## Sprint 0A.2
+
+- [ ] **R12 Docs, licence and protocol fixes** (docs): `LICENSE` (all rights reserved, viewing
+  only; third-party components keep their own licences); README "Licence" section points to it;
+  AGENTS.md step 8 gets the sprint merge order, step 10 puts the PR body in
+  `.run/pr-body-<item>.md`, new rules for fresh foreground agents and the progress-file end marker,
+  `stop_all.py` copies agree; `docs/PROJECT.md` folder map gains `sim/` and `tools/` and its line 3
+  matches README; R6's roadmap title reworded. With `.gitattributes` on main, the golden test drops
+  its `\r` stripping. Tests: forbidden-files check passes; reviewer diffs AGENTS.md line by line;
+  LICENSE text matches exactly; golden test passes on both CI jobs.
+- [ ] **R13 Shared assignment solver with a brute-force cross-check** (refactor + test): Hungarian
+  solver moves from `eval/src/scoring.cpp` to `core/include/kite/assignment.hpp` +
+  `core/src/assignment.cpp` (`solve_assignment(cost, gate)`: most pairs within the gate, then least
+  total cost); the scorer calls it with no output change; big-M overflow fixed for huge or infinite
+  gates. Tests: `core/tests/assignment_bruteforce_test.cpp` compares 5,000 seeded random cases
+  (0-6 rows, 0-6 columns, rectangular and empty) with a brute-force solver; every scoring test and
+  `kite_baseline_doc_matches` pass unchanged.
+- [ ] **R14 Constant-velocity Kalman filter** (feat, Opus builder): `ConstantVelocityKalman` in
+  `core/include/kite/kalman.hpp` + `core/src/kalman.cpp` (state `[x, y, vx, vy]`, white-noise
+  acceleration `predict(dt)`, Joseph-form `update`, `innovation_mahalanobis2`, `initialize`); small
+  fixed-size matrix helpers in `core/`, each tested. Tests (with derivations): exact noiseless
+  predict, covariance grows and shrinks, stays symmetric positive definite over 1,000 steps,
+  stationary convergence, NEES inside its 95 % chi-square bounds on generator data, `dt = 0` no-op,
+  non-finite input throws.
+- [ ] **R15 Kalman multi-vehicle tracker with data association, scored** (feat, Opus builder; needs
+  R13, R14): `KalmanTracker : Tracker` (predict, chi-square gate 9.21, global nearest neighbour via
+  `solve_assignment`, tentative tracks confirmed after M of N hits, deleted after K misses, confirmed
+  tracks only, ids never reused); `kite_baseline --tracker baseline|kalman --seeds A-B`;
+  `docs/BASELINE.md` gains a Kalman table on seeds 1-20 (tuned on seeds 101-120 only), a second
+  doc-matches test and a short comparison. Tests: confirmation, coasting and deletion, crossing
+  targets keep ids where the baseline swaps, far clutter never confirms, empty steps.
+- [ ] **R16 PID controller with a speed-tracking test plant** (feat, Opus builder): `Pid` in
+  `core/include/kite/pid.hpp` + `core/src/pid.cpp` (output limits, anti-windup, derivative on
+  measurement with optional low-pass, `reset()`, throws on bad `dt` or non-finite input); test plant
+  with first-order actuator lag and acceleration limits [-6, 3] m/s². Tests: hand-computed P/I/D
+  cases, clamping, anti-windup against a plain integrator, no derivative kick, closed loop 0 to
+  15 m/s within 2 % with printed rise time, overshoot and steady-state error.
+
 ## Later
 
 Planned, not scheduled. Do not pick these up as roadmap items.
