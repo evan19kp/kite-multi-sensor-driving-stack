@@ -200,6 +200,11 @@ Each item that introduces a lasting rule adds a "## Standing rules (R<n>)" secti
 
 - Repo scripts always run by path relative to the repo root, never by absolute path.
 
+## Standing rules (R8)
+
+- Measurement records and the `Measurement` type never carry a true identity.
+- Any change to the log format bumps its version line and updates `docs/LOG-FORMAT.md` in the same PR.
+
 ## Simulator files (hard rule)
 
 - Never read, list, search, copy, launch or write about the simulator's install folder, its user
