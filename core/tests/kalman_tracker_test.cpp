@@ -56,9 +56,10 @@ TEST(KalmanTracker, HitsNeedNotBeConsecutiveToConfirm) {
   EXPECT_EQ(confirmed[0].track_id, 0);
 }
 
-// Hits at steps 0, 3 and 5: the window of the last 5 steps at step 5 holds steps 1-5, so only two
-// hits count. The hit at step 6 makes three (steps 3, 5, 6).
-TEST(KalmanTracker, HitsOlderThanTheWindowDoNotCount) {
+// Hits at steps 0, 3, 5 and 6. Track 0 has 2 hits after its first 5 steps (0-4), so it cannot
+// confirm and is dropped. The hit at step 6 would be its third, but it counts for track 1, born
+// at step 5, which confirms on its own third hit at step 7.
+TEST(KalmanTracker, AThirdHitAfterTheFirstFiveStepsDoesNotConfirm) {
   KalmanTracker tracker = make_tracker();
 
   tracker.update(0.0, {at(0.0, 0.0, 0.0)});
@@ -66,12 +67,53 @@ TEST(KalmanTracker, HitsOlderThanTheWindowDoNotCount) {
   tracker.update(2.0, {});
   tracker.update(3.0, {at(3.0, 0.0, 0.0)});
   tracker.update(4.0, {});
-  const auto two_in_window = tracker.update(5.0, {at(5.0, 0.0, 0.0)});
-  const auto three_in_window = tracker.update(6.0, {at(6.0, 0.0, 0.0)});
+  const auto step5 = tracker.update(5.0, {at(5.0, 0.0, 0.0)});
+  const auto step6 = tracker.update(6.0, {at(6.0, 0.0, 0.0)});
+  const auto step7 = tracker.update(7.0, {at(7.0, 0.0, 0.0)});
 
-  EXPECT_TRUE(two_in_window.empty());
-  ASSERT_EQ(three_in_window.size(), 1u);
-  EXPECT_EQ(three_in_window[0].track_id, 0);
+  EXPECT_TRUE(step5.empty());
+  EXPECT_TRUE(step6.empty());
+  ASSERT_EQ(step7.size(), 1u);
+  EXPECT_EQ(step7[0].track_id, 1);
+}
+
+// One hit, then three misses: with 2 steps of its first 5 left, track 0 can reach at most 3 - 1
+// = 2 hits, so it is dropped at step 3. Measurements at its predicted position (the stationary
+// birth point) then build track 1, which confirms on its third hit.
+TEST(KalmanTracker, TentativeTrackThatCannotConfirmIsDroppedAndItsIdIsNeverReused) {
+  KalmanTracker tracker = make_tracker();
+  tracker.update(0.0, {at(0.0, 2.0, 1.0)});
+  for (int k = 1; k <= 3; ++k) {
+    tracker.update(k, {});
+  }
+
+  const auto first = tracker.update(4.0, {at(4.0, 2.0, 1.0)});
+  const auto second = tracker.update(5.0, {at(5.0, 2.0, 1.0)});
+  const auto third = tracker.update(6.0, {at(6.0, 2.0, 1.0)});
+
+  EXPECT_TRUE(first.empty());
+  EXPECT_TRUE(second.empty());
+  ASSERT_EQ(third.size(), 1u);
+  EXPECT_EQ(third[0], (TrackState{6.0, 0, 1, {2.0, 1.0}, {0.0, 0.0}}));
+}
+
+// A point detected every 4th step never has 3 hits in any 5 steps, so each tentative track dies
+// at its third miss and the next detection starts a new one: ids 0, 1, 2 and 3 at steps 0, 4, 8
+// and 12. Detections at steps 13 and 14 then confirm track 3.
+TEST(KalmanTracker, TargetHitEveryFourthStepNeverConfirmsAndItsTracksDoNotSurvive) {
+  KalmanTracker tracker = make_tracker();
+
+  for (int k = 0; k <= 13; ++k) {
+    std::vector<Measurement> z;
+    if (k % 4 == 0 || k == 13) {
+      z.push_back(at(k, -4.0, 6.0));
+    }
+    EXPECT_TRUE(tracker.update(k, z).empty()) << "step " << k;
+  }
+  const auto confirmed = tracker.update(14.0, {at(14.0, -4.0, 6.0)});
+
+  ASSERT_EQ(confirmed.size(), 1u);
+  EXPECT_EQ(confirmed[0].track_id, 3);
 }
 
 // A target at 10 m/s along x, measured exactly every 0.1 s for 2 s, then not measured for 4 steps

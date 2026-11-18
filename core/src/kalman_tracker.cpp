@@ -1,10 +1,10 @@
 #include "kite/kalman_tracker.hpp"
 
-#include <algorithm>
 #include <cmath>
 #include <cstddef>
 #include <stdexcept>
 #include <utility>
+#include <variant>
 
 #include "kite/assignment.hpp"
 
@@ -34,16 +34,18 @@ KalmanTracker::KalmanTracker(double q, double measurement_sigma, double initial_
   }
 }
 
-void KalmanTracker::record(Track& track, bool hit) const {
-  track.recent_hits.push_back(hit);
-  if (track.recent_hits.size() > static_cast<std::size_t>(confirm_window_)) {
-    track.recent_hits.pop_front();
+bool KalmanTracker::record(Track& track, bool hit) const {
+  if (Tentative* tentative = std::get_if<Tentative>(&track.lifecycle)) {
+    ++(hit ? tentative->hits : tentative->misses);
+    if (tentative->hits >= confirm_hits_) {
+      track.lifecycle = Confirmed{};
+      return true;
+    }
+    return tentative->misses <= confirm_window_ - confirm_hits_;
   }
-  track.consecutive_misses = hit ? 0 : track.consecutive_misses + 1;
-  const auto hits = std::count(track.recent_hits.begin(), track.recent_hits.end(), true);
-  if (track.status == Status::tentative && hits >= confirm_hits_) {
-    track.status = Status::confirmed;
-  }
+  Confirmed& confirmed = std::get<Confirmed>(track.lifecycle);
+  confirmed.consecutive_misses = hit ? 0 : confirmed.consecutive_misses + 1;
+  return confirmed.consecutive_misses < max_misses_;
 }
 
 std::vector<TrackState> KalmanTracker::update(double t,
@@ -71,10 +73,10 @@ std::vector<TrackState> KalmanTracker::update(double t,
 
   std::vector<bool> track_hit(tracks.size(), false);
   std::vector<bool> measurement_used(measurements.size(), false);
-  for (const Status stage : {Status::confirmed, Status::tentative}) {
+  for (const bool confirmed_stage : {true, false}) {
     std::vector<std::size_t> rows;
     for (std::size_t i = 0; i < tracks.size(); ++i) {
-      if (tracks[i].status == stage) {
+      if (std::holds_alternative<Confirmed>(tracks[i].lifecycle) == confirmed_stage) {
         rows.push_back(i);
       }
     }
@@ -100,35 +102,33 @@ std::vector<TrackState> KalmanTracker::update(double t,
       measurement_used[columns[pair.column]] = true;
     }
   }
+  std::vector<Track> kept;
   for (std::size_t i = 0; i < tracks.size(); ++i) {
-    record(tracks[i], track_hit[i]);
+    if (record(tracks[i], track_hit[i])) {
+      kept.push_back(std::move(tracks[i]));
+    }
   }
-  tracks.erase(std::remove_if(tracks.begin(), tracks.end(),
-                              [this](const Track& track) {
-                                return track.consecutive_misses >= max_misses_;
-                              }),
-               tracks.end());
 
   int next_id = next_id_;
   for (std::size_t m = 0; m < measurements.size(); ++m) {
     if (measurement_used[m]) {
       continue;
     }
-    Track track{next_id++, measurements[m].ego_id, new_filter_, Status::tentative, {}, 0};
+    Track track{next_id++, measurements[m].ego_id, new_filter_, Tentative{}};
     track.filter.initialize(measurements[m].position, initial_velocity_sigma_);
     record(track, true);
-    tracks.push_back(track);
+    kept.push_back(std::move(track));
   }
 
   std::vector<TrackState> output;
-  for (const Track& track : tracks) {
-    if (track.status == Status::confirmed) {
+  for (const Track& track : kept) {
+    if (std::holds_alternative<Confirmed>(track.lifecycle)) {
       const Matrix<4, 1>& x = track.filter.state();
       output.push_back({t, track.ego_id, track.id, {x(0, 0), x(1, 0)}, {x(2, 0), x(3, 0)}});
     }
   }
 
-  tracks_ = std::move(tracks);
+  tracks_ = std::move(kept);
   previous_t_ = t;
   next_id_ = next_id;
   return output;

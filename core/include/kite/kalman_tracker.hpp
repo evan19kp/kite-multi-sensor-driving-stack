@@ -1,7 +1,7 @@
 #pragma once
 
-#include <deque>
 #include <optional>
+#include <variant>
 #include <vector>
 
 #include "kite/kalman.hpp"
@@ -21,9 +21,13 @@ namespace kite {
 //      left over.
 //   4. Updates each matched track with its measurement. Every track records a hit or a miss for
 //      this step.
-//   5. A tentative track becomes confirmed once it has confirm_hits hits among its last
-//      confirm_window steps (the step that created it counts as a hit), and stays confirmed.
-//   6. Any track with max_misses consecutive misses is deleted.
+//   5. A tentative track is confirmed when it reaches confirm_hits hits within its first
+//      confirm_window steps; the step that created it counts as hit 1. It is dropped as soon as it
+//      can no longer do that: hits + (confirm_window - age) < confirm_hits, with age the number of
+//      steps since birth including the birth step. Since age = hits + misses, this is the same as
+//      dropping it at its (confirm_window - confirm_hits + 1)-th miss, and every tentative track is
+//      confirmed or dropped by age confirm_window.
+//   6. A confirmed track stays confirmed and is deleted after max_misses consecutive misses.
 //   7. Each unmatched measurement starts a tentative track with the next id. Ids count up from 0
 //      and are never reused.
 // Output: one TrackState per confirmed track, at t, with the filter's position and velocity and
@@ -45,18 +49,23 @@ class KalmanTracker : public Tracker {
   std::vector<TrackState> update(double t, const std::vector<Measurement>& measurements) override;
 
  private:
-  enum class Status { tentative, confirmed };
+  struct Tentative {
+    int hits = 0;
+    int misses = 0;
+  };
+  struct Confirmed {
+    int consecutive_misses = 0;
+  };
 
   struct Track {
     int id;
     int ego_id;
     ConstantVelocityKalman filter;
-    Status status;
-    std::deque<bool> recent_hits;
-    int consecutive_misses;
+    std::variant<Tentative, Confirmed> lifecycle;
   };
 
-  void record(Track& track, bool hit) const;
+  // Returns false when the track is dropped.
+  bool record(Track& track, bool hit) const;
 
   ConstantVelocityKalman new_filter_;
   double initial_velocity_sigma_;

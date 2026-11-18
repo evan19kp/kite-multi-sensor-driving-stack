@@ -25,6 +25,8 @@ constexpr double kNoiseM = 1.0;
 constexpr double kDetectionProbability = 0.95;
 constexpr double kAreaHalfWidthM = 100.0;
 constexpr double kTrackerGateM = 5.0;
+// The sensor's noise spec, which the tracker is given rather than reading it from the scenario.
+constexpr double kKalmanMeasurementSigmaM = 1.0;
 constexpr double kKalmanQ = 0.01;
 constexpr double kKalmanVelocitySigma = 10.0;
 constexpr double kKalmanGateChi2 = 9.21;
@@ -38,8 +40,9 @@ constexpr const char* kUsage =
     "usage: kite_baseline [--tracker baseline|kalman] [--seeds N | --seeds A-B]\n"
     "  --tracker  baseline (default): NearestNeighbourBaseline with gate 5 m\n"
     "             kalman: KalmanTracker with q 0.01 m^2/s^3, measurement sigma 1.0 m,\n"
-    "             initial velocity sigma 10 m/s, chi-square gate 9.21, confirmed after 3 hits\n"
-    "             in 5 steps, deleted after 5 consecutive misses\n"
+    "             initial velocity sigma 10 m/s, chi-square gate 9.21; a new track is\n"
+    "             confirmed by 3 hits in its first 5 steps or dropped once it cannot be,\n"
+    "             and a confirmed track is deleted after 5 consecutive misses\n"
     "  --seeds    run seeds 1..N with N >= 1, or A..B with 1 <= A <= B (default 1..20)\n"
     "  --help     print this text\n"
     "Fixed config for every seed: 5 vehicles, 30 s, dt 0.1 s, noise 1.0 m, pd 0.95,\n"
@@ -120,7 +123,8 @@ Options parse_options(int argc, char** argv) {
 
 std::unique_ptr<kite::Tracker> make_tracker(TrackerKind kind) {
   if (kind == TrackerKind::kalman) {
-    return std::make_unique<kite::KalmanTracker>(kKalmanQ, kNoiseM, kKalmanVelocitySigma,
+    return std::make_unique<kite::KalmanTracker>(kKalmanQ, kKalmanMeasurementSigmaM,
+                                                 kKalmanVelocitySigma,
                                                  kKalmanGateChi2, kKalmanConfirmHits,
                                                  kKalmanConfirmWindow, kKalmanMaxMisses);
   }
