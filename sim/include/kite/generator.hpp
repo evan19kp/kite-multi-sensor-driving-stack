@@ -42,7 +42,8 @@ struct GeneratedScenario {
 // Exact algorithm, so the same config gives the same bytes on every compiler and platform. Every
 // value comes from IEEE-exact operations (+, -, *, /, sqrt, frexp) applied to the raw 64-bit
 // output of one std::mt19937_64 seeded with `seed`. No std::*_distribution, std::shuffle, or
-// platform transcendental function is used.
+// platform transcendental function is used. Floating-point contraction (fused multiply-add) is
+// disabled for GCC and Clang, so a * b + c rounds twice.
 //
 //   raw      one call of the engine.
 //   uniform  u = (raw >> 11) * 2^-53, in [0, 1). A value in [lo, hi) is lo + (hi - lo) * u.

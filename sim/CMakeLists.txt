@@ -2,6 +2,7 @@ add_library(kite_sim src/generator.cpp)
 target_include_directories(kite_sim PUBLIC include)
 target_link_libraries(kite_sim PUBLIC kite_core)
 target_compile_features(kite_sim PUBLIC cxx_std_17)
+target_compile_options(kite_sim PRIVATE $<$<CXX_COMPILER_ID:GNU,Clang,AppleClang>:-ffp-contract=off>)
 kite_enable_warnings(kite_sim)
 
 if(KITE_BUILD_TESTS)

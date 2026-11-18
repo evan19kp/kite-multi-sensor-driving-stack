@@ -15,6 +15,12 @@ if(KITE_BUILD_TESTS)
   kite_gen_exit_test(kite_gen_non_number 2
     "--seed;abc;--vehicles;1;--duration;1;--dt;0.1;--noise;0;--pd;1;--out;unused.log")
   kite_gen_exit_test(kite_gen_unknown_flag 2 "--bogus;1")
+  kite_gen_exit_test(kite_gen_duplicate_flag 2
+    "--seed;1;--seed;2;--vehicles;1;--duration;1;--dt;0.1;--noise;0;--pd;1;--out;unused.log")
+  kite_gen_exit_test(kite_gen_missing_value 2
+    "--seed;1;--vehicles;1;--duration;1;--dt;0.1;--noise;0;--pd;1;--out")
+  kite_gen_exit_test(kite_gen_write_failure 1
+    "--seed;1;--vehicles;1;--duration;1;--dt;0.1;--noise;0;--pd;1;--out;${CMAKE_CURRENT_BINARY_DIR}/no_such_dir/x.log")
 
   kite_gen_exit_test(kite_gen_golden 0
     "--seed;42;--vehicles;3;--duration;2;--dt;0.1;--noise;0.5;--pd;0.9;--out;${CMAKE_CURRENT_BINARY_DIR}/seed42.log")
