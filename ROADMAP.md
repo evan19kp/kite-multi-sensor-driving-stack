@@ -57,7 +57,7 @@ its own line when it merges. Agents never add items that a brief didn't list.
   `scenarios/`, `viewer/` to `python`; `docs/` stays `["app"]`. `scripts/ci_changes.py` docstring
   drops `e2e`. `scripts/test_ci_changes.py` tests each new and removed prefix and finds the repo
   root by walking up to `AGENTS.md`. Tests: Python script tests pass; CI green.
-- [ ] **R8 Shared types and log format v0** (feat): `core/include/kite/types.hpp` (`Vec2`,
+- [x] **R8 Shared types and log format v0** (feat): `core/include/kite/types.hpp` (`Vec2`,
   `GroundTruthState`, `Measurement` with no true identity, `TrackState`); `core/include/kite/log.hpp`
   and `core/src/log.cpp` (`write_log`, `read_log`; header `# kite-log v0`; `gt`, `meas`, `track`
   records; `std::to_chars` shortest form; `\n` line endings; loud errors naming the line number);
