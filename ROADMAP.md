@@ -90,7 +90,7 @@ its own line when it merges. Agents never add items that a brief didn't list.
   matches README; R6's roadmap title reworded. With `.gitattributes` on main, the golden test drops
   its `\r` stripping. Tests: forbidden-files check passes; reviewer diffs AGENTS.md line by line;
   LICENSE text matches exactly; golden test passes on both CI jobs.
-- [ ] **R13 Shared assignment solver with a brute-force cross-check** (refactor + test): Hungarian
+- [x] **R13 Shared assignment solver with a brute-force cross-check** (refactor + test): Hungarian
   solver moves from `eval/src/scoring.cpp` to `core/include/kite/assignment.hpp` +
   `core/src/assignment.cpp` (`solve_assignment(cost, gate)`: most pairs within the gate, then least
   total cost); the scorer calls it with no output change; big-M overflow fixed for huge or infinite
