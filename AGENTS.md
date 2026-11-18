@@ -100,10 +100,10 @@ The token cannot read check results, so never use `gh pr checks`. Use workflow r
 - PR bodies have an "Evidence" section with real command output.
 - Endpoint changes are verified with real HTTP requests against a running server in a test.
 - Never edit `.claude/`, `.gitattributes`, or human-owned scripts listed here: `scripts/check_forbidden_files.py`, `scripts/forbidden_files.json`, `third_party/` (only its vendoring script changes it).
-- `scratch/<item>/` (gitignored) is an optional work area only, not an evidence store; evidence goes
-  in the PR body. During a sprint a guard blocks edits and test runs in the main checkout except in
-  `.run/` and `scratch/` (the hook's `--allow scratch`); if the project's scratch folder has another
-  name, change both here and in the hook entry.
+- Scratch work, if any, goes only in `scratch/<item>/` (gitignored). It is an optional work area,
+  not an evidence store. Evidence goes in the PR body. During a sprint a guard blocks edits and
+  test runs in the main checkout except in `.run/` and `scratch/` (the hook's `--allow scratch`);
+  if the project's scratch folder has another name, change both here and in the hook entry.
 - Fail loudly: missing inputs or unknown ids are errors with a non-zero exit, never silent skips.
 - Check content, not just format.
 - AGENTS.md is append-only for agents. Never remove or weaken an existing rule unless the brief
