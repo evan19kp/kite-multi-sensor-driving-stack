@@ -34,7 +34,7 @@ KalmanTracker::KalmanTracker(double q, double measurement_sigma, double initial_
   }
 }
 
-bool KalmanTracker::record(Track& track, bool hit) const {
+bool KalmanTracker::survives_step(Track& track, bool hit) const {
   if (Tentative* tentative = std::get_if<Tentative>(&track.lifecycle)) {
     ++(hit ? tentative->hits : tentative->misses);
     if (tentative->hits >= confirm_hits_) {
@@ -104,7 +104,7 @@ std::vector<TrackState> KalmanTracker::update(double t,
   }
   std::vector<Track> kept;
   for (std::size_t i = 0; i < tracks.size(); ++i) {
-    if (record(tracks[i], track_hit[i])) {
+    if (survives_step(tracks[i], track_hit[i])) {
       kept.push_back(std::move(tracks[i]));
     }
   }
@@ -116,8 +116,9 @@ std::vector<TrackState> KalmanTracker::update(double t,
     }
     Track track{next_id++, measurements[m].ego_id, new_filter_, Tentative{}};
     track.filter.initialize(measurements[m].position, initial_velocity_sigma_);
-    record(track, true);
-    kept.push_back(std::move(track));
+    if (survives_step(track, true)) {
+      kept.push_back(std::move(track));
+    }
   }
 
   std::vector<TrackState> output;

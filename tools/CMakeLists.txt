@@ -79,7 +79,12 @@ if(KITE_BUILD_TESTS)
   kite_exit_test(kite_baseline_range_missing_start kite_baseline 2 "--seeds;-3")
   kite_exit_test(kite_baseline_range_three_parts kite_baseline 2 "--seeds;1-2-3")
   kite_exit_test(kite_baseline_range_non_number kite_baseline 2 "--seeds;1-x")
-  kite_exit_test(kite_baseline_tracker_after_seeds kite_baseline 0 "--seeds;101-101;--tracker;kalman")
+
+  add_test(NAME kite_baseline_tracker_after_seeds
+    COMMAND ${CMAKE_COMMAND} -DEXE=$<TARGET_FILE:kite_baseline> "-DARGS=--seeds;101-101;--tracker;kalman"
+            "-DEXPECT_MATCH=[|] 101 [|] 1494 [|] 11 [|] 0 [|] 0[.]412 [|] 0 [|] 301 [|]"
+            -DOUT=${CMAKE_CURRENT_BINARY_DIR}/kalman_101.md
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/run_to_file.cmake)
 
   add_test(NAME kite_baseline_range_output
     COMMAND ${CMAKE_COMMAND} -DEXE=$<TARGET_FILE:kite_baseline> "-DARGS=--tracker;baseline;--seeds;19-20"
@@ -89,6 +94,7 @@ if(KITE_BUILD_TESTS)
 
   add_test(NAME kite_baseline_kalman_tuning
     COMMAND ${CMAKE_COMMAND} -DEXE=$<TARGET_FILE:kite_baseline> "-DARGS=--tracker;kalman;--seeds;101-120"
+            "-DEXPECT_MATCH=[|] mean [|] 1494[.]100 [|] 10[.]900 [|] 0[.]050 [|] 0[.]414 [|] 0[.]000 [|] 301[.]000 [|]"
             -DOUT=${CMAKE_CURRENT_BINARY_DIR}/kalman_tuning.md
             -P ${CMAKE_CURRENT_SOURCE_DIR}/run_to_file.cmake)
 

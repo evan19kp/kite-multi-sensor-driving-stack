@@ -51,16 +51,18 @@ Parameters:
 |---|---|---|
 | q (white-noise acceleration density) | 0.01 m^2/s^3 | tuned |
 | initial velocity sigma | 10 m/s | tuned |
-| measurement sigma | 1.0 m | the scenario's measurement noise |
+| measurement sigma | 1.0 m | the sensor's noise spec, a constant in `kite_baseline` |
 | chi-square gate | 9.21 | 99 % point of chi-square with 2 degrees of freedom |
-| confirmation | 3 hits in the last 5 steps | fixed |
-| deletion | 5 consecutive misses | fixed |
+| confirmation | 3 hits within a new track's first 5 steps (birth counts as hit 1) | fixed |
+| tentative drop | at the 3rd miss, once 3 hits in 5 steps is out of reach | fixed |
+| deletion of a confirmed track | 5 consecutive misses | fixed |
 
-Tuning used seeds 101-120 only; seeds 1-20 are the reporting set and were run once, after tuning.
-The grid was q in {0.01, 0.1, 1, 10} m^2/s^3 and initial velocity sigma in {5, 10, 20} m/s. The
-rule, fixed before the grid ran, takes the lowest mean of missed + false + id_switches and breaks
-ties by the lower rmse_m. `build/dev/tools/kite_baseline --tracker kalman --seeds 101-120` prints
-the tuning-seed table for the chosen values; the CTest test `kite_baseline_kalman_tuning` runs it
+Only q and the initial velocity sigma were tuned, on seeds 101-120 only. Seeds 1-20 are the
+reporting set and were run once, after tuning. The grid was q in {0.01, 0.1, 1, 10} m^2/s^3 and
+initial velocity sigma in {5, 10, 20} m/s. The rule, fixed before the grid ran, takes the lowest
+mean of missed + false + id_switches and breaks ties by the lower rmse_m.
+`build/dev/tools/kite_baseline --tracker kalman --seeds 101-120` prints the tuning-seed table for
+the chosen values; the CTest test `kite_baseline_kalman_tuning` runs it and checks its mean row
 (`ctest -R kite_baseline_kalman_tuning -V` shows the table).
 
 | seed | matched | missed | false | rmse_m | id_switches | steps |

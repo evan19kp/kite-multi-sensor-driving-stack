@@ -21,12 +21,10 @@ namespace kite {
 //      left over.
 //   4. Updates each matched track with its measurement. Every track records a hit or a miss for
 //      this step.
-//   5. A tentative track is confirmed when it reaches confirm_hits hits within its first
-//      confirm_window steps; the step that created it counts as hit 1. It is dropped as soon as it
-//      can no longer do that: hits + (confirm_window - age) < confirm_hits, with age the number of
-//      steps since birth including the birth step. Since age = hits + misses, this is the same as
-//      dropping it at its (confirm_window - confirm_hits + 1)-th miss, and every tentative track is
-//      confirmed or dropped by age confirm_window.
+//   5. A tentative track is confirmed at its confirm_hits-th hit and dropped at its
+//      (confirm_window - confirm_hits + 1)-th miss, the first point at which it can no longer reach
+//      confirm_hits hits within its first confirm_window steps. The step that created it counts as
+//      hit 1, so every tentative track is confirmed or dropped within confirm_window steps.
 //   6. A confirmed track stays confirmed and is deleted after max_misses consecutive misses.
 //   7. Each unmatched measurement starts a tentative track with the next id. Ids count up from 0
 //      and are never reused.
@@ -64,8 +62,7 @@ class KalmanTracker : public Tracker {
     std::variant<Tentative, Confirmed> lifecycle;
   };
 
-  // Returns false when the track is dropped.
-  bool record(Track& track, bool hit) const;
+  bool survives_step(Track& track, bool hit) const;
 
   ConstantVelocityKalman new_filter_;
   double initial_velocity_sigma_;

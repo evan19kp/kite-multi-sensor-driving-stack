@@ -56,9 +56,6 @@ TEST(KalmanTracker, HitsNeedNotBeConsecutiveToConfirm) {
   EXPECT_EQ(confirmed[0].track_id, 0);
 }
 
-// Hits at steps 0, 3, 5 and 6. Track 0 has 2 hits after its first 5 steps (0-4), so it cannot
-// confirm and is dropped. The hit at step 6 would be its third, but it counts for track 1, born
-// at step 5, which confirms on its own third hit at step 7.
 TEST(KalmanTracker, AThirdHitAfterTheFirstFiveStepsDoesNotConfirm) {
   KalmanTracker tracker = make_tracker();
 
@@ -77,9 +74,6 @@ TEST(KalmanTracker, AThirdHitAfterTheFirstFiveStepsDoesNotConfirm) {
   EXPECT_EQ(step7[0].track_id, 1);
 }
 
-// One hit, then three misses: with 2 steps of its first 5 left, track 0 can reach at most 3 - 1
-// = 2 hits, so it is dropped at step 3. Measurements at its predicted position (the stationary
-// birth point) then build track 1, which confirms on its third hit.
 TEST(KalmanTracker, TentativeTrackThatCannotConfirmIsDroppedAndItsIdIsNeverReused) {
   KalmanTracker tracker = make_tracker();
   tracker.update(0.0, {at(0.0, 2.0, 1.0)});
@@ -97,9 +91,6 @@ TEST(KalmanTracker, TentativeTrackThatCannotConfirmIsDroppedAndItsIdIsNeverReuse
   EXPECT_EQ(third[0], (TrackState{6.0, 0, 1, {2.0, 1.0}, {0.0, 0.0}}));
 }
 
-// A point detected every 4th step never has 3 hits in any 5 steps, so each tentative track dies
-// at its third miss and the next detection starts a new one: ids 0, 1, 2 and 3 at steps 0, 4, 8
-// and 12. Detections at steps 13 and 14 then confirm track 3.
 TEST(KalmanTracker, TargetHitEveryFourthStepNeverConfirmsAndItsTracksDoNotSurvive) {
   KalmanTracker tracker = make_tracker();
 
