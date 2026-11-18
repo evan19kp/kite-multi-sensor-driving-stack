@@ -174,13 +174,26 @@ class VendorGoogletestTest(unittest.TestCase):
         self.assertIn("cannot read archive", err)
         self.assertFalse(self.dest.exists())
 
+    def other_drive_archive(self):
+        other = "Z:" if os.path.splitdrive(str(self.dest))[0].upper() != "Z:" else "Y:"
+        return make_archive(str(self.tmp / "bad.tar.gz"), extra=[(f"{PREFIX}/googletest/{other}/evil.txt", b"x")])
+
     @unittest.skipUnless(os.name == "nt", "a drive letter inside a member name only escapes the destination on Windows")
     def test_refuses_member_on_another_drive(self):
-        other = "Z:" if os.path.splitdrive(str(self.dest))[0].upper() != "Z:" else "Y:"
-        bad = make_archive(str(self.tmp / "bad.tar.gz"), extra=[(f"{PREFIX}/googletest/{other}/evil.txt", b"x")])
-        code, _, err = self.vendor(archive=bad)
+        code, _, err = self.vendor(archive=self.other_drive_archive())
         self.assertEqual(code, 1)
         self.assertIn("unsafe", err)
+        self.assertFalse(self.dest.exists())
+
+    @unittest.skipUnless(os.name == "nt", "a drive letter inside a member name only escapes the destination on Windows")
+    def test_force_keeps_destination_when_member_is_on_another_drive(self):
+        self.dest.mkdir(parents=True)
+        (self.dest / "mine.txt").write_text("keep", encoding="utf-8")
+        code, _, err = self.vendor("--force", archive=self.other_drive_archive())
+        self.assertEqual(code, 1)
+        self.assertIn("unsafe", err)
+        self.assertEqual(sorted(p.name for p in self.dest.iterdir()), ["mine.txt"])
+        self.assertEqual((self.dest / "mine.txt").read_text(encoding="utf-8"), "keep")
 
     def test_refuses_destination_that_is_a_file(self):
         self.dest.parent.mkdir(parents=True)
@@ -228,6 +241,12 @@ class VendorGoogletestTest(unittest.TestCase):
         expected = os.path.join(vendor_googletest.REPO_ROOT, "third_party", "googletest")
         self.assertEqual(vendor_googletest.DEFAULT_DEST, expected)
         self.assertTrue(os.path.isfile(os.path.join(vendor_googletest.REPO_ROOT, "AGENTS.md")))
+
+    def test_repo_root_fails_without_agents_md_above(self):
+        script = self.tmp / "nowhere" / "vendor_googletest.py"
+        with mock.patch.object(vendor_googletest, "__file__", str(script)):
+            with self.assertRaisesRegex(RuntimeError, "AGENTS.md not found above"):
+                vendor_googletest.repo_root()
 
 
 if __name__ == "__main__":

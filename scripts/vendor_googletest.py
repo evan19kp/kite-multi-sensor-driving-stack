@@ -85,6 +85,23 @@ def select_members(tar: tarfile.TarFile) -> list[tuple[tarfile.TarInfo, list[str
     return selected
 
 
+def member_targets(
+    selected: list[tuple[tarfile.TarInfo, list[str]]], dest: str
+) -> list[tuple[tarfile.TarInfo, str]]:
+    dest_abs = os.path.abspath(dest)
+    targets = []
+    for member, parts in selected:
+        target = os.path.abspath(os.path.join(dest_abs, *parts))
+        try:
+            inside = os.path.commonpath([dest_abs, target]) == dest_abs
+        except ValueError:
+            inside = False
+        if not inside:
+            raise VendorError(f"unsafe archive member: {member.name!r}")
+        targets.append((member, target))
+    return targets
+
+
 def check_dest(dest: str, force: bool) -> None:
     if os.path.exists(dest) and not os.path.isdir(dest):
         raise VendorError(f"destination is not a folder: {dest}")
@@ -106,19 +123,12 @@ def extract(archive: str, dest: str) -> int:
         missing = [name for name in KEEP if name not in present]
         if missing:
             raise VendorError(f"archive is missing: {', '.join(missing)}")
+        targets = member_targets(selected, dest)
         if os.path.isdir(dest):
             shutil.rmtree(dest)
         os.makedirs(dest)
-        dest_real = os.path.realpath(dest)
         files = 0
-        for member, parts in selected:
-            target = os.path.realpath(os.path.join(dest, *parts))
-            try:
-                inside = os.path.commonpath([dest_real, target]) == dest_real
-            except ValueError:
-                inside = False
-            if not inside:
-                raise VendorError(f"unsafe archive member: {member.name!r}")
+        for member, target in targets:
             if member.isdir():
                 os.makedirs(target, exist_ok=True)
                 continue
