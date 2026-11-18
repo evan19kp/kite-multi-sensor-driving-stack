@@ -1,6 +1,6 @@
 # Project overview
 
-Kite is a modular autonomous-driving software stack, developed and tested in the BeamNG.tech simulator. It is an independent, non-commercial student project. It is at the setup stage: the only stack code so far is the C++ core skeleton.
+Kite is a modular autonomous-driving software stack (perception, tracking, prediction, planning, control), developed and tested in simulation in BeamNG.tech. It is an independent, non-commercial student project. Status: setup stage, nothing runs yet.
 
 ## Planned stages
 
@@ -17,6 +17,8 @@ All of these are planned; none is built yet.
 | Folder | Contents | Status |
 |---|---|---|
 | `core/` | C++17 library and tests, built with CMake and tested with GoogleTest | exists |
+| `sim/` | synthetic scenario generator | exists |
+| `tools/` | command-line programs | exists |
 | `third_party/` | vendored GoogleTest, changed only by `scripts/vendor_googletest.py` | exists |
 | `scripts/` | repo tooling | exists |
 | `docs/` | project documents | exists |

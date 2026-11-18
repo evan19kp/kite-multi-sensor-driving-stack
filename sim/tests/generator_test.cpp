@@ -254,8 +254,7 @@ TEST_F(GeneratedFiles, Seed42MatchesGoldenFileByteForByte) {
   const kite::ScenarioConfig config{42, 3, 2.0, 0.1, 0.5, 0.9, 50.0};
   const std::string generated = write_and_read_bytes(kite::generate(config));
 
-  std::string golden = read_bytes(fs::path(KITE_SIM_TEST_DATA_DIR) / "seed42.log");
-  golden.erase(std::remove(golden.begin(), golden.end(), '\r'), golden.end());
+  const std::string golden = read_bytes(fs::path(KITE_SIM_TEST_DATA_DIR) / "seed42.log");
 
   ASSERT_FALSE(golden.empty());
   EXPECT_EQ(generated.find('\r'), std::string::npos);

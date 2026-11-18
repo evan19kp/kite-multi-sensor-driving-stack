@@ -83,14 +83,16 @@ The token cannot read check results, so never use `gh pr checks`. Use workflow r
    these rules. Reviewers list the checks they ran and reply PASS or FAIL with reasons.
 7. On PASS the conductor marks the PR ready (`gh pr ready <n>`), updates it from main, and waits
    for the workflow run on the exact head commit (see "Checking CI"); it must be green.
-8. Merge: `gh pr merge --squash --delete-branch`, then
-   `python .worktrees/<item>/scripts/stop_all.py`, `python scripts/worktree.py remove <item-id>`,
-   `git checkout main`, `git pull`.
+8. Merge order: update the branch from latest main, and wait for CI green on the exact commit. Then
+   (1) `python .worktrees/<item>/scripts/stop_all.py`, (2) `gh pr merge --squash --delete-branch`,
+   (3) `python scripts/worktree.py remove <item-id>` only if the folder is still there, then
+   `git worktree prune` and check the folder is gone. Then `git checkout main`, `git pull`.
 9. **Repo scripts:** run them by path **relative to the repo root**, never by absolute path:
    `python scripts/<x>.py` for the main checkout's copy, `python .worktrees/<item>/scripts/<x>.py`
    for a worktree's copy. Absolute paths are denied.
-10. **PR bodies:** always `gh pr create --body-file <file in the worktree>` (inline bodies with `#`
-    lines are refused). The body file is not committed.
+10. **PR bodies:** the body is in `.run/pr-body-<item>.md` (see step 5), passed with
+    `gh pr create --draft --body-file .run/pr-body-<item>.md`, never in the worktree (inline bodies
+    with `#` lines are refused). The body file is not committed.
 
 ## Working rules
 
@@ -145,7 +147,8 @@ item. Never loop.
 
 - Every background process an agent or script starts is recorded:
   `python scripts/proc_registry.py record --pid <n> --cmd <argv...>`. Run
-  `python scripts/stop_all.py` at the start and end of every item; it stops only recorded processes.
+  `python .worktrees/<item>/scripts/stop_all.py` at the start and end of every item; it stops only
+  recorded processes.
 - The same failing command runs at most twice. After the first failure, diagnose and make one
   targeted fix. If it fails again, the item is BLOCKED.
 - Denied commands are never retried or worked around. Add them to the NEEDS HUMAN list (exact
@@ -224,6 +227,13 @@ Each item that introduces a lasting rule adds a "## Standing rules (R<n>)" secti
 - The table in `docs/BASELINE.md` changes only by pasting `kite_baseline` output. The CTest test
   `kite_baseline_doc_matches` enforces this.
 - The baseline is never tuned to score better.
+
+## Standing rules (R12)
+
+- Every builder and reviewer is a new agent started in the foreground; never run in the background,
+  never resumed.
+- The sprint progress file `.run/sprint-<name>-progress.md` is append-only and its last line is always
+  `<!-- progress end -->`; each new line is added by editing that marker into "new line + marker".
 
 ## Simulator files (hard rule)
 
