@@ -69,7 +69,7 @@ its own line when it merges. Agents never add items that a brief didn't list.
   `std::*_distribution`; CLI `kite_gen`. Tests: determinism, seed sensitivity, constant velocity,
   pd 1 and 0, noise statistics, no actor id in measurements, golden file
   `sim/tests/data/seed42.log` byte for byte on every platform.
-- [ ] **R10 Tracker interface and the no-filter baseline tracker** (feat, needs R8): abstract
+- [x] **R10 Tracker interface and the no-filter baseline tracker** (feat, needs R8): abstract
   `Tracker` in `core/include/kite/tracker.hpp` (measurements only, never ground truth);
   `NearestNeighbourBaseline` (greedy nearest-neighbour within a gate, velocity by difference, ids
   never reused). Tests: new track, kept id and velocity, beyond gate, crossing case, empty input,
