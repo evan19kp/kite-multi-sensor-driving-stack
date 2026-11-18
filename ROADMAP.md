@@ -111,7 +111,7 @@ its own line when it merges. Agents never add items that a brief didn't list.
   `docs/BASELINE.md` gains a Kalman table on seeds 1-20 (tuned on seeds 101-120 only), a second
   doc-matches test and a short comparison. Tests: confirmation, coasting and deletion, crossing
   targets keep ids where the baseline swaps, far clutter never confirms, empty steps.
-- [ ] **R16 PID controller with a speed-tracking test plant** (feat, Opus builder): `Pid` in
+- [x] **R16 PID controller with a speed-tracking test plant** (feat, Opus builder): `Pid` in
   `core/include/kite/pid.hpp` + `core/src/pid.cpp` (output limits, anti-windup, derivative on
   measurement with optional low-pass, `reset()`, throws on bad `dt` or non-finite input); test plant
   with first-order actuator lag and acceleration limits [-6, 3] m/s². Tests: hand-computed P/I/D
