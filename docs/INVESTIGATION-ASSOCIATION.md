@@ -431,19 +431,26 @@ The `kite_baseline` scenario, five vehicles, 301 steps, labelled by the R21 rule
 - **Tentative track.** Every track the tracker starts. It is confirmed when the tracker's output
   has it and dropped when the next update's record no longer lists it. A track dropped by the
   final update of a run is unresolved, with any track still tentative at the end.
-- **Real birth lost.** A dropped track whose birth measurement is labelled car C, when no
-  confirmed track was labelled C after the birth step's update. A car's confirmed track is a
-  confirmed track whose latest matched measurement is labelled to that car.
+- **A car's confirmed track.** A track belongs to the car of its latest matched measurement that
+  has a label. Matching an ambiguous measurement never changes it, so a confirmed track that takes
+  an ambiguous measurement and then coasts still belongs to its car. A car has a confirmed track at
+  a step when some track in the step's output belongs to it, and a coasting confirmed track is in
+  the output. A track that starts on an ambiguous measurement belongs to no car until it is matched
+  to a labelled one. This refines the R21 rule, where a match to an ambiguous measurement cleared
+  the track's label, for the tables of this section only. The R21 and R22 tables are unchanged.
+- **Real birth lost.** A dropped track whose birth measurement is labelled car C, when no confirmed
+  track belonged to C after the birth step's update.
 - **Birth to a car with a confirmed track.** A dropped track whose birth measurement is labelled
-  car C, when a confirmed track labelled C existed after the birth step's update. These are the
+  car C, when a confirmed track belonging to C existed after the birth step's update. These are the
   duplicates and strays among the labelled births.
 - **Ambiguous birth.** A dropped track whose birth measurement had no label. The study cannot say
   whether it belonged to a car, so it is counted apart from the other two.
-- **Steps to confirmation.** For a car, the step of its first measurement with a label, which is
-  its first non-ambiguous labelled measurement, to the first step whose output has a confirmed
-  track labelled to that car. Step 0 is possible when a track was already confirmed. The mean is
-  over the cars that were confirmed; the table counts the cars that never were. Cars are those
-  with at least one labelled measurement.
+- **Steps to confirmation.** For a car, the step of its first measurement with a label to the first
+  step whose output has a confirmed track belonging to that car. The mean is over the cars that
+  were confirmed; the table counts the cars that never were. Cars are those with at least one
+  labelled measurement. A car can take fewer than 2 steps only when the track that confirms had
+  hits on measurements without the car's label before the car's first labelled measurement. The
+  seed 116 mean of 1.800 over 5 cars shows that this happens.
 
 Tentative tracks, two_stage, seeds 101-120: 28590 measurements, 314 ambiguous.
 
@@ -463,13 +470,13 @@ Tentative tracks, two_stage, seeds 101-120: 28590 measurements, 314 ambiguous.
 | 112 | 15 | 5 | 10 | 0 | 0 | 5 | 5 |
 | 113 | 19 | 5 | 14 | 0 | 0 | 4 | 10 |
 | 114 | 15 | 5 | 10 | 0 | 0 | 1 | 9 |
-| 115 | 15 | 5 | 9 | 1 | 1 | 3 | 5 |
+| 115 | 15 | 5 | 9 | 1 | 0 | 4 | 5 |
 | 116 | 18 | 5 | 13 | 0 | 0 | 4 | 9 |
 | 117 | 20 | 5 | 15 | 0 | 0 | 4 | 11 |
 | 118 | 17 | 5 | 11 | 1 | 0 | 4 | 7 |
 | 119 | 22 | 5 | 17 | 0 | 0 | 6 | 11 |
 | 120 | 17 | 5 | 12 | 0 | 0 | 1 | 11 |
-| total | 333 | 100 | 230 | 3 | 1 | 56 | 173 |
+| total | 333 | 100 | 230 | 3 | 0 | 57 | 173 |
 
 Tentative tracks, two_stage, seeds 101-120: 28590 measurements, 314 ambiguous.
 
@@ -481,8 +488,8 @@ Tentative tracks, two_stage, seeds 101-120: 28590 measurements, 314 ambiguous.
 | 104 | 1415 | 15 | 5 | 0 | 2.200 |
 | 105 | 1435 | 14 | 5 | 0 | 2.000 |
 | 106 | 1413 | 20 | 5 | 0 | 2.200 |
-| 107 | 1427 | 15 | 5 | 0 | 2.600 |
-| 108 | 1426 | 24 | 5 | 0 | 2.400 |
+| 107 | 1427 | 15 | 5 | 0 | 2.200 |
+| 108 | 1426 | 24 | 5 | 0 | 2.200 |
 | 109 | 1427 | 12 | 5 | 0 | 2.200 |
 | 110 | 1438 | 14 | 5 | 0 | 2.000 |
 | 111 | 1425 | 17 | 5 | 0 | 2.200 |
@@ -495,7 +502,7 @@ Tentative tracks, two_stage, seeds 101-120: 28590 measurements, 314 ambiguous.
 | 118 | 1432 | 18 | 5 | 0 | 2.000 |
 | 119 | 1441 | 17 | 5 | 0 | 2.000 |
 | 120 | 1438 | 13 | 5 | 0 | 2.000 |
-| total | 28590 | 314 | 100 | 0 | 2.150 |
+| total | 28590 | 314 | 100 | 0 | 2.120 |
 
 ### What the numbers show
 
@@ -506,6 +513,6 @@ measurement, 133 were outside the gate and 214 were inside the gate but taken by
 As p falls to 0.70 the no-measurement misses rise from 55 to 5303 while the outside-gate misses
 stay between 108 and 150. The tables do not show why another track took those measurements. On
 seeds 101-120 the tracker started 333 tentative tracks, confirmed 100 and dropped 230. Of the
-dropped, 1 was a real birth lost, 56 were births to a car that already had a confirmed track and
-173 had an ambiguous birth label. Every one of the 100 cars was confirmed, a mean of 2.150 steps
-after its first labelled measurement.
+dropped, none was a real birth lost, 57 were births to a car that already had a confirmed track
+and 173 had an ambiguous birth label. Every one of the 100 cars was confirmed, a mean of 2.120
+steps after its first labelled measurement.

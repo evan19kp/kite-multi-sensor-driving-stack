@@ -1,8 +1,10 @@
 #pragma once
 
 #include <cmath>
+#include <cstddef>
 #include <limits>
 #include <optional>
+#include <string>
 #include <vector>
 
 #include "baseline_setup.hpp"
@@ -48,5 +50,27 @@ inline CarLabel label_of(Vec2 z, const std::vector<GroundTruthState>& truth) {
   }
   return std::nullopt;
 }
+
+inline std::string row(const std::vector<std::string>& cells) {
+  std::string line = "|";
+  for (const std::string& cell : cells) {
+    line += " " + cell + " |";
+  }
+  return line + "\n";
+}
+
+inline std::string divider(std::size_t columns) {
+  std::string line;
+  for (std::size_t i = 0; i < columns; ++i) {
+    line += "|---";
+  }
+  return line + "|\n";
+}
+
+inline std::string table_header(const std::vector<std::string>& names) {
+  return row(names) + divider(names.size());
+}
+
+inline std::string count(int value) { return std::to_string(value); }
 
 }

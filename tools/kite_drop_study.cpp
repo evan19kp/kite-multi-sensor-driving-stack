@@ -1,9 +1,6 @@
-#include <algorithm>
 #include <array>
-#include <cstddef>
 #include <cstdint>
 #include <iostream>
-#include <map>
 #include <optional>
 #include <stdexcept>
 #include <string>
@@ -46,24 +43,6 @@ constexpr std::array<Block, 4> kBlocks = {
 
 constexpr int kFirstTuningSeed = 101;
 constexpr int kLastTuningSeed = 120;
-
-std::string row(const std::vector<std::string>& cells) {
-  std::string line = "|";
-  for (const std::string& cell : cells) {
-    line += " " + cell + " |";
-  }
-  return line + "\n";
-}
-
-std::string table_header(const std::vector<std::string>& names) {
-  std::string line = row(names);
-  for (std::size_t i = 0; i < names.size(); ++i) {
-    line += "|---";
-  }
-  return line + "|\n";
-}
-
-std::string count(int value) { return std::to_string(value); }
 
 std::string percent(double fraction) { return kite::format_fixed(fraction * 100.0); }
 
@@ -192,22 +171,7 @@ struct TuningSeed {
   int seed;
   int measurements = 0;
   int ambiguous = 0;
-  int tentative = 0;
-  int confirmed = 0;
-  int dropped = 0;
-  int unresolved = 0;
-  int real_births_lost = 0;
-  int car_already_confirmed = 0;
-  int ambiguous_births = 0;
-  int cars = 0;
-  int cars_never_confirmed = 0;
-  long long steps_to_confirmation = 0;
-};
-
-struct BornTrack {
-  TrackFollower follower;
-  CarLabel birth_label;
-  bool car_had_confirmed_track;
+  TentativeOutcome outcome;
 };
 
 TuningSeed run_tuning_seed(int seed) {
@@ -218,85 +182,18 @@ TuningSeed run_tuning_seed(int seed) {
 
   TuningSeed result{};
   result.seed = seed;
-  std::map<int, CarLabel> latest_label;
-  std::vector<BornTrack> born;
-  std::map<int, std::size_t> first_measurement_step;
-  std::map<int, std::size_t> confirmation_step;
-  for (std::size_t k = 0; k < scenario.steps.size(); ++k) {
-    const kite::ScenarioStep& step = scenario.steps[k];
+  TentativeClassifier classifier(kKalmanGateChi2);
+  for (const kite::ScenarioStep& step : scenario.steps) {
     const std::vector<kite::TrackState> output = tracker.update(step.t, step.measurements);
-    const kite::StepRecord& record = tracker.step_record().value();
-    for (BornTrack& track : born) {
-      track.follower.observe(record, step.measurements, output);
-    }
-
     std::vector<CarLabel> labels;
     for (const kite::Measurement& z : step.measurements) {
       labels.push_back(label_of(z.position, step.truth));
       ++result.measurements;
-      if (labels.back()) {
-        first_measurement_step.emplace(*labels.back(), k);
-      } else {
-        ++result.ambiguous;
-      }
+      result.ambiguous += labels.back() ? 0 : 1;
     }
-    for (const kite::TrackRecord& track : record.tracks) {
-      if (track.measurement) {
-        latest_label.at(track.track_id) = labels[*track.measurement];
-      }
-    }
-    for (std::size_t m = 0; m < step.measurements.size(); ++m) {
-      if (const std::optional<int> id = record.started_track[m]) {
-        latest_label[*id] = labels[m];
-      }
-    }
-
-    std::vector<CarLabel> confirmed_labels;
-    for (const kite::TrackState& track : output) {
-      confirmed_labels.push_back(latest_label.at(track.track_id));
-      if (confirmed_labels.back()) {
-        confirmation_step.emplace(*confirmed_labels.back(), k);
-      }
-    }
-    for (std::size_t m = 0; m < step.measurements.size(); ++m) {
-      if (const std::optional<int> id = record.started_track[m]) {
-        const bool has_confirmed_track =
-            labels[m] && std::count(confirmed_labels.begin(), confirmed_labels.end(), labels[m]) > 0;
-        born.push_back({TrackFollower(*id, kKalmanGateChi2), labels[m], has_confirmed_track});
-      }
-    }
+    classifier.observe(tracker.step_record().value(), step.measurements, output, labels);
   }
-
-  for (const BornTrack& track : born) {
-    ++result.tentative;
-    switch (track.follower.fate()) {
-      case Fate::confirmed:
-        ++result.confirmed;
-        break;
-      case Fate::pending:
-        ++result.unresolved;
-        break;
-      case Fate::dropped:
-        ++result.dropped;
-        if (!track.birth_label) {
-          ++result.ambiguous_births;
-        } else if (track.car_had_confirmed_track) {
-          ++result.car_already_confirmed;
-        } else {
-          ++result.real_births_lost;
-        }
-        break;
-    }
-  }
-  for (const auto& [car, first] : first_measurement_step) {
-    ++result.cars;
-    const auto confirmed = confirmation_step.find(car);
-    if (confirmed == confirmation_step.end()) {
-      ++result.cars_never_confirmed;
-    } else {
-      result.steps_to_confirmation += static_cast<long long>(confirmed->second - first);
-    }
-  }
+  result.outcome = classifier.outcome();
   return result;
 }
 
@@ -315,16 +212,7 @@ void print_tuning() {
     const TuningSeed& s = seeds.back();
     total.measurements += s.measurements;
     total.ambiguous += s.ambiguous;
-    total.tentative += s.tentative;
-    total.confirmed += s.confirmed;
-    total.dropped += s.dropped;
-    total.unresolved += s.unresolved;
-    total.real_births_lost += s.real_births_lost;
-    total.car_already_confirmed += s.car_already_confirmed;
-    total.ambiguous_births += s.ambiguous_births;
-    total.cars += s.cars;
-    total.cars_never_confirmed += s.cars_never_confirmed;
-    total.steps_to_confirmation += s.steps_to_confirmation;
+    total.outcome += s.outcome;
   }
   const std::string caption = "Tentative tracks, two_stage, seeds " +
                               seed_range(kFirstTuningSeed, kLastTuningSeed) + ": " +
@@ -332,14 +220,16 @@ void print_tuning() {
                               count(total.ambiguous) + " ambiguous.\n\n";
 
   const auto track_row = [](const std::string& label, const TuningSeed& s) {
-    return row({label, count(s.tentative), count(s.confirmed), count(s.dropped),
-                count(s.unresolved), count(s.real_births_lost), count(s.car_already_confirmed),
-                count(s.ambiguous_births)});
+    const TentativeOutcome& o = s.outcome;
+    return row({label, count(o.tentative), count(o.confirmed), count(o.dropped),
+                count(o.unresolved), count(o.real_births_lost), count(o.car_already_confirmed),
+                count(o.ambiguous_births)});
   };
   const auto car_row = [](const std::string& label, const TuningSeed& s) {
-    return row({label, count(s.measurements), count(s.ambiguous), count(s.cars),
-                count(s.cars_never_confirmed),
-                mean_steps(s.steps_to_confirmation, s.cars - s.cars_never_confirmed)});
+    const TentativeOutcome& o = s.outcome;
+    return row({label, count(s.measurements), count(s.ambiguous), count(o.cars),
+                count(o.cars_never_confirmed),
+                mean_steps(o.steps_to_confirmation, o.cars - o.cars_never_confirmed)});
   };
 
   std::string out = caption + table_header({"seed", "tentative tracks", "confirmed", "dropped",

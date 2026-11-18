@@ -5,7 +5,6 @@
 #include <cstdint>
 #include <iostream>
 #include <iterator>
-#include <limits>
 #include <map>
 #include <optional>
 #include <set>
@@ -245,28 +244,6 @@ SeedResult run_seed(int seed, kite::AssociationMode association) {
   }
   return result;
 }
-
-std::string row(const std::vector<std::string>& cells) {
-  std::string line = "|";
-  for (const std::string& cell : cells) {
-    line += " " + cell + " |";
-  }
-  return line + "\n";
-}
-
-std::string divider(std::size_t columns) {
-  std::string line;
-  for (std::size_t i = 0; i < columns; ++i) {
-    line += "|---";
-  }
-  return line + "|\n";
-}
-
-std::string table_header(const std::vector<std::string>& names) {
-  return row(names) + divider(names.size());
-}
-
-std::string count(int value) { return std::to_string(value); }
 
 void append(std::vector<std::string>& cells, const std::vector<std::string>& more) {
   cells.insert(cells.end(), more.begin(), more.end());

@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 
 #include <cstddef>
+#include <optional>
 #include <stdexcept>
 #include <vector>
 
@@ -151,6 +152,112 @@ TEST(TrackFollower, AMeasurementInsideTheGateThatAnotherTrackTookIsNotAGatingLos
   EXPECT_EQ(follower.misses().no_measurement, 0);
   EXPECT_EQ(follower.misses().outside_gate, 0);
   EXPECT_EQ(follower.misses().taken_by_other, 1);
+}
+
+using kite::drop_study::TentativeClassifier;
+using kite::drop_study::TentativeOutcome;
+using kite::study::CarLabel;
+
+struct LabelledStep {
+  Step measurements;
+  std::vector<CarLabel> labels;
+};
+
+const CarLabel kAmbiguous = std::nullopt;
+
+TentativeOutcome classify(const std::vector<LabelledStep>& steps) {
+  kite::KalmanTracker tracker =
+      kite::baseline_setup::make_kalman_tracker(kite::AssociationMode::two_stage);
+  tracker.record_steps(true);
+  TentativeClassifier classifier(kite::baseline_setup::kKalmanGateChi2);
+  for (std::size_t k = 0; k < steps.size(); ++k) {
+    const std::vector<kite::TrackState> output =
+        tracker.update(0.1 * static_cast<double>(k), steps[k].measurements);
+    classifier.observe(tracker.step_record().value(), steps[k].measurements, output,
+                       steps[k].labels);
+  }
+  return classifier.outcome();
+}
+
+TEST(TentativeClassifier, ADropForACarWithNoTrackIsARealBirthLost) {
+  const TentativeOutcome outcome =
+      classify({{{z(0, 0)}, {1}}, {{}, {}}, {{}, {}}, {{}, {}}, {{}, {}}});
+  EXPECT_EQ(outcome.tentative, 1);
+  EXPECT_EQ(outcome.dropped, 1);
+  EXPECT_EQ(outcome.real_births_lost, 1);
+  EXPECT_EQ(outcome.car_already_confirmed, 0);
+  EXPECT_EQ(outcome.ambiguous_births, 0);
+  EXPECT_EQ(outcome.cars, 1);
+  EXPECT_EQ(outcome.cars_never_confirmed, 1);
+}
+
+TEST(TentativeClassifier, ADropOfAnAmbiguousBirthIsCountedApart) {
+  const TentativeOutcome outcome =
+      classify({{{z(0, 0)}, {kAmbiguous}}, {{}, {}}, {{}, {}}, {{}, {}}, {{}, {}}});
+  EXPECT_EQ(outcome.dropped, 1);
+  EXPECT_EQ(outcome.ambiguous_births, 1);
+  EXPECT_EQ(outcome.real_births_lost, 0);
+  EXPECT_EQ(outcome.car_already_confirmed, 0);
+  EXPECT_EQ(outcome.cars, 0);
+}
+
+TEST(TentativeClassifier, AConfirmedTrackThatTookAnAmbiguousMeasurementStillOwnsItsCar) {
+  // Track 0 is confirmed at step 2 as car 1's. At step 3 it takes an ambiguous measurement. At
+  // step 4 it coasts while a measurement of car 1 fifty metres away starts track 1, which drops
+  // at step 7. Car 1 had a confirmed track throughout, so track 1 is not a real birth lost.
+  const TentativeOutcome outcome = classify({{{z(0, 0)}, {1}},
+                                             {{z(0.5, 0)}, {1}},
+                                             {{z(1.0, 0)}, {1}},
+                                             {{z(1.5, 0)}, {kAmbiguous}},
+                                             {{z(50, 0)}, {1}},
+                                             {{}, {}},
+                                             {{}, {}},
+                                             {{}, {}},
+                                             {{}, {}}});
+  EXPECT_EQ(outcome.tentative, 2);
+  EXPECT_EQ(outcome.confirmed, 1);
+  EXPECT_EQ(outcome.dropped, 1);
+  EXPECT_EQ(outcome.real_births_lost, 0);
+  EXPECT_EQ(outcome.car_already_confirmed, 1);
+  EXPECT_EQ(outcome.ambiguous_births, 0);
+}
+
+TEST(TentativeClassifier, ATrackStartedAtTheLastStepIsUnresolved) {
+  const TentativeOutcome outcome = classify({{{z(0, 0)}, {1}}});
+  EXPECT_EQ(outcome.tentative, 1);
+  EXPECT_EQ(outcome.unresolved, 1);
+  EXPECT_EQ(outcome.dropped, 0);
+  EXPECT_EQ(outcome.real_births_lost, 0);
+}
+
+TEST(TentativeClassifier, StepsToConfirmationRunFromTheFirstMeasurementToTheThirdHit) {
+  const TentativeOutcome outcome =
+      classify({{{z(0, 0)}, {1}}, {{z(0.5, 0)}, {1}}, {{z(1.0, 0)}, {1}}});
+  EXPECT_EQ(outcome.confirmed, 1);
+  EXPECT_EQ(outcome.cars, 1);
+  EXPECT_EQ(outcome.cars_never_confirmed, 0);
+  EXPECT_EQ(outcome.steps_to_confirmation, 2);
+}
+
+TEST(TentativeClassifier, StepsToConfirmationStartAtTheFirstLabelledMeasurement) {
+  // The first measurement of car 7 is ambiguous and starts track 0. Car 7's first labelled
+  // measurement is at step 1, and track 0 is confirmed at step 2, one step later.
+  const TentativeOutcome outcome =
+      classify({{{z(0, 0)}, {kAmbiguous}}, {{z(0.5, 0)}, {7}}, {{z(1.0, 0)}, {7}}});
+  EXPECT_EQ(outcome.cars, 1);
+  EXPECT_EQ(outcome.cars_never_confirmed, 0);
+  EXPECT_EQ(outcome.steps_to_confirmation, 1);
+}
+
+TEST(TentativeClassifier, ThrowsWhenLabelsDoNotMatchTheMeasurements) {
+  kite::KalmanTracker tracker =
+      kite::baseline_setup::make_kalman_tracker(kite::AssociationMode::two_stage);
+  tracker.record_steps(true);
+  const Step measurements{z(0, 0)};
+  const std::vector<kite::TrackState> output = tracker.update(0.0, measurements);
+  TentativeClassifier classifier(kite::baseline_setup::kKalmanGateChi2);
+  EXPECT_THROW(classifier.observe(tracker.step_record().value(), measurements, output, {}),
+               std::invalid_argument);
 }
 
 }

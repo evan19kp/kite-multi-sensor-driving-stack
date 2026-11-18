@@ -2,6 +2,9 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstddef>
+#include <map>
+#include <optional>
 #include <stdexcept>
 #include <vector>
 
@@ -138,6 +141,142 @@ class TrackFollower {
   double gate_chi2_;
   Fate fate_ = Fate::pending;
   MissCauses misses_;
+};
+
+// What became of every tentative track in one run, and how fast each car got a confirmed track.
+// A dropped track is "ambiguous" when its birth measurement had no label, "car already confirmed"
+// when it was labelled and some confirmed track already belonged to that car after the birth
+// step, and "real birth lost" otherwise.
+struct TentativeOutcome {
+  int tentative = 0;
+  int confirmed = 0;
+  int dropped = 0;
+  int unresolved = 0;
+  int real_births_lost = 0;
+  int car_already_confirmed = 0;
+  int ambiguous_births = 0;
+  int cars = 0;
+  int cars_never_confirmed = 0;
+  long long steps_to_confirmation = 0;
+
+  TentativeOutcome& operator+=(const TentativeOutcome& other) {
+    tentative += other.tentative;
+    confirmed += other.confirmed;
+    dropped += other.dropped;
+    unresolved += other.unresolved;
+    real_births_lost += other.real_births_lost;
+    car_already_confirmed += other.car_already_confirmed;
+    ambiguous_births += other.ambiguous_births;
+    cars += other.cars;
+    cars_never_confirmed += other.cars_never_confirmed;
+    steps_to_confirmation += other.steps_to_confirmation;
+    return *this;
+  }
+};
+
+// Classifies the tentative tracks of one run. Call observe() once per update, in order, with that
+// update's step record, measurements, output and one label per measurement.
+//
+// A track belongs to the car of its latest matched measurement that has a label. A match to an
+// ambiguous measurement never changes it, so a confirmed track that takes an ambiguous
+// measurement still belongs to its car. A car "has a confirmed track" at a step when some track in
+// the step's output belongs to it; a coasting confirmed track is in the output. A track that
+// starts on an ambiguous measurement belongs to no car until it is matched to a labelled one.
+//
+// Steps to confirmation, per car: from the step of the car's first labelled measurement to the
+// first step whose output has a track belonging to the car. Cars are those with at least one
+// labelled measurement.
+class TentativeClassifier {
+ public:
+  explicit TentativeClassifier(double gate_chi2) : gate_chi2_(gate_chi2) {}
+
+  void observe(const StepRecord& record, const std::vector<Measurement>& measurements,
+               const std::vector<TrackState>& output, const std::vector<study::CarLabel>& labels) {
+    if (labels.size() != measurements.size()) {
+      throw std::invalid_argument("need one label per measurement");
+    }
+    for (Born& track : born_) {
+      track.follower.observe(record, measurements, output);
+    }
+    for (const TrackRecord& track : record.tracks) {
+      if (track.measurement && labels[*track.measurement]) {
+        car_of_track_[track.track_id] = labels[*track.measurement];
+      }
+    }
+    for (std::size_t m = 0; m < measurements.size(); ++m) {
+      if (labels[m]) {
+        first_measurement_step_.emplace(*labels[m], step_);
+      }
+      if (const std::optional<int> id = record.started_track[m]) {
+        car_of_track_[*id] = labels[m];
+      }
+    }
+    std::vector<int> cars_with_confirmed_track;
+    for (const TrackState& track : output) {
+      if (const study::CarLabel car = car_of_track_.at(track.track_id)) {
+        cars_with_confirmed_track.push_back(*car);
+        confirmation_step_.emplace(*car, step_);
+      }
+    }
+    for (std::size_t m = 0; m < measurements.size(); ++m) {
+      if (const std::optional<int> id = record.started_track[m]) {
+        const bool car_has_confirmed_track =
+            labels[m] && std::count(cars_with_confirmed_track.begin(),
+                                    cars_with_confirmed_track.end(), *labels[m]) > 0;
+        born_.push_back({TrackFollower(*id, gate_chi2_), labels[m], car_has_confirmed_track});
+      }
+    }
+    ++step_;
+  }
+
+  TentativeOutcome outcome() const {
+    TentativeOutcome result;
+    for (const Born& track : born_) {
+      ++result.tentative;
+      switch (track.follower.fate()) {
+        case Fate::confirmed:
+          ++result.confirmed;
+          break;
+        case Fate::pending:
+          ++result.unresolved;
+          break;
+        case Fate::dropped:
+          ++result.dropped;
+          if (!track.birth_label) {
+            ++result.ambiguous_births;
+          } else if (track.car_had_confirmed_track) {
+            ++result.car_already_confirmed;
+          } else {
+            ++result.real_births_lost;
+          }
+          break;
+      }
+    }
+    for (const auto& [car, first] : first_measurement_step_) {
+      ++result.cars;
+      const auto confirmed = confirmation_step_.find(car);
+      if (confirmed == confirmation_step_.end()) {
+        ++result.cars_never_confirmed;
+      } else {
+        result.steps_to_confirmation += static_cast<long long>(confirmed->second - first);
+      }
+    }
+    return result;
+  }
+
+ private:
+  struct Born {
+    TrackFollower follower;
+    study::CarLabel birth_label;
+    bool car_had_confirmed_track;
+  };
+
+  double gate_chi2_;
+  std::size_t step_ = 0;
+  std::map<int, study::CarLabel> car_of_track_;
+  std::vector<Born> born_;
+  std::map<int, std::size_t> first_measurement_step_;
+  std::map<int, std::size_t> confirmation_step_;
 };
 
 }
