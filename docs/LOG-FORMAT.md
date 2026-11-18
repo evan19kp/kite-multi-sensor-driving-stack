@@ -43,12 +43,16 @@ it cannot read the answer from the log. Ground truth is for scoring only. Any ne
 ## Number format
 
 - Doubles are written with `std::to_chars` in its shortest round-trip form, so reading a value back
-  gives the same bits. Examples: `0.1`, `-3.25`, `8`, `1e+300`, `-1e-300`.
+  gives the same bits. Examples: `0.1`, `-3.25`, `8`, `1e+05`, `1e+300`, `-1e-300`.
+- The shortest form uses scientific notation when that has fewer characters than plain notation.
+  The writer writes `1e+05` for 100000 and `1` for 1.0.
 - Ints are written with `std::to_chars`.
 - Values are parsed with `std::from_chars`. The whole field must be consumed.
-- A field must also equal what the writer would write for the parsed value. `1.50`, `1E5`, `1e5`,
-  `.5`, `5.`, `1.0`, an int `007` and an int `-0` are errors. The writer writes `100000` for `1e5` and `1`
-  for `1.0`. A double `-0` is valid, because the writer writes `-0` for negative zero.
+- A field must also equal what the writer would write for the parsed value. These are errors:
+  `1.50`, `1E5`, `1e5`, `1e+5`, a double `100000`, `.5`, `5.`, `1.0`, an int `007` and an int `-0`.
+  A double `-0` is valid, because the writer writes `-0` for negative zero.
+- The `WritesShortestFormForDocumentedNumbers` and `NonCanonicalNumbersNameTheirLine` tests in
+  `core/tests/log_test.cpp` check these examples.
 - Number formatting never uses `printf`, streams or the locale, so the output is the same on every
   machine.
 - Every double must be finite. `nan` and `inf` are not valid in a file.

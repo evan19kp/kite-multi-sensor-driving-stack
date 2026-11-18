@@ -82,6 +82,15 @@ TEST_F(LogFiles, WritesExactBytesForTinyLog) {
   EXPECT_EQ(read_text(), kTinyLogBytes);
 }
 
+TEST_F(LogFiles, WritesShortestFormForDocumentedNumbers) {
+  kite::LogRecords records;
+  records.measurements = {{1e5, 0, 0, {1e300, -1e-300}}, {1.0, 0, 0, {-0.0, 0.0}}};
+  kite::write_log(path(), records);
+  EXPECT_EQ(read_text(), std::string(kHeaderLine) +
+                             "meas,1e+05,0,0,1e+300,-1e-300\n"
+                             "meas,1,0,0,-0,0\n");
+}
+
 TEST_F(LogFiles, EmptyLogIsJustTheHeader) {
   kite::write_log(path(), kite::LogRecords{});
   EXPECT_EQ(read_text(), kHeaderLine);
@@ -212,7 +221,8 @@ TEST_F(LogFiles, NonCanonicalNumbersNameTheirLine) {
   const char* bad_records[] = {"gt,1.50,0,1,0,0,0,0", "meas,0,0,1,1E5,0",     "meas,0,0,1,1e5,0",
                                "meas,0,0,1,.5,0",     "meas,0,0,1,5.,0",      "meas,0,0,1,0,00.5",
                                "meas,0,0,1,1e+5,0",   "meas,0,0,1,1.0,0",     "meas,0,0,1,0.0,0",
-                               "gt,0,007,1,0,0,0,0",  "track,0,0,-0,0,0,0,0", "track,0,0,-007,0,0,0,0"};
+                               "gt,0,007,1,0,0,0,0",  "track,0,0,-0,0,0,0,0", "track,0,0,-007,0,0,0,0",
+                               "meas,100000,0,1,0,0"};
   for (const char* record : bad_records) {
     const std::string text = std::string(kHeaderLine) + "gt,0,0,1,0,0,0,0\n" + record + "\n";
     EXPECT_THAT(read_error(text), ::testing::HasSubstr("line 3:")) << record;
