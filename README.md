@@ -11,7 +11,25 @@ A modular autonomous-driving software stack (perception, tracking, prediction, p
 
 ## Build and test
 
-Build and test instructions arrive with the first code.
+The C++ part needs CMake 3.20 or newer, Ninja and a C++17 compiler (GCC, Clang or MSVC). GoogleTest is vendored in `third_party/googletest`, so there is nothing else to install.
+
+With the `dev` preset (Ninja, Debug, output in `build/dev`):
+
+```
+cmake --preset dev
+cmake --build --preset dev
+ctest --preset dev
+```
+
+Without the preset:
+
+```
+cmake -S . -B build/dev -G Ninja -DCMAKE_BUILD_TYPE=Debug
+cmake --build build/dev
+ctest --test-dir build/dev --output-on-failure
+```
+
+Pass `-DKITE_BUILD_TESTS=OFF` to skip the tests. To check the build scripts: `python -m unittest discover -s scripts -v`.
 
 ## Simulation only
 
