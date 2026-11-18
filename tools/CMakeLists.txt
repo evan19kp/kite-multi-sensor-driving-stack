@@ -69,6 +69,28 @@ if(KITE_BUILD_TESTS)
   kite_exit_test(kite_baseline_unknown_flag kite_baseline 2 "--bogus;1")
   kite_exit_test(kite_baseline_duplicate_flag kite_baseline 2 "--seeds;1;--seeds;2")
   kite_exit_test(kite_baseline_missing_value kite_baseline 2 "--seeds")
+  kite_exit_test(kite_baseline_tracker_bad_value kite_baseline 2 "--tracker;bogus")
+  kite_exit_test(kite_baseline_tracker_missing_value kite_baseline 2 "--seeds;1;--tracker")
+  kite_exit_test(kite_baseline_tracker_duplicate kite_baseline 2
+    "--tracker;kalman;--seeds;1;--tracker;baseline")
+  kite_exit_test(kite_baseline_range_reversed kite_baseline 2 "--seeds;5-3")
+  kite_exit_test(kite_baseline_range_zero_start kite_baseline 2 "--seeds;0-3")
+  kite_exit_test(kite_baseline_range_missing_end kite_baseline 2 "--seeds;1-")
+  kite_exit_test(kite_baseline_range_missing_start kite_baseline 2 "--seeds;-3")
+  kite_exit_test(kite_baseline_range_three_parts kite_baseline 2 "--seeds;1-2-3")
+  kite_exit_test(kite_baseline_range_non_number kite_baseline 2 "--seeds;1-x")
+  kite_exit_test(kite_baseline_tracker_after_seeds kite_baseline 0 "--seeds;101-101;--tracker;kalman")
+
+  add_test(NAME kite_baseline_range_output
+    COMMAND ${CMAKE_COMMAND} -DEXE=$<TARGET_FILE:kite_baseline> "-DARGS=--tracker;baseline;--seeds;19-20"
+            "-DEXPECT_MATCH=[|] 19 [|] 1402 [|].*[|] 20 [|] 1424 [|].*[|] mean [|] 1413[.]000 [|] 92[.]000 [|]"
+            -DOUT=${CMAKE_CURRENT_BINARY_DIR}/baseline_19_20.md
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/run_to_file.cmake)
+
+  add_test(NAME kite_baseline_kalman_tuning
+    COMMAND ${CMAKE_COMMAND} -DEXE=$<TARGET_FILE:kite_baseline> "-DARGS=--tracker;kalman;--seeds;101-120"
+            -DOUT=${CMAKE_CURRENT_BINARY_DIR}/kalman_tuning.md
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/run_to_file.cmake)
 
   add_test(NAME kite_baseline_output
     COMMAND ${CMAKE_COMMAND} -DEXE=$<TARGET_FILE:kite_baseline>
@@ -81,4 +103,16 @@ if(KITE_BUILD_TESTS)
             -DDOC=${PROJECT_SOURCE_DIR}/docs/BASELINE.md
             -P ${CMAKE_CURRENT_SOURCE_DIR}/doc_contains.cmake)
   set_tests_properties(kite_baseline_doc_matches PROPERTIES FIXTURES_REQUIRED kite_baseline_table)
+
+  add_test(NAME kite_baseline_kalman_output
+    COMMAND ${CMAKE_COMMAND} -DEXE=$<TARGET_FILE:kite_baseline> "-DARGS=--tracker;kalman"
+            -DOUT=${CMAKE_CURRENT_BINARY_DIR}/kalman.md
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/run_to_file.cmake)
+  set_tests_properties(kite_baseline_kalman_output PROPERTIES FIXTURES_SETUP kite_kalman_table)
+
+  add_test(NAME kite_baseline_kalman_doc_matches
+    COMMAND ${CMAKE_COMMAND} -DTABLE=${CMAKE_CURRENT_BINARY_DIR}/kalman.md
+            -DDOC=${PROJECT_SOURCE_DIR}/docs/BASELINE.md
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/doc_contains.cmake)
+  set_tests_properties(kite_baseline_kalman_doc_matches PROPERTIES FIXTURES_REQUIRED kite_kalman_table)
 endif()

@@ -134,8 +134,6 @@ TEST(KalmanTracker, EmptyStepsGiveEmptyOutputUntilATrackIsConfirmed) {
   EXPECT_EQ(confirmed[0], (TrackState{4.0, 0, 0, {1.0, 1.0}, {0.0, 0.0}}));
 }
 
-// A confirmed stationary track coasts at its last state through empty steps; the fifth empty step
-// deletes it.
 TEST(KalmanTracker, EmptyStepsCoastAConfirmedTrackUntilItIsDeleted) {
   KalmanTracker tracker = make_tracker();
   for (int k = 0; k < 3; ++k) {
@@ -208,6 +206,25 @@ TEST(KalmanTracker, AssociationMaximisesPairsOverAllTracks) {
   EXPECT_EQ(tracks[1].track_id, 1);
   EXPECT_GT(tracks[1].position.x, 2.0);
   EXPECT_LT(tracks[1].position.x, 4.0);
+}
+
+// The measurement at x = 4 falls outside the confirmed track's gate and starts a tentative track.
+// Its wide covariance puts x = 1.5 nearer to it in Mahalanobis terms than to the confirmed track.
+TEST(KalmanTracker, ConfirmedTrackKeepsItsTargetsMeasurementsFromANearbyTentativeTrack) {
+  KalmanTracker tracker = make_tracker();
+  for (int k = 0; k < 20; ++k) {
+    tracker.update(k, {at(k, 0.0, 0.0)});
+  }
+
+  const auto outlier = tracker.update(20.0, {at(20.0, 4.0, 0.0)});
+  ASSERT_EQ(outlier.size(), 1u);
+  EXPECT_EQ(outlier[0].position, (Vec2{0.0, 0.0}));
+  for (int k = 21; k < 26; ++k) {
+    const auto tracks = tracker.update(k, {at(k, 1.5, 0.0)});
+    ASSERT_EQ(tracks.size(), 1u) << "step " << k;
+    EXPECT_EQ(tracks[0].track_id, 0);
+    EXPECT_GT(tracks[0].position.x, 0.0) << "step " << k;
+  }
 }
 
 // One-off measurements 100 m apart, each far from the target and from every earlier one, start

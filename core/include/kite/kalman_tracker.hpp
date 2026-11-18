@@ -16,8 +16,9 @@ namespace kite {
 //   1. Predicts every track to t (dt = t minus the previous update's t; 0 on the first update).
 //   2. Gates: a track and a measurement may pair only when the squared Mahalanobis distance of the
 //      innovation is <= gate_chi2 (9.21 is the 99 % point of chi-square with 2 degrees of freedom).
-//   3. Associates with solve_assignment on those squared distances: most pairs within the gate,
-//      then the least total.
+//   3. Associates with solve_assignment on those squared distances (most pairs within the gate,
+//      then the least total), confirmed tracks first, then tentative tracks with the measurements
+//      left over.
 //   4. Updates each matched track with its measurement. Every track records a hit or a miss for
 //      this step.
 //   5. A tentative track becomes confirmed once it has confirm_hits hits among its last

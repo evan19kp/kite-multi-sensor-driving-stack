@@ -104,7 +104,7 @@ its own line when it merges. Agents never add items that a brief didn't list.
   predict, covariance grows and shrinks, stays symmetric positive definite over 1,000 steps,
   stationary convergence, NEES inside its 95 % chi-square bounds on generator data, `dt = 0` no-op,
   non-finite input throws.
-- [ ] **R15 Kalman multi-vehicle tracker with data association, scored** (feat, Opus builder; needs
+- [x] **R15 Kalman multi-vehicle tracker with data association, scored** (feat, Opus builder; needs
   R13, R14): `KalmanTracker : Tracker` (predict, chi-square gate 9.21, global nearest neighbour via
   `solve_assignment`, tentative tracks confirmed after M of N hits, deleted after K misses, confirmed
   tracks only, ids never reused); `kite_baseline --tracker baseline|kalman --seeds A-B`;

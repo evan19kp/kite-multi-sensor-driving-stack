@@ -1,6 +1,8 @@
 #include <charconv>
 #include <cstdint>
+#include <cstddef>
 #include <iostream>
+#include <memory>
 #include <optional>
 #include <stdexcept>
 #include <string>
@@ -10,6 +12,7 @@
 
 #include "kite/baseline_tracker.hpp"
 #include "kite/generator.hpp"
+#include "kite/kalman_tracker.hpp"
 #include "kite/scoring.hpp"
 #include "kite/tracker.hpp"
 
@@ -22,15 +25,25 @@ constexpr double kNoiseM = 1.0;
 constexpr double kDetectionProbability = 0.95;
 constexpr double kAreaHalfWidthM = 100.0;
 constexpr double kTrackerGateM = 5.0;
+constexpr double kKalmanQ = 0.01;
+constexpr double kKalmanVelocitySigma = 10.0;
+constexpr double kKalmanGateChi2 = 9.21;
+constexpr int kKalmanConfirmHits = 3;
+constexpr int kKalmanConfirmWindow = 5;
+constexpr int kKalmanMaxMisses = 5;
 constexpr double kMatchGateM = 3.0;
 constexpr int kDefaultSeeds = 20;
 
 constexpr const char* kUsage =
-    "usage: kite_baseline [--seeds N]\n"
-    "  --seeds   run seeds 1..N, N >= 1 (default 20)\n"
-    "  --help    print this text\n"
+    "usage: kite_baseline [--tracker baseline|kalman] [--seeds N | --seeds A-B]\n"
+    "  --tracker  baseline (default): NearestNeighbourBaseline with gate 5 m\n"
+    "             kalman: KalmanTracker with q 0.01 m^2/s^3, measurement sigma 1.0 m,\n"
+    "             initial velocity sigma 10 m/s, chi-square gate 9.21, confirmed after 3 hits\n"
+    "             in 5 steps, deleted after 5 consecutive misses\n"
+    "  --seeds    run seeds 1..N with N >= 1, or A..B with 1 <= A <= B (default 1..20)\n"
+    "  --help     print this text\n"
     "Fixed config for every seed: 5 vehicles, 30 s, dt 0.1 s, noise 1.0 m, pd 0.95,\n"
-    "half-width 100 m. Tracker: NearestNeighbourBaseline with gate 5 m. Scoring: match gate 3 m.\n"
+    "half-width 100 m. Scoring: match gate 3 m.\n"
     "Prints a Markdown table with one row per seed and a mean row.\n";
 
 class UsageError : public std::runtime_error {
@@ -38,43 +51,92 @@ class UsageError : public std::runtime_error {
   using std::runtime_error::runtime_error;
 };
 
-int parse_seeds(int argc, char** argv) {
-  if (argc == 1) {
-    return kDefaultSeeds;
+enum class TrackerKind { baseline, kalman };
+
+struct Options {
+  TrackerKind tracker = TrackerKind::baseline;
+  int first_seed = 1;
+  int last_seed = kDefaultSeeds;
+};
+
+std::optional<int> parse_positive(std::string_view text) {
+  int value = 0;
+  const char* end = text.data() + text.size();
+  const auto result = std::from_chars(text.data(), end, value);
+  if (result.ec != std::errc() || result.ptr != end || value < 1) {
+    return std::nullopt;
   }
-  const std::string_view flag = argv[1];
-  if (flag != "--seeds") {
-    throw UsageError("unknown argument: " + std::string(flag));
-  }
-  if (argc == 2) {
-    throw UsageError("missing value for --seeds");
-  }
-  if (argc > 3) {
-    const std::string_view extra = argv[3];
-    throw UsageError((extra == "--seeds" ? "duplicate argument: " : "unknown argument: ") +
-                     std::string(extra));
-  }
-  const std::string_view value = argv[2];
-  int seeds = 0;
-  const char* end = value.data() + value.size();
-  const auto result = std::from_chars(value.data(), end, seeds);
-  if (result.ec != std::errc() || result.ptr != end || seeds < 1) {
-    throw UsageError("invalid value for --seeds: '" + std::string(value) + "'");
-  }
-  return seeds;
+  return value;
 }
 
-kite::ScoreResult run_seed(std::uint64_t seed) {
+void parse_seeds(std::string_view value, Options& options) {
+  const std::size_t dash = value.find('-');
+  const std::optional<int> first =
+      dash == std::string_view::npos ? std::optional<int>(1) : parse_positive(value.substr(0, dash));
+  const std::optional<int> last = parse_positive(
+      dash == std::string_view::npos ? value : value.substr(dash + 1));
+  if (!first || !last || *first > *last) {
+    throw UsageError("invalid value for --seeds: '" + std::string(value) + "'");
+  }
+  options.first_seed = *first;
+  options.last_seed = *last;
+}
+
+void parse_tracker(std::string_view value, Options& options) {
+  if (value == "baseline") {
+    options.tracker = TrackerKind::baseline;
+  } else if (value == "kalman") {
+    options.tracker = TrackerKind::kalman;
+  } else {
+    throw UsageError("invalid value for --tracker: '" + std::string(value) + "'");
+  }
+}
+
+Options parse_options(int argc, char** argv) {
+  Options options;
+  bool seen_seeds = false;
+  bool seen_tracker = false;
+  for (int i = 1; i < argc; i += 2) {
+    const std::string flag = argv[i];
+    bool* seen = flag == "--seeds" ? &seen_seeds : flag == "--tracker" ? &seen_tracker : nullptr;
+    if (seen == nullptr) {
+      throw UsageError("unknown argument: " + flag);
+    }
+    if (*seen) {
+      throw UsageError("duplicate argument: " + flag);
+    }
+    *seen = true;
+    if (i + 1 == argc) {
+      throw UsageError("missing value for " + flag);
+    }
+    if (flag == "--seeds") {
+      parse_seeds(argv[i + 1], options);
+    } else {
+      parse_tracker(argv[i + 1], options);
+    }
+  }
+  return options;
+}
+
+std::unique_ptr<kite::Tracker> make_tracker(TrackerKind kind) {
+  if (kind == TrackerKind::kalman) {
+    return std::make_unique<kite::KalmanTracker>(kKalmanQ, kNoiseM, kKalmanVelocitySigma,
+                                                 kKalmanGateChi2, kKalmanConfirmHits,
+                                                 kKalmanConfirmWindow, kKalmanMaxMisses);
+  }
+  return std::make_unique<kite::NearestNeighbourBaseline>(kTrackerGateM);
+}
+
+kite::ScoreResult run_seed(std::uint64_t seed, TrackerKind kind) {
   const kite::ScenarioConfig config{seed,    kVehicles, kDurationS, kDtS,
                                     kNoiseM, kDetectionProbability, kAreaHalfWidthM};
   const kite::GeneratedScenario scenario = kite::generate(config);
 
-  kite::NearestNeighbourBaseline baseline(kTrackerGateM);
-  kite::Tracker& tracker = baseline;
+  const std::unique_ptr<kite::Tracker> tracker = make_tracker(kind);
   std::vector<kite::GroundTruthState> truth;
   std::vector<kite::TrackState> tracks;
   for (const kite::ScenarioStep& step : scenario.steps) {
-    const std::vector<kite::TrackState> step_tracks = tracker.update(step.t, step.measurements);
+    const std::vector<kite::TrackState> step_tracks = tracker->update(step.t, step.measurements);
     tracks.insert(tracks.end(), step_tracks.begin(), step_tracks.end());
     truth.insert(truth.end(), step.truth.begin(), step.truth.end());
   }
@@ -102,9 +164,9 @@ int main(int argc, char** argv) {
     std::cout << kUsage;
     return 0;
   }
-  int seeds = 0;
+  Options options;
   try {
-    seeds = parse_seeds(argc, argv);
+    options = parse_options(argc, argv);
   } catch (const UsageError& error) {
     std::cerr << error.what() << "\n" << kUsage;
     return 2;
@@ -119,8 +181,8 @@ int main(int argc, char** argv) {
   int rmse_count = 0;
   double id_switches = 0.0;
   double steps = 0.0;
-  for (int seed = 1; seed <= seeds; ++seed) {
-    const kite::ScoreResult result = run_seed(static_cast<std::uint64_t>(seed));
+  for (std::int64_t seed = options.first_seed; seed <= options.last_seed; ++seed) {
+    const kite::ScoreResult result = run_seed(static_cast<std::uint64_t>(seed), options.tracker);
     table += row(format_int(seed),
                  {format_int(result.matched), format_int(result.missed),
                   format_int(result.false_tracks), kite::format_fixed(result.rmse_m),
@@ -136,6 +198,7 @@ int main(int argc, char** argv) {
     steps += result.steps;
   }
 
+  const double seeds = static_cast<double>(options.last_seed) - options.first_seed + 1.0;
   const std::optional<double> rmse_mean =
       rmse_count > 0 ? std::optional<double>(rmse_sum / rmse_count) : std::nullopt;
   table += row("mean",

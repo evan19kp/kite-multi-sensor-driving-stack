@@ -249,6 +249,14 @@ Each item that introduces a lasting rule adds a "## Standing rules (R<n>)" secti
 - Fixed-size matrix code lives in `core/include/kite/matrix.hpp`; no item adds a second matrix
   library.
 
+## Standing rules (R15)
+
+- Tracker and filter parameters are tuned only on seeds 101-120; seeds 1-20 are the reporting set.
+- The Kalman table in `docs/BASELINE.md` changes only by pasting `kite_baseline --tracker kalman`
+  output; `kite_baseline_kalman_doc_matches` enforces it.
+- `kite_baseline` without `--tracker` stays the baseline tracker, so its table and
+  `kite_baseline_doc_matches` do not change.
+
 ## Simulator files (hard rule)
 
 - Never read, list, search, copy, launch or write about the simulator's install folder, its user

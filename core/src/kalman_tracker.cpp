@@ -69,22 +69,36 @@ std::vector<TrackState> KalmanTracker::update(double t,
     track.filter.predict(dt);
   }
 
-  CostMatrix cost{tracks.size(), measurements.size(), {}};
-  cost.values.reserve(tracks.size() * measurements.size());
-  for (const Track& track : tracks) {
-    for (const Measurement& z : measurements) {
-      cost.values.push_back(track.filter.innovation_mahalanobis2(z.position));
-    }
-  }
-
   std::vector<bool> track_hit(tracks.size(), false);
   std::vector<bool> measurement_used(measurements.size(), false);
-  for (const Assignment& pair : solve_assignment(cost, gate_chi2_)) {
-    const Measurement& z = measurements[pair.column];
-    tracks[pair.row].filter.update(z.position);
-    tracks[pair.row].ego_id = z.ego_id;
-    track_hit[pair.row] = true;
-    measurement_used[pair.column] = true;
+  for (const Status stage : {Status::confirmed, Status::tentative}) {
+    std::vector<std::size_t> rows;
+    for (std::size_t i = 0; i < tracks.size(); ++i) {
+      if (tracks[i].status == stage) {
+        rows.push_back(i);
+      }
+    }
+    std::vector<std::size_t> columns;
+    for (std::size_t m = 0; m < measurements.size(); ++m) {
+      if (!measurement_used[m]) {
+        columns.push_back(m);
+      }
+    }
+    CostMatrix cost{rows.size(), columns.size(), {}};
+    cost.values.reserve(rows.size() * columns.size());
+    for (const std::size_t i : rows) {
+      for (const std::size_t m : columns) {
+        cost.values.push_back(tracks[i].filter.innovation_mahalanobis2(measurements[m].position));
+      }
+    }
+    for (const Assignment& pair : solve_assignment(cost, gate_chi2_)) {
+      Track& track = tracks[rows[pair.row]];
+      const Measurement& z = measurements[columns[pair.column]];
+      track.filter.update(z.position);
+      track.ego_id = z.ego_id;
+      track_hit[rows[pair.row]] = true;
+      measurement_used[columns[pair.column]] = true;
+    }
   }
   for (std::size_t i = 0; i < tracks.size(); ++i) {
     record(tracks[i], track_hit[i]);
