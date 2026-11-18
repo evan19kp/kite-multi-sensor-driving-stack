@@ -150,6 +150,33 @@ default or parameter changes. Seeds 1-20 never appear in any output.
   `docs/INVESTIGATION-ASSOCIATION.md` section "R23: tentative tracks dropped" with doc-matches
   tests. No parameter or drop-rule change.
 
+## Sprint 0A.2.2
+
+Safe cleanup sprint: docs, missing tests and duplicate helpers. No behaviour or printed-output
+change; every existing test passes unchanged.
+
+- [ ] **R24 Docs refresh** (docs, Sonnet): README.md line 3 and `docs/PROJECT.md` line 3 status
+  line updated to the Phase 0A status (nothing else in README.md); `eval/README.md` describes
+  `kite_baseline`'s `--tracker`, `--seeds` and `--association` options from its usage text and adds
+  `tools/kite_association_study` and `tools/kite_drop_study` with a pointer to
+  `docs/INVESTIGATION-ASSOCIATION.md`; the R21 sentence about the 314 ambiguous measurements
+  reworded (prose only, no table or number change). Tests: every doc-matches test passes
+  unchanged; forbidden-files check passes; reviewer checks each new sentence against the code.
+- [ ] **R25 Missing tests the reviewers flagged** (test, Sonnet): unit tests only, no production
+  change: `KalmanTracker` gate boundary at `gate_chi2`; a `joint_likelihood`-only gate case where
+  the outside-gate pair has the lower cost; a throwing `update()` leaves the previous step record
+  unchanged; R21 steal classification (nearer / H1 / other) on hand-made records; R23 first
+  confirmation step kept and a track switching labels; `cholesky` result is lower triangular.
+  Tests: each new test mutation-checked; total test count before and after; existing tests
+  unchanged.
+- [ ] **R26 Remove duplicate helpers** (refactor, Sonnet): one shared test helper header for
+  `uniform01` and `kInf` (the generator's own `uniform01` untouched); one shared `format_int` in
+  `tools/` with byte-identical output; unused `<cmath>` removed from
+  `tools/kite_association_study.cpp`; the misleading `core/src/kalman_tracker.cpp` error message
+  near a 1e308 gate states the real condition, with a message test. Tests: full `ctest` and Python
+  tests pass with the same count plus any message test; no printed output, table, golden file or
+  random sequence changes.
+
 ## Later
 
 Planned, not scheduled. Do not pick these up as roadmap items.
