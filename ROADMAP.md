@@ -15,7 +15,7 @@ its own line when it merges. Agents never add items that a brief didn't list.
   `core/` library `kite_core` with `kite::wrap_angle` and GoogleTest/gMock tests; README build and
   test commands. Tests: `cmake --preset dev`, build and `ctest` pass; Python script tests and
   forbidden-files check pass; CI green.
-- [ ] **R3 CI builds and tests C++ on Linux and Windows** (ci): `app` job builds and tests with
+- [x] **R3 CI builds and tests C++ on Linux and Windows** (ci): `app` job builds and tests with
   g++ and Ninja on Linux; new `app-windows` job with MSVC; `e2e` job removed; `scripts/ci_paths.json`
   and its test updated; `actions/checkout`, `actions/setup-python` and `gitleaks/gitleaks-action`
   bumped to their newest major tags. No self-hosted runner; `gitleaks` job name unchanged. Tests:

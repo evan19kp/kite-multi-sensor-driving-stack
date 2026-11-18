@@ -153,6 +153,12 @@ Each item that introduces a lasting rule adds a "## Standing rules (R<n>)" secti
 - Warnings are errors on our own targets only (`kite_enable_warnings`), never on GoogleTest.
 - C++ builds and tests stay in `<worktree>/build/` (gitignored); never commit build output.
 
+## Standing rules (R3)
+
+- C++ builds and tests run in CI on Linux g++ (`app`) and Windows MSVC (`app-windows`).
+- A new top-level folder gets a rule in `scripts/ci_paths.json`; C++ folders map to both `app` and `app-windows`.
+- No self-hosted runner: `HEAVY_RUNNER` stays unset and every job runs on a GitHub-hosted runner.
+
 ## Simulator files (hard rule)
 
 - Never read, list, search, copy, launch or write about the simulator's install folder, its user
