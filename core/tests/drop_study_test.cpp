@@ -8,6 +8,7 @@
 #include "baseline_setup.hpp"
 #include "drop_study.hpp"
 #include "kite/kalman_tracker.hpp"
+#include "kite/matrix.hpp"
 #include "kite/types.hpp"
 
 namespace {
@@ -246,6 +247,48 @@ TEST(TentativeClassifier, StepsToConfirmationStartAtTheFirstLabelledMeasurement)
       classify({{{z(0, 0)}, {kAmbiguous}}, {{z(0.5, 0)}, {7}}, {{z(1.0, 0)}, {7}}});
   EXPECT_EQ(outcome.cars, 1);
   EXPECT_EQ(outcome.cars_never_confirmed, 0);
+  EXPECT_EQ(outcome.steps_to_confirmation, 1);
+}
+
+kite::TrackRecord matched_to_measurement_zero(int track_id) {
+  return kite::TrackRecord{track_id,        kite::TrackStage::tentative, 1, 0, {0.0, 0.0},
+                           kite::identity<2>(), std::optional<std::size_t>(0)};
+}
+
+kite::TrackState in_output(int track_id) {
+  return kite::TrackState{0.0, 0, track_id, {0.0, 0.0}, {0.0, 0.0}};
+}
+
+TentativeOutcome classify_one_track(CarLabel birth_car, CarLabel later_car,
+                                    bool output_from_step_one) {
+  TentativeClassifier classifier(kite::baseline_setup::kKalmanGateChi2);
+  const Step measurements{z(0, 0)};
+  classifier.observe(kite::StepRecord{{}, {std::optional<int>(0)}}, measurements, {}, {birth_car});
+  const kite::StepRecord matched{{matched_to_measurement_zero(0)}, {std::nullopt}};
+  classifier.observe(matched, measurements,
+                     output_from_step_one ? std::vector<kite::TrackState>{in_output(0)}
+                                          : std::vector<kite::TrackState>{},
+                     {later_car});
+  classifier.observe(matched, measurements, {in_output(0)}, {later_car});
+  return classifier.outcome();
+}
+
+TEST(TentativeClassifier, ACarsFirstConfirmationStepIsKeptWhenItsTrackStaysInTheOutput) {
+  // Car 1's first measurement is at step 0 and its track is first in the output at step 1. The
+  // output at step 2 must not move the confirmation to step 2.
+  const TentativeOutcome outcome = classify_one_track(1, 1, true);
+  EXPECT_EQ(outcome.cars, 1);
+  EXPECT_EQ(outcome.cars_never_confirmed, 0);
+  EXPECT_EQ(outcome.steps_to_confirmation, 1);
+}
+
+TEST(TentativeClassifier, ATrackSwitchingFromOneCarsLabelToAnothersBelongsToTheLatestCar) {
+  // The track starts on car 1's measurement, then takes car 2's at steps 1 and 2 and is in the
+  // output at step 2. It now belongs to car 2, confirmed one step after car 2's first
+  // measurement. Car 1 never has a confirmed track.
+  const TentativeOutcome outcome = classify_one_track(1, 2, false);
+  EXPECT_EQ(outcome.cars, 2);
+  EXPECT_EQ(outcome.cars_never_confirmed, 1);
   EXPECT_EQ(outcome.steps_to_confirmation, 1);
 }
 

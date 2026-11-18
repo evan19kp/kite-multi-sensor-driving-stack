@@ -105,6 +105,24 @@ TEST(Matrix, CholeskyFactorsAPositiveDefiniteMatrix) {
   EXPECT_EQ(l->values, kLower.values);
 }
 
+TEST(Matrix, CholeskyIsLowerTriangularOnAFullPositiveDefiniteMatrix) {
+  const Matrix<4, 4> lower{{1, 0, 0, 0, 2, 1, 0, 0, 3, 2, 1, 0, 4, 3, 2, 1}};
+  const Matrix<4, 4> a = lower * kite::transpose(lower);
+  for (const double entry : a.values) {
+    ASSERT_NE(entry, 0.0);
+  }
+
+  const std::optional<Matrix<4, 4>> l = kite::cholesky(a);
+
+  ASSERT_TRUE(l.has_value());
+  for (std::size_t row = 0; row < 4; ++row) {
+    for (std::size_t column = row + 1; column < 4; ++column) {
+      EXPECT_EQ((*l)(row, column), 0.0) << "entry (" << row << ", " << column << ")";
+    }
+  }
+  EXPECT_EQ(l->values, lower.values);
+}
+
 TEST(Matrix, CholeskyRejectsMatricesThatAreNotPositiveDefinite) {
   // [1 2; 2 1] has eigenvalues 3 and -1: second pivot 1 - 2^2 = -3.
   EXPECT_FALSE(kite::cholesky(Matrix<2, 2>{{1, 2, 2, 1}}).has_value());

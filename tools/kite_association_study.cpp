@@ -19,6 +19,7 @@
 #include "kite/matrix.hpp"
 #include "kite/scoring.hpp"
 #include "kite/types.hpp"
+#include "steal_class.hpp"
 #include "study_common.hpp"
 
 namespace {
@@ -77,7 +78,6 @@ Options parse_options(int argc, char** argv) {
   return options;
 }
 
-enum class StealClass { h1, nearer, other };
 constexpr std::array<StealClass, 3> kClasses = {StealClass::h1, StealClass::nearer,
                                                 StealClass::other};
 
@@ -120,8 +120,6 @@ struct SeedResult {
   int reverse_steals;
 };
 
-double det(const kite::Matrix<2, 2>& s) { return s(0, 0) * s(1, 1) - s(0, 1) * s(1, 0); }
-
 bool inside_a_gate(const kite::StepRecord& record, kite::Vec2 z) {
   return std::any_of(record.tracks.begin(), record.tracks.end(),
                      [z](const kite::TrackRecord& track) {
@@ -142,15 +140,9 @@ Steal make_steal(std::size_t step, int car, kite::Vec2 z, const kite::TrackRecor
   const double confirmed_det = det(confirmed.innovation_covariance);
   const bool scores_lower = tentative_d2 < confirmed_d2;
   const bool det_larger = tentative_det > confirmed_det;
-  StealClass kind = StealClass::other;
-  if (tentative_distance < confirmed_distance) {
-    kind = StealClass::nearer;
-  } else if (scores_lower && det_larger) {
-    kind = StealClass::h1;
-  }
   return {step,
           car,
-          kind,
+          classify_steal(z, tentative, confirmed),
           tentative_distance / confirmed_distance,
           tentative_det / confirmed_det,
           confirmed_d2 > kKalmanGateChi2,
