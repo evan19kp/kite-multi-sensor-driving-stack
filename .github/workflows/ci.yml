@@ -1,10 +1,11 @@
 name: CI
 
-# Kit template. Fill every "FILL:" step for the project's stack, keep the shape:
 # - gitleaks (light, GitHub-hosted) classifies the changed files and scans for secrets on every event.
-# - Heavy jobs run on HEAVY_RUNNER (a self-hosted runner) for same-repo PRs, GitHub-hosted otherwise.
 # - Heavy jobs run only on pull requests (main already passed them on the PR head) and only when the
-#   classifier did not say 'false' for them; e2e also skips draft PRs.
+#   classifier did not say 'false' for them.
+# - Heavy jobs use the HEAVY_RUNNER expression in runs-on. The variable stays unset, so they run on
+#   GitHub-hosted runners. There is no self-hosted runner (public repo).
+# - app builds and tests C++ with g++ on Linux; app-windows does the same with MSVC.
 # - Every job has timeout-minutes (the agent token cannot cancel runs).
 
 on:
@@ -29,17 +30,17 @@ jobs:
       pull-requests: read
     outputs:
       app: ${{ steps.classify.outputs.app }}
+      app-windows: ${{ steps.classify.outputs.app-windows }}
       python: ${{ steps.classify.outputs.python }}
-      e2e: ${{ steps.classify.outputs.e2e }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
       - id: classify
         run: python3 scripts/ci_changes.py
       - name: Forbidden files (another program's files, binaries, keys)
         run: python3 scripts/check_forbidden_files.py
-      - uses: gitleaks/gitleaks-action@v2
+      - uses: gitleaks/gitleaks-action@v3
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -49,14 +50,31 @@ jobs:
     runs-on: ${{ (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && fromJSON(vars.HEAVY_RUNNER || '"ubuntu-latest"') || 'ubuntu-latest' }}
     timeout-minutes: 25
     steps:
-      - uses: actions/checkout@v4
-      # FILL: set up the toolchain the same way on both runners, for example:
-      # - uses: actions/setup-node@v4
-      #   with: { node-version-file: .nvmrc, cache: npm }
-      # - uses: actions/setup-java@v4
-      #   with: { distribution: temurin, java-version: "25", cache: maven }
-      - name: Build and test
-        run: 'echo "FILL: install from the lockfile, lint, test, build" && exit 1'
+      - uses: actions/checkout@v7
+      - name: Install Ninja
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build
+      - name: Configure
+        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Debug
+      - name: Build
+        run: cmake --build build
+      - name: Test
+        run: ctest --test-dir build --output-on-failure
+
+  app-windows:
+    needs: gitleaks
+    if: ${{ !cancelled() && github.event_name == 'pull_request' && needs.gitleaks.outputs.app-windows != 'false' }}
+    runs-on: windows-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v7
+      - name: Configure
+        run: cmake -S . -B build
+      - name: Build
+        run: cmake --build build --config Debug
+      - name: Test
+        run: ctest --test-dir build -C Debug --output-on-failure
 
   python:
     needs: gitleaks
@@ -64,24 +82,9 @@ jobs:
     runs-on: ${{ (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && fromJSON(vars.HEAVY_RUNNER || '"ubuntu-latest"') || 'ubuntu-latest' }}
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
       - name: Script tests
         run: python -m unittest discover -s scripts -v
-
-  e2e:
-    needs: gitleaks
-    if: ${{ !cancelled() && github.event_name == 'pull_request' && github.event.pull_request.draft == false && needs.gitleaks.outputs.e2e != 'false' }}
-    runs-on: ${{ (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && fromJSON(vars.HEAVY_RUNNER || '"ubuntu-latest"') || 'ubuntu-latest' }}
-    timeout-minutes: 25
-    steps:
-      - uses: actions/checkout@v4
-      # FILL: toolchain, browsers (install system deps only when runner.environment == 'github-hosted'),
-      # start servers, run end-to-end tests.
-      - name: End-to-end tests
-        run: 'echo "FILL: end-to-end tests, or delete this job and e2e from scripts/ci_paths.json" && exit 1'
-      - name: Stop servers
-        if: always()
-        run: python3 scripts/stop_all.py

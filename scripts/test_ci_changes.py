@@ -10,9 +10,9 @@ ROOT = Path(__file__).resolve().parents[1]
 WORKFLOW = ROOT / ".github" / "workflows" / "ci.yml"
 
 CFG = {
-    "jobs": ["app", "python", "e2e"],
+    "jobs": ["app", "app-windows", "python"],
     "always_all": [".github/workflows/", "scripts/ci_changes.py"],
-    "rules": [{"prefix": "src/", "jobs": ["app", "e2e"]}, {"prefix": "scripts/", "jobs": ["python"]}],
+    "rules": [{"prefix": "src/", "jobs": ["app", "app-windows"]}, {"prefix": "scripts/", "jobs": ["python"]}],
     "md_read_by_tests": {"DESIGN.md": ["app"]},
     "seed_paths": ["package-lock.json", ".github/workflows/"],
 }
@@ -20,7 +20,7 @@ CFG = {
 
 class ClassifyTest(unittest.TestCase):
     def test_no_files_runs_everything(self):
-        self.assertEqual(ci_changes.classify([], CFG), {"app": True, "python": True, "e2e": True})
+        self.assertEqual(ci_changes.classify([], CFG), {"app": True, "app-windows": True, "python": True})
         self.assertTrue(ci_changes.needs_seed([], CFG))
 
     def test_docs_only_runs_nothing(self):
@@ -30,8 +30,8 @@ class ClassifyTest(unittest.TestCase):
         self.assertTrue(ci_changes.classify(["DESIGN.md"], CFG)["app"])
 
     def test_prefix_rule(self):
-        self.assertEqual(ci_changes.classify(["src/a.ts"], CFG), {"app": True, "python": False, "e2e": True})
-        self.assertEqual(ci_changes.classify(["scripts\\x.py"], CFG), {"app": False, "python": True, "e2e": False})
+        self.assertEqual(ci_changes.classify(["src/a.ts"], CFG), {"app": True, "app-windows": True, "python": False})
+        self.assertEqual(ci_changes.classify(["scripts\\x.py"], CFG), {"app": False, "app-windows": False, "python": True})
 
     def test_unknown_and_workflow_run_everything(self):
         self.assertTrue(all(ci_changes.classify(["weird/file"], CFG).values()))
@@ -52,6 +52,20 @@ class ClassifyTest(unittest.TestCase):
     def test_repo_config_loads(self):
         ci_changes.load()
 
+    def test_repo_config_maps_cpp_paths_to_both_builds(self):
+        cfg = ci_changes.load()
+        self.assertNotIn("e2e", cfg["jobs"])
+        self.assertIn("app-windows", cfg["jobs"])
+        for path in ["core/x.cpp", "third_party/googletest/CMakeLists.txt", "CMakeLists.txt",
+                     "CMakePresets.json", "cmake/x.cmake"]:
+            self.assertEqual(ci_changes.jobs_for(path, cfg), frozenset({"app", "app-windows"}), path)
+
+    def test_repo_config_python_only_change_skips_cpp_builds(self):
+        self.assertEqual(
+            ci_changes.classify(["scripts/x.py"], ci_changes.load()),
+            {"app": False, "app-windows": False, "python": True},
+        )
+
 
 @unittest.skipUnless(WORKFLOW.is_file(), "no ci.yml")
 class WorkflowShapeTest(unittest.TestCase):
@@ -60,6 +74,12 @@ class WorkflowShapeTest(unittest.TestCase):
         for job in ci_changes.load()["jobs"]:
             self.assertRegex(text, rf"(?m)^  {re.escape(job)}:$", job)
             self.assertIn(f"needs.gitleaks.outputs.{job} != 'false'", text, job)
+
+    def test_no_e2e_job_and_windows_job_present(self):
+        text = WORKFLOW.read_text(encoding="utf-8")
+        self.assertNotRegex(text, r"(?m)^  e2e:$")
+        self.assertRegex(text, r"(?m)^  app-windows:$")
+        self.assertIn("steps.classify.outputs.app-windows", text)
 
     def test_every_job_has_a_timeout(self):
         text = WORKFLOW.read_text(encoding="utf-8")
