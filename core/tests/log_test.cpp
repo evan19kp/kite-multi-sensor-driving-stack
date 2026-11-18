@@ -208,6 +208,31 @@ TEST_F(LogFiles, NonNumbersNameTheirLine) {
   }
 }
 
+TEST_F(LogFiles, NonCanonicalNumbersNameTheirLine) {
+  const char* bad_records[] = {"gt,1.50,0,1,0,0,0,0", "meas,0,0,1,1E5,0",     "meas,0,0,1,1e5,0",
+                               "meas,0,0,1,.5,0",     "meas,0,0,1,5.,0",      "meas,0,0,1,0,00.5",
+                               "meas,0,0,1,1e+5,0",   "meas,0,0,1,1.0,0",     "meas,0,0,1,0.0,0",
+                               "gt,0,007,1,0,0,0,0",  "track,0,0,-0,0,0,0,0", "track,0,0,-007,0,0,0,0"};
+  for (const char* record : bad_records) {
+    const std::string text = std::string(kHeaderLine) + "gt,0,0,1,0,0,0,0\n" + record + "\n";
+    EXPECT_THAT(read_error(text), ::testing::HasSubstr("line 3:")) << record;
+  }
+}
+
+TEST_F(LogFiles, LastLineWithoutNewlineNamesItsLine) {
+  std::string text = kTinyLogBytes;
+  text.pop_back();
+  EXPECT_THAT(read_error(text), ::testing::HasSubstr("line 5:"));
+
+  text.pop_back();
+  text.pop_back();
+  text.pop_back();
+  EXPECT_THAT(text, ::testing::EndsWith("7.9,0"));
+  EXPECT_THAT(read_error(text), ::testing::HasSubstr("line 5:"));
+
+  EXPECT_THAT(read_error("# kite-log v0"), ::testing::HasSubstr("line 1:"));
+}
+
 TEST_F(LogFiles, NonFiniteValuesNameTheirLine) {
   const char* bad_records[] = {"gt,nan,0,1,0,0,0,0", "meas,0,0,1,inf,0", "track,0,0,1,0,0,-inf,0",
                                "meas,0,0,1,0,NaN",   "meas,0,0,1,0,infinity", "gt,0,0,1,0,0,0,-nan"};

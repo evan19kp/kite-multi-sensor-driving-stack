@@ -20,21 +20,29 @@ constexpr std::string_view kHeader = "# kite-log v0";
   throw std::runtime_error("line " + std::to_string(line) + ": " + what);
 }
 
-void put_int(std::string& out, int value) {
+std::string format_number(int value) {
   char buffer[16];
   const auto result = std::to_chars(buffer, buffer + sizeof buffer, value);
+  return std::string(buffer, result.ptr);
+}
+
+std::string format_number(double value) {
+  char buffer[32];
+  const auto result = std::to_chars(buffer, buffer + sizeof buffer, value);
+  return std::string(buffer, result.ptr);
+}
+
+void put_int(std::string& out, int value) {
   out.push_back(',');
-  out.append(buffer, result.ptr);
+  out += format_number(value);
 }
 
 void put_double(std::string& out, double value, std::size_t line) {
   if (!std::isfinite(value)) {
     fail(line, "cannot write a non-finite value");
   }
-  char buffer[32];
-  const auto result = std::to_chars(buffer, buffer + sizeof buffer, value);
   out.push_back(',');
-  out.append(buffer, result.ptr);
+  out += format_number(value);
 }
 
 void put_vec(std::string& out, const Vec2& value, std::size_t line) {
@@ -103,6 +111,10 @@ struct Fields {
       fail(line, "field " + std::to_string(index + 1) +
                      " is not finite: '" + std::string(field) + "'");
     }
+    if (format_number(value) != field) {
+      fail(line, "field " + std::to_string(index + 1) +
+                     " is not in canonical form: '" + std::string(field) + "'");
+    }
     return value;
   }
 
@@ -114,6 +126,10 @@ struct Fields {
     if (result.ec != std::errc() || result.ptr != end) {
       fail(line, "field " + std::to_string(index + 1) +
                      " is not an integer: '" + std::string(field) + "'");
+    }
+    if (format_number(value) != field) {
+      fail(line, "field " + std::to_string(index + 1) +
+                     " is not in canonical form: '" + std::string(field) + "'");
     }
     return value;
   }
@@ -187,11 +203,20 @@ LogRecords read_log(const std::filesystem::path& path) {
   if (text != kHeader) {
     fail(1, "expected header '" + std::string(kHeader) + "'");
   }
+  if (file.eof()) {
+    fail(1, "line does not end with a newline");
+  }
   LogRecords records;
   std::size_t line = 1;
   while (std::getline(file, text)) {
     ++line;
+    if (file.eof()) {
+      fail(line, "line does not end with a newline");
+    }
     parse_record(text, line, records);
+  }
+  if (!file.eof()) {
+    throw std::runtime_error("failed to read " + path.string());
   }
   return records;
 }
