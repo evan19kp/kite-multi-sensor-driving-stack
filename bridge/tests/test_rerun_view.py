@@ -93,16 +93,32 @@ class LogStepTest(unittest.TestCase):
         self.assertEqual(blues, sorted(blues, reverse=True))
         self.assertLess(reds[0], reds[-1])
 
-    def test_other_cars_are_logged_only_under_their_own_path(self):
+    def test_ground_truth_is_logged_only_under_the_ground_truth_root(self):
         rec = RecordingRecorder()
+        ego = (0.0, 0.0, 0.0)
+        lidar = [(5.0, 0.0, 0.0)]
         others = [(40.0, 3.5, 0.0), (55.0, -3.5, 0.0)]
-        log_step(rec, 0.0, (0.0, 0.0, 0.0), [(5.0, 0.0, 0.0)], IMAGE, others)
+        log_step(rec, 0.0, ego, lidar, IMAGE, others)
         self.assertEqual(sorted(rec.paths()), sorted([LIDAR_PATH, EGO_PATH, CAMERA_PATH, GROUND_TRUTH_PATH]))
         self.assertEqual(rec.points_at(GROUND_TRUTH_PATH)[0][2], others)
-        for path in (LIDAR_PATH, EGO_PATH):
-            for other in others:
-                self.assertNotIn(other, rec.points_at(path)[0][2])
-        self.assertFalse(GROUND_TRUTH_PATH.startswith(("world", "camera")))
+        self.assertEqual(rec.points_at(EGO_PATH)[0][2], [ego])
+        ground_truth_paths = [p for p in rec.paths() if p.startswith("ground_truth/")]
+        self.assertEqual(sorted(ground_truth_paths), sorted([EGO_PATH, GROUND_TRUTH_PATH]))
+        sensor_paths = [p for p in rec.paths() if p not in ground_truth_paths]
+        self.assertEqual(sorted(sensor_paths), sorted([LIDAR_PATH, CAMERA_PATH]))
+        sensor_points = rec.points_at(LIDAR_PATH)[0][2]
+        for position in [ego, *others]:
+            self.assertNotIn(position, sensor_points)
+        for path in ground_truth_paths:
+            self.assertNotIn(lidar[0], rec.points_at(path)[0][2])
+
+    def test_a_missing_lidar_reading_logs_no_lidar_and_an_empty_scan_logs_an_empty_layer(self):
+        missing, empty = RecordingRecorder(), RecordingRecorder()
+        log_step(missing, 0.0, (0.0, 0.0, 0.0), None, IMAGE)
+        log_step(empty, 0.0, (0.0, 0.0, 0.0), [], IMAGE)
+        self.assertEqual(missing.points_at(LIDAR_PATH), [])
+        self.assertEqual(missing.paths(), [EGO_PATH, CAMERA_PATH])
+        self.assertEqual(empty.points_at(LIDAR_PATH), [("points", LIDAR_PATH, [], [])])
 
     def test_no_traffic_information_logs_no_ground_truth(self):
         rec = RecordingRecorder()
@@ -187,8 +203,12 @@ class ReadingsTest(unittest.TestCase):
         raw = {"pointCloud": [[1, 2, 3, 99], [4.5, 5, 6, 99]], "colours": []}
         self.assertEqual(points_from_raw(raw), [(1.0, 2.0, 3.0), (4.5, 5.0, 6.0)])
 
-    def test_an_empty_poll_has_no_points_and_an_unexpected_format_is_an_error(self):
-        self.assertEqual(points_from_raw({}), [])
+    def test_an_empty_poll_is_no_reading_not_an_empty_scan(self):
+        self.assertIsNone(points_from_raw({}))
+        self.assertIsNone(points_from_raw(None))
+        self.assertEqual(points_from_raw({"pointCloud": []}), [])
+
+    def test_an_unexpected_format_is_an_error(self):
         with self.assertRaisesRegex(ValueError, "no 'pointCloud' in \\['other'\\]"):
             points_from_raw({"other": 1})
 
@@ -240,7 +260,7 @@ class ScriptTest(unittest.TestCase):
         self.assertIn("logged 120 steps", stdout)
         self.assertEqual(self.recorder.closed, 1)
 
-    def test_every_step_logs_traffic_ground_truth_only_under_its_own_path(self):
+    def test_every_step_logs_ground_truth_only_under_the_ground_truth_root(self):
         self.run_main("--seconds", "1", "--traffic", "3")
         gt = self.recorder.points_at(GROUND_TRUTH_PATH)
         self.assertEqual(len(gt), 60)
@@ -250,9 +270,27 @@ class ScriptTest(unittest.TestCase):
         (x, y, z), = ego[-1][2]
         self.assertAlmostEqual(x, 10.0)
         self.assertEqual((y, z), (0.0, 0.0))
-        sensor_points = [p for c in self.recorder.points_at(LIDAR_PATH) + ego for p in c[2]]
-        traffic_points = {p for c in gt for p in c[2]}
-        self.assertFalse(traffic_points & set(sensor_points))
+        self.assertEqual(sorted(set(self.recorder.paths())),
+                         sorted([CAMERA_PATH, EGO_PATH, GROUND_TRUTH_PATH, LIDAR_PATH]))
+        sensor_points = {p for c in self.recorder.points_at(LIDAR_PATH) for p in c[2]}
+        ground_truth_points = {p for c in gt + ego for p in c[2]}
+        self.assertFalse(ground_truth_points & sensor_points)
+
+    def test_steps_without_a_lidar_reading_log_no_lidar_and_the_run_says_how_many(self):
+        class FlakyLidar(FakeSim):
+            def lidar_points(self, car):
+                points = super().lidar_points(car)
+                return None if self._steps % 4 == 0 else points
+
+        code, stdout, _ = self.run_main("--seconds", "1", "--traffic", "0", sim_class=FlakyLidar)
+        self.assertEqual(code, 0)
+        self.assertEqual(len(self.recorder.points_at(LIDAR_PATH)), 45)
+        self.assertEqual(len(self.recorder.points_at(EGO_PATH)), 60)
+        self.assertEqual(stdout.count("lidar gave no reading on 15 of 60 steps"), 1)
+
+    def test_a_run_with_every_lidar_reading_prints_no_lidar_warning(self):
+        _, stdout, _ = self.run_main("--seconds", "1", "--traffic", "0")
+        self.assertNotIn("no reading", stdout)
 
     def test_the_lidar_colours_are_distance_colours_of_the_logged_points(self):
         self.run_main("--seconds", "1", "--traffic", "0")
@@ -351,7 +389,12 @@ class NoRerunTest(unittest.TestCase):
 
     def test_rerun_view_imports_rerun_only_inside_a_method(self):
         text = (BRIDGE_DIR / "kite_bridge" / "rerun_view.py").read_text(encoding="utf-8")
-        self.assertIsNone(re.search(r"(?m)^(import|from)\s+(rerun|numpy)\b", text))
+        self.assertIsNone(re.search(r"(?m)^(import|from)\s+rerun\b", text))
+
+    def test_nothing_in_the_bridge_imports_numpy(self):
+        sources = [*BRIDGE_DIR.glob("*.py"), *(BRIDGE_DIR / "kite_bridge").glob("*.py"), *(BRIDGE_DIR / "tests").glob("*.py")]
+        for path in sources:
+            self.assertIsNone(re.search(r"(?m)^\s*(import|from)\s+numpy\b", path.read_text(encoding="utf-8")), path.name)
 
 
 if __name__ == "__main__":

@@ -64,10 +64,12 @@ but never drives anything.
 
 `spike_lidar_rerun.py` drives our car in traffic mode with AI traffic and, once per simulator
 step, logs on one `sim_time` timeline: lidar points coloured by distance from our car (blue near,
-red at 50 m and beyond) under `world/ego/lidar`, our position under `world/ego/position` and the
-camera image under `camera/image`. The traffic cars' positions are simulator ground truth, shown
-for display only under `ground_truth/other_cars`; hide that layer in the viewer to see sensor
-data alone. It takes the common options above plus `--save NAME.rrd`.
+red at 50 m and beyond) under `world/ego/lidar` and the camera image under `camera/image`. Our
+position and the traffic cars' positions come from simulator state, so they are ground truth,
+shown for display only under `ground_truth/ego/position` and `ground_truth/other_cars`; hide the
+`ground_truth/` root in the viewer to see sensor data alone. When the lidar gives no reading on a
+step, nothing is logged for it and the script prints how many steps that was. It takes the common
+options above plus `--save NAME.rrd`.
 
 - Without `--save` it spawns a Rerun viewer.
 - With `--save` it writes `<--out>/NAME.rrd` and opens no viewer; open the file later with

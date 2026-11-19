@@ -14,8 +14,7 @@ def reading_from_raw(kind, raw, poll_time):
     if kind == "lidar" and raw:
         # ASSUMPTION: a 1.36 lidar poll is one dict whose "pointCloud" has one row per point
         if not isinstance(raw, dict) or "pointCloud" not in raw:
-            keys = sorted(map(str, raw)) if isinstance(raw, dict) else type(raw).__name__
-            return Reading(None, unexpected=f"lidar reading has no 'pointCloud'; got {keys}")
+            return Reading(None, unexpected=f"lidar reading has no 'pointCloud'; got {_describe(raw)}")
         points = len(raw["pointCloud"])
         if points == 0:
             return Reading(None)
@@ -30,9 +29,10 @@ def reading_from_raw(kind, raw, poll_time):
 
 
 def points_from_raw(raw):
-    """Lidar `raw` (a poll result) to a list of (x, y, z) float tuples. An empty poll gives []."""
+    """Lidar `raw` (a poll result) to a list of (x, y, z) float tuples. An empty poll is no
+    reading and gives None; a scan whose point cloud has no rows gives []."""
     if not raw:
-        return []
+        return None
     # ASSUMPTION: "pointCloud" rows are world-space x, y, z (extra columns are ignored)
     if not isinstance(raw, dict) or "pointCloud" not in raw:
         raise ValueError(f"unexpected lidar reading: no 'pointCloud' in {_describe(raw)}")

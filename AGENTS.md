@@ -317,8 +317,10 @@ Each item that introduces a lasting rule adds a "## Standing rules (R<n>)" secti
 
 - Only `bridge/kite_bridge/rerun_view.py` imports `rerun`, and only lazily inside a method. Its
   Rerun calls are unverified until a real run and carry `# ASSUMPTION:` comments.
-- Ground truth (other cars' positions) is logged only under `ground_truth/`, never under a
-  sensor path (`world/`, `camera/`), and is never fed to anything that drives.
+- Ground truth (our car's and the other cars' positions, anything from simulator state) is logged
+  only under `ground_truth/`, never under a sensor path (`world/`, `camera/`), and is never fed
+  to anything that drives. Inside a Rerun recording, the separate `ground_truth/` entity root is
+  the separation between ground truth and sensor data.
 - `.rrd` recordings are written only under `--out` (`--save` takes a name inside it) and are
   never committed.
 

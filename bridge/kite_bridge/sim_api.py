@@ -81,9 +81,10 @@ class Simulator(ABC):
         """Advance the simulator by n steps of 1 / STEP_HZ seconds."""
 
     @abstractmethod
-    def lidar_points(self, car: str) -> list[tuple[float, float, float]]:
+    def lidar_points(self, car: str) -> list[tuple[float, float, float]] | None:
         """The car's latest lidar scan as (x, y, z) points in world metres. Needs the sensors
-        attached. An empty list means the scan had no points."""
+        attached. None means the lidar gave no reading; an empty list means a scan with no
+        points."""
 
     @abstractmethod
     def camera_image(self, car: str) -> list[list[tuple[int, int, int]]]:

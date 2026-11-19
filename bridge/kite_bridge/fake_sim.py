@@ -64,8 +64,7 @@ class FakeSim(Simulator):
             self.injected[(car, kind)] = {"empty": 0, "repeated": 0}
 
     def poll(self, car, kind):
-        if (car, kind) not in self._attached:
-            raise KeyError(f"sensor {kind!r} is not attached to {car!r}")
+        self._require_attached(car, kind)
         if self._latency:
             time.sleep(self._latency)
         key = (car, kind)

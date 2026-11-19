@@ -34,7 +34,6 @@ def _count(text):
 
 
 def parse_args(description, argv=None, extra=None):
-    """`extra`, if given, is called with the parser to add options before parsing."""
     parser = argparse.ArgumentParser(description=description)
     parser.add_argument("--home", help="the simulator's folder (required unless --fake)")
     parser.add_argument("--headless", action="store_true", help="run the simulator without a window")

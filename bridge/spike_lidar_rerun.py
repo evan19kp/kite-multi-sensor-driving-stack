@@ -1,9 +1,10 @@
 """Demo 1: our car in traffic mode with AI traffic on West Coast, USA, streaming lidar and camera into Rerun.
 
 Opens a Rerun viewer and logs, once per simulator step on one timeline: lidar points coloured
-by distance from our car (near blue, far red), our car's position and the camera image. The
-traffic cars' positions are simulator ground truth, logged for display only under
-`ground_truth/other_cars`, apart from the sensor layers.
+by distance from our car (near blue, far red), our car's position and the camera image. Our
+car's and the traffic cars' positions come from simulator state, so they are ground truth,
+logged for display only under `ground_truth/`, apart from the sensor layers. A step where the
+lidar gives no reading logs no lidar; the run says how many steps that was.
 
 --save <name.rrd> writes the recording to that file inside --out and does not open a viewer;
 open it later with `rerun <file>`. --fake uses the fake simulator and a recorder that keeps
@@ -36,7 +37,8 @@ def make_recorder(save_path, fake):
 
 
 def run(args):
-    save_path = Path(args.out) / args.save if args.save else None
+    save_path = rerun_view.recording_path(args.out, args.save) if args.save else None
+    no_lidar = 0
     with common.session(args) as sim:
         model = common.resolve_model(sim, args.model)
         car = sim.load_scenario(model, 1)[0]
@@ -55,12 +57,16 @@ def run(args):
                     except Exception as error:
                         print(f"other cars not logged ({type(error).__name__}: {error})")
                         show_traffic = False
-                rerun_view.log_step(recorder, sim.sim_time, sim.position(car), sim.lidar_points(car),
+                lidar = sim.lidar_points(car)
+                no_lidar += lidar is None
+                rerun_view.log_step(recorder, sim.sim_time, sim.position(car), lidar,
                                     sim.camera_image(car), others)
         finally:
             recorder.close()
         sim.set_ai_mode(car, "disabled")
     print(f"logged {steps} steps")
+    if no_lidar:
+        print(f"lidar gave no reading on {no_lidar} of {steps} steps; no lidar was logged for them")
     if save_path is None:
         return
     if args.fake:
