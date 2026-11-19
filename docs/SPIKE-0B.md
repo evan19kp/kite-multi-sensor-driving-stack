@@ -347,7 +347,7 @@ What `--stream` adds to the output:
 
 - The `sensor:` lines for lidar and camera end in `is_streaming=True`, and `sensor_settings` in `sensors.json` has it too.
 - Three more columns in the first table. `read` says how the sensor was read: `stream` or `poll`. `suspect` and `sus_rows` are explained below. They show `n/a` for polled sensors.
-- In the timing block, `in sensor reads` becomes two lines. `in sensor polls` is the time inside poll calls. `in stream reads` is the time inside stream calls. That covers BeamNGpy's `stream()`, which copies the shared memory, and the bridge's checks and parse. Neither line counts the other's time. The second table's `read_s` and `per_poll_ms` for lidar and camera are stream time.
+- In the timing block, `in sensor reads` becomes two lines. `in sensor polls` is the time inside poll calls. `in stream reads` is the time inside stream calls. That covers BeamNGpy's `stream()`, which copies the shared memory, and the bridge's checks and parse. The check reads every byte of each lidar scan. The bridge does not time the check on its own, so `in stream reads` holds the bridge's time as well as BeamNGpy's. Neither line counts the other's time. The second table's `read_s` and `per_poll_ms` for lidar and camera are stream time.
 - A `stream:` footer line that says which sensors were streamed, and one `suspect:` line for each streamed sensor that dropped something.
 - In the JSON: `"stream": true` at the top (`false` without `--stream`), `timing.stream_reads_s`, and on each sensor row `read` and `suspect`. For a streamed sensor, `suspect` is `{"readings": ..., "rows": ..., "first": ...}`. For a polled sensor it is `null`.
 
@@ -378,6 +378,7 @@ When the lidar streams, BeamNGpy reads the whole shared-memory block and does no
 
 - `sus_rows` (JSON `suspect.rows`), lidar only: the all-zero rows cut off the end of lidar scans that were kept. An all-zero row is a row whose bytes are all zero. The bridge cuts every all-zero row after the last row that has any non-zero byte, and the matching rows of any other array in the reading with the same row count, such as the colours. The count is summed over reads, so memory read twice counts twice. The `points` column counts the rows that were kept.
 - `suspect` (JSON `suspect.readings`): streamed readings dropped whole. Nothing of such a reading is used or counted under `polls`, `empty`, `new` or `bytes`. Its read time still counts. A lidar reading is dropped when its `pointCloud` is not an array of rows with at least 3 columns, when its byte count does not fit 4- or 8-byte floats for its shape, or when a kept value is not finite (`nan` or `inf`). A camera reading is dropped when any image in it is not the configured `resolution`, 640 by 360, or has no size. `suspect.first` holds the first reason, and the `suspect:` line prints it.
+- A camera reading with no frame yet, where `stream()` returns None, counts under `empty`. A camera `stream()` result that is not a dict of images counts under `unexp`, with `first: camera stream() returned <type>, not a dict of images`.
 - A reading whose memory has not changed since the last read is not suspect. It is not new either: `new` compares the content, as before.
 
 What the bridge cannot detect:
@@ -388,7 +389,7 @@ What the bridge cannot detect:
 
 Look at these numbers:
 
-- `per_poll_ms` and `mean_ms` for lidar and camera in the two runs. In your earlier runs a poll took about 21 ms. The stream run shows what a streamed read costs.
+- `per_poll_ms` and `mean_ms` for lidar and camera in the two runs. In your earlier runs a poll took about 21 ms. The stream run shows what a streamed read costs, including the bridge's check.
 - `in stream reads` against `in sensor reads` from the poll run, and the real-time factor of both runs.
 - `suspect` against `polls`. If every streamed reading is dropped, streaming does not deliver usable data, and the `suspect:` line says why.
 - `sus_rows` and `points`. Compare `points` with the poll run (see the list above).
@@ -445,7 +446,7 @@ python bridge/spike_multicar.py --home "<your BeamNG.tech folder>"
 
 ### What it prints
 
-The five `sensor:` lines once, then three blocks, one for each case. Each block starts with a `spawned` line that lists the cars of that case, then a blank line and the same summary line, table and footer lines as Run 2, then `wrote ...multicar.json`. The summary lines read `cars: 1`, `cars: 2` and `cars: 4`, and the table has one row per sensor per car (`kite1` to `kite4`). Each case also prints the `timing:` block and the second table (see "Where the time goes" and "New readings and bytes" under Run 2). Compare the `steps per second` figure and the real-time factor across the three cases to see whether more cars slow the simulator, and compare `waiting for steps` with `in sensor reads` to see which part grows. `--dump-raw N` writes `raw_gps_imu.json` with one case per car count and N GPS and N IMU readings per car.
+The five `sensor:` lines once, then three blocks, one for each case. Each block starts with a `spawned` line that lists the cars of that case, then a blank line and the same summary line, table and footer lines as Run 2, then `wrote ...multicar.json`. The summary lines read `cars: 1`, `cars: 2` and `cars: 4`, and the table has one row per sensor per car (`kite1` to `kite4`). Each case also prints the `timing:` block and the second table (see "Where the time goes" and "New readings and bytes" under Run 2). Compare the `steps per second` figure and the real-time factor across the three cases to see whether more cars slow the simulator, and compare `waiting for steps` with `in sensor reads` to see which part grows. With `--stream`, the timing block prints `in sensor polls` and `in stream reads` in place of `in sensor reads`, so compare `waiting for steps` with both. `--dump-raw N` writes `raw_gps_imu.json` with one case per car count and N GPS and N IMU readings per car.
 
 `--rates` applies to every case, with the same default as Run 2. Each case prints `poll_hz` and `req_hz` and the loss notes. To compare with the old behaviour, run it once more with `--rates all=60`. `--stream` also applies to every case, with the same extra columns and lines as Run 2.
 

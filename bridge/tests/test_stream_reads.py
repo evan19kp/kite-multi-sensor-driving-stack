@@ -58,6 +58,16 @@ def camera(**images):
     return reading_from_stream("camera", images, 0.5)
 
 
+def camera_stream_returning(value):
+    class FixedCamera(FakeSim):
+        def stream(self, car, kind):
+            if kind == "camera":
+                return reading_from_stream(kind, value, self.sim_time)
+            return super().stream(car, kind)
+
+    return FixedCamera
+
+
 class StreamedLidarMemoryTest(unittest.TestCase):
     """The fake's lidar memory: a block of 1100 rows that alternating scans of 1000 and 800 rows
     overwrite from the start. Sample t writes rows (t + 1, r + 1, 2)."""
@@ -204,6 +214,51 @@ class StreamedCameraCheckTest(unittest.TestCase):
         text = common.format_result(result)
         self.assertIn(f"suspect: kite1 camera dropped {STEP_HZ} readings and cut 0 all-zero rows, "
                       f"first reason: {reason}", text)
+
+    def test_a_camera_with_no_frame_yet_gives_empty_readings(self):
+        _, rows = measure(True, camera_stream_returning(None))
+        cam = rows["camera"]
+        self.assertEqual((cam["polls"], cam["empty"], cam["new_readings"]), (STEP_HZ, STEP_HZ, 0))
+        self.assertEqual(cam["unexpected"]["count"], 0)
+        self.assertEqual(cam["suspect"]["readings"], 0)
+
+    def test_a_camera_result_that_is_not_a_dict_is_unexpected_and_never_passed_on(self):
+        for value, name in (([FakeImage((320, 180), 1)], "list"), (b"\x00" * 10, "bytes"), (7, "int")):
+            _, rows = measure(True, camera_stream_returning(value))
+            cam = rows["camera"]
+            self.assertEqual(cam["unexpected"], {"count": STEP_HZ,
+                                                 "first": f"camera stream() returned {name}, not a dict of images"})
+            self.assertEqual((cam["polls"], cam["empty"], cam["bytes_read"]), (0, 0, 0), name)
+            self.assertEqual(cam["suspect"]["readings"], 0, name)
+
+
+class FakeStreamTest(unittest.TestCase):
+    def attached(self, stream, **sim_args):
+        sim = FakeSim(rates=SENSOR_RATES, **sim_args)
+        car = sim.load_scenario("fake_cherrier_tograc", 1)[0]
+        sim.attach_sensors(car, stream=stream)
+        return sim, car
+
+    def test_a_sensor_attached_without_stream_cannot_be_streamed(self):
+        sim, car = self.attached(False)
+        for kind in ("lidar", "camera"):
+            with self.assertRaises(ValueError):
+                sim.stream(car, kind)
+            self.assertIsNotNone(sim.poll(car, kind).timestamp, kind)
+
+    def test_a_kind_that_has_no_streaming_cannot_be_streamed(self):
+        sim, car = self.attached(True)
+        self.assertIsNone(sim.stream(car, "lidar").suspect)
+        for kind in ("radar", "gps", "imu"):
+            with self.assertRaises(ValueError):
+                sim.stream(car, kind)
+
+    def test_a_scan_longer_than_the_lidar_block_is_an_error(self):
+        sim, car = self.attached(True, lidar_rows=1101, stream_rows=1100)
+        with self.assertRaises(ValueError):
+            sim.stream(car, "lidar")
+        sim, car = self.attached(True, lidar_rows=1100, stream_rows=1100)
+        self.assertEqual(sim.stream(car, "lidar").points, 1100)
 
 
 class StreamTimingTest(unittest.TestCase):

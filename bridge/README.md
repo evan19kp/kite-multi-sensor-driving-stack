@@ -126,8 +126,10 @@ still polled, at the same `--rates`. Every streamed reading goes through `stream
 All-zero rows after the last non-zero row of a lidar scan are cut and counted under `sus_rows`.
 A lidar reading of the wrong shape or with a value that is not finite, and a camera reading with
 an image that is not the configured resolution, are dropped whole and counted under `suspect`,
-with the first reason printed. Rows left from an earlier, longer scan cannot be told from points
-and are kept. Streamed reads are timed as `in stream reads`, apart from `in sensor polls`, and the
+with the first reason printed. A camera `stream()` result that is not None and not a dict counts
+under `unexp`. Rows left from an earlier, longer scan cannot be told from points and are kept.
+Streamed reads are timed as `in stream reads`, apart from `in sensor polls`. That time includes
+the bridge's check, which reads every byte of a lidar scan; the bridge does not time it alone. The
 JSON records `"stream"`, `timing.stream_reads_s` and each row's `read` and `suspect`. Without
 `--stream` the output is as before. Streaming has not run against the real simulator.
 `spike_lidar_rerun.py` does not take `--stream`; it is a viewer demo, not a measuring script.

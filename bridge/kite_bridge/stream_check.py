@@ -24,9 +24,9 @@ empty or unexpected reading, as a poll would.
   right shape, and the streamed dict says nothing about how many rows the new scan wrote, so
   they are kept and counted as points.
 
-Camera. Input domain: what `readings.reading_from_raw` accepts for a camera. Only a dict is
-checked. Every value that is not None is an image, and its size must be the configured
-`resolution` (width, height) in `sensor_settings.py`: an object with `shape` is
+Camera. None (no frame yet) is an empty reading. Anything else that is not a dict is an
+unexpected reading. In a dict, every value that is not None is an image, and its size must be
+the configured `resolution` (width, height) in `sensor_settings.py`: an object with `shape` is
 (height, width, ...) like a numpy array, else an object with a two-item `size` is
 (width, height) like a PIL image. An image of another size, or with neither, drops the whole
 reading as suspect. Not detectable: an image of the right size that was never rendered into
@@ -56,6 +56,8 @@ def reading_from_stream(kind, raw, read_time):
     `read_time` is the simulator time of the read. Returns the `Reading` of what was kept,
     with `suspect_rows` set, or a `Reading` with only `suspect` set when the whole reading
     was dropped."""
+    if kind == "camera" and raw is not None and not isinstance(raw, dict):
+        return Reading(None, unexpected=f"camera stream() returned {type(raw).__name__}, not a dict of images")
     try:
         kept, cut = _check_lidar(raw) if kind == "lidar" else (_check_camera(raw), 0)
     except Suspect as why:
@@ -105,7 +107,7 @@ def _all_finite(values):
 
 
 def _check_camera(raw):
-    if not isinstance(raw, dict):
+    if raw is None:
         return raw
     width, height = SENSOR_SETTINGS["camera"]["resolution"]
     for name, image in raw.items():
