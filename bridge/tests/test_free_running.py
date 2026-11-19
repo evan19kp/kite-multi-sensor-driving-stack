@@ -348,6 +348,15 @@ class FakeTimerTest(unittest.TestCase):
         self.assertEqual(sim.timer_seconds(), 2.0)
 
 
+    def test_without_a_clock_the_fake_runs_free_on_real_time_and_its_timer_never_goes_back(self):
+        sim = FakeSim()
+        car = sim.load_scenario("fake_cherrier_tograc", 1)[0]
+        sim.start_free_running(car)
+        first = sim.timer_seconds()
+        self.assertGreaterEqual(first, 0.0)
+        self.assertGreaterEqual(sim.timer_seconds(), first)
+
+
 class TimerValueTest(unittest.TestCase):
     def test_a_finite_number_of_seconds_from_zero_up_is_accepted(self):
         self.assertEqual(timer_value(0), 0.0)
