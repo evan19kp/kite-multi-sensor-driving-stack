@@ -87,6 +87,20 @@ python bridge/spike_connect.py --home "<your BeamNG.tech folder>" --list-models
 
 If the listing fails, the script prints the error and exits with code 1. Send the error back (see "If a call fails").
 
+### The sensor settings
+
+Before the run, every script prints one `sensor:` line for each of the five sensors: lidar, camera, radar, GPS and IMU. Each line lists every setting the bridge passes to BeamNGpy for that sensor, as `name=value`. All settings come from one table, `bridge/kite_bridge/sensor_settings.py`, and the adapter passes nothing else, so the lines say what the simulator was asked for. They print with `--fake` too, in the same shape, although the fake simulator ignores them. `spike_connect.py` prints them after its version lines. `spike_multicar.py` prints them once, not once per case.
+
+```
+sensor: lidar requested_update_time=0.1 pos=(0, 0, 1.7) vertical_resolution=64 frequency=20 horizontal_angle=360 max_distance=120 is_360_mode=True is_using_shared_memory=True
+sensor: camera requested_update_time=0.05 resolution=(640, 360) field_of_view_y=70 pos=(0, -0.5, 1.5) dir=(0, -1, 0) is_render_colours=True is_render_annotations=False is_render_depth=False is_using_shared_memory=True
+sensor: radar requested_update_time=0.1 pos=(0, 0, 1.7) dir=(0, -1, 0) up=(0, 0, 1) range_min=0.1 range_max=100.0 half_angle_deg=30.0 field_of_view_y=70
+sensor: gps pos=(0, 1.5, 2.0) ref_lon=0.0 ref_lat=0.0
+sensor: imu pos=(0, 0, 0.5) dir=(0, -1, 0) up=(0, 0, 1) gfx_update_time=0.01 physics_update_time=0.01
+```
+
+The camera renders colour only: `is_render_annotations` and `is_render_depth` are `False`. The lidar and radar values are the BeamNGpy 1.36 defaults, passed explicitly, except `is_360_mode`, `is_using_shared_memory` and the radar `dir` and `up`, which are the bridge's own choices. The camera, GPS and IMU values are the bridge's own choices too. None of these values has run against the real simulator yet, so a rejected setting is a useful result. `spike_sensors.py` also writes the table into `sensors.json` under `sensor_settings`.
+
 ### How to read the output
 
 The numbers in this guide come from `--fake` runs. The fake simulator is synthetic, so the BeamNGpy version lines read `fake` and the rates, counts and step speed will differ on the real simulator. The shape of the output is what carries over.
@@ -101,12 +115,17 @@ python bridge/spike_connect.py --home "<your BeamNG.tech folder>"
 
 ### What it prints
 
-Three version lines, a `spawned` line, then one `t=` line per second, then the path of the file it wrote. With `--seconds 2` on the fake simulator:
+Three version lines, the five `sensor:` lines, a `spawned` line, then one `t=` line per second, then the path of the file it wrote. With `--seconds 2` on the fake simulator (the `sensor:` lines are shortened here; see "The sensor settings"):
 
 ```
 BeamNGpy version: fake
 BeamNGpy protocol: fake
 BeamNG.tech version: not reported by BeamNGpy 1.36
+sensor: lidar requested_update_time=0.1 ...
+sensor: camera requested_update_time=0.05 ...
+sensor: radar requested_update_time=0.1 ...
+sensor: gps pos=(0, 1.5, 2.0) ...
+sensor: imu pos=(0, 0, 0.5) ...
 spawned kite1 (model: vivace, config: vehicles/vivace/tograc_qE.pc)
 t=1s position=(10.00, 0.00, 0.00)
 t=2s position=(20.00, 0.00, 0.00)
@@ -138,17 +157,22 @@ python bridge/spike_sensors.py --home "<your BeamNG.tech folder>"
 
 ### What it prints
 
-A `spawned` line, a summary line, a table with one row per sensor, and footer lines. With `--seconds 2` on the fake simulator:
+The five `sensor:` lines, a `spawned` line, a summary line, a table with one row per sensor, and footer lines. With `--seconds 2` on the fake simulator (the `sensor:` lines are shortened here):
 
 ```
+sensor: lidar requested_update_time=0.1 ...
+sensor: camera requested_update_time=0.05 ...
+sensor: radar requested_update_time=0.1 ...
+sensor: gps pos=(0, 1.5, 2.0) ...
+sensor: imu pos=(0, 0, 0.5) ...
 spawned kite1 (model: vivace, config: vehicles/vivace/tograc_qE.pc)
-cars: 1  steps per second: 2784231.6
-car    sensor   polls  rate_hz   time  per_poll  mean_ms  p50_ms  p95_ms  max_ms  empty  repeat  unexp  points
-kite1  lidar      120    10.00 sensor         1     0.00    0.00    0.00    0.01      0      99      0    1000
-kite1  camera     120    20.00 sensor         1     0.00    0.00    0.00    0.00      0      79      0     n/a
-kite1  radar      120    20.00 sensor         1     0.00    0.00    0.00    0.00      0      79      0     n/a
-kite1  gps        120    10.00 sensor         1     0.00    0.00    0.00    0.01      0      99      0     n/a
-kite1  imu        120    59.80 sensor         2     0.00    0.00    0.00    0.03      0       0      0     n/a
+cars: 1  steps per second: 3069039.5
+car    sensor   polls  rate_hz   time  per_poll  mean_ms  p50_ms  p95_ms  max_ms  empty  repeat  unexp  points  detect
+kite1  lidar      120    10.00 sensor         1     0.00    0.00    0.00    0.01      0      99      0    1000     n/a
+kite1  camera     120    20.00 sensor         1     0.00    0.00    0.00    0.01      0      79      0     n/a     n/a
+kite1  radar      120    20.00 sensor         1     0.00    0.00    0.00    0.00      0      79      0     n/a     n/a
+kite1  gps        120    10.00 sensor         1     0.00    0.00    0.00    0.00      0      99      0     n/a     n/a
+kite1  imu        120    59.80 sensor         2     0.00    0.00    0.00    0.00      0       0      0     n/a     n/a
 rate_hz: distinct reading timestamps per simulator second. It counts at most one new reading per poll, so it is limited to about the poll rate of 60 Hz. per_poll shows when a sensor delivered more.
 kite1 imu: polls returned up to 2 readings. rate_hz counts at most one per poll, so it undercounts this sensor.
 wrote scratch\R27\out\sensors.json
@@ -164,16 +188,21 @@ The columns:
 - `mean_ms`, `p50_ms`, `p95_ms`, `max_ms`: how long a poll took, in milliseconds.
 - `empty`: polls that returned no reading.
 - `repeat`: readings with the same timestamp as the previous reading.
-- `unexp`: readings in a format the bridge did not expect.
+- `unexp`: polls that the bridge could not read. This counts a poll that raised an error, a poll that returned a type outside None, a dict, a list, bytes or an array-like object (anything with a length), and a lidar poll without a `pointCloud`.
 - `points`: mean lidar points per scan. Other sensors show `n/a`.
+- `detect`: mean radar detections over the polls that returned an array. A radar poll that returns an array counts as one reading, and its detections are the array's rows. The bridge does not read the array's columns. Other sensors, and a radar that returned no array, show `n/a`.
+
+A lidar scan with no points counts under `empty`, like any poll that returned None or an empty dict, list or bytes. A radar array with zero rows does not count under `empty`. It is one reading that records 0 detections.
 
 The `rate_hz:` explanation line always prints. The other footer lines appear only when they apply:
 
 - `<car> <sensor>: polls returned up to N readings...` appears when `per_poll` is above 1.
 - `no sensor time for <car> <sensor>, <car> <sensor>: rate_hz there is the polling rate, not the sensor's` is one line that lists every affected sensor, separated by commas. It appears when at least one sensor has `time` of `poll` or `mixed`.
-- `unexpected format: <car> <sensor> N readings, first: ...` appears when `unexp` is above 0. The first unexpected reading is printed, so send that line back in full.
+- `unexpected format: <car> <sensor> N readings, first: ...` appears when `unexp` is above 0. It prints the first message for each sensor, so send those lines back in full. A poll that raised an error reads `first: poll raised <type>: <message>`.
 
-A missing reading is never filled in. An empty poll counts under `empty`, and an unexpected format counts under `unexp`.
+One sensor that fails never stops the run. Its polls count under `unexp`, and the other sensors keep their rows. A run where every sensor fails still exits with code 0, so read the `unexp` column.
+
+A missing reading is never filled in. An empty poll counts under `empty`, and an unexpected format or a failed poll counts under `unexp`.
 
 ### How long it takes
 
@@ -206,7 +235,7 @@ python bridge/spike_multicar.py --home "<your BeamNG.tech folder>"
 
 ### What it prints
 
-Three blocks, one for each case. Each block starts with a `spawned` line that lists the cars of that case, then a blank line and the same summary line, table and footer lines as Run 2, then `wrote ...multicar.json`. The summary lines read `cars: 1`, `cars: 2` and `cars: 4`, and the table has one row per sensor per car (`kite1` to `kite4`). Compare the `steps per second` figure across the three summary lines to see whether more cars slow the simulator.
+The five `sensor:` lines once, then three blocks, one for each case. Each block starts with a `spawned` line that lists the cars of that case, then a blank line and the same summary line, table and footer lines as Run 2, then `wrote ...multicar.json`. The summary lines read `cars: 1`, `cars: 2` and `cars: 4`, and the table has one row per sensor per car (`kite1` to `kite4`). Compare the `steps per second` figure across the three summary lines to see whether more cars slow the simulator.
 
 The script rewrites `multicar.json` after each case, so a run that fails in case 2 still leaves the result of case 1.
 
@@ -250,7 +279,7 @@ rerun recordings/demo.rrd
 
 ### What it prints
 
-A `spawned` line, then a count of the logged steps. With `--seconds 2` on the fake simulator:
+The five `sensor:` lines, a `spawned` line, then a count of the logged steps. With `--seconds 2` on the fake simulator (the `sensor:` lines are left out here):
 
 ```
 spawned kite1 (model: vivace, config: vehicles/vivace/tograc_qE.pc)

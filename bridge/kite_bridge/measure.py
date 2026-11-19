@@ -88,7 +88,7 @@ def steps_per_second(steps, seconds):
     return steps / seconds if seconds > 0 else None
 
 
-def summarise(series, latencies, points=()):
+def summarise(series, latencies, points=(), detections=()):
     return {
         "polls": len(series),
         "rate_hz": effective_rate(fresh_timestamps(series)),
@@ -96,4 +96,5 @@ def summarise(series, latencies, points=()):
         "empty": count_empty(series),
         "repeated": count_repeated(series),
         "points_mean": math.fsum(points) / len(points) if points else None,
+        "detections_mean": math.fsum(detections) / len(detections) if detections else None,
     }

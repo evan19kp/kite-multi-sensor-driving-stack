@@ -12,6 +12,7 @@ CAR_COUNTS = (1, 2, 4)
 
 
 def run(args):
+    common.print_sensor_settings()
     cases = []
     for n_cars in CAR_COUNTS:
         with common.session(args) as sim:
