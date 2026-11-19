@@ -218,7 +218,7 @@ Agents never run the real simulator; every test uses the fake.
 Bridge correctness after the first real run: our car, safe sensor reads, explicit sensor settings,
 clean shutdown and output that stays out of the repo. No speed work (that is Sprint 0B.2).
 
-- [ ] **R27 Our car and honest version lines** (feat, Sonnet): defaults `--model vivace --config
+- [x] **R27 Our car and honest version lines** (feat, Sonnet): defaults `--model vivace --config
   vehicles/vivace/tograc_qE.pc` (Tograc qE); `--config <path>` passes `part_config` (`--config ""`
   spawns the model's default configuration); the "tograc/cherrier" name search removed;
   `--list-models` prints the available model names sorted, one per line, and exits 0 without

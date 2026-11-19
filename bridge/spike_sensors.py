@@ -11,14 +11,13 @@ from kite_bridge import common
 
 def run(args):
     with common.session(args) as sim:
-        model = common.resolve_model(sim, args.model)
-        cars = sim.load_scenario(model, 1)
+        cars = common.spawn(sim, args, 1)
         common.start_traffic(sim, args.traffic)
         sim.set_ai_mode(cars[0], "traffic")
         result = common.measure_sensors(sim, cars, args.seconds)
         sim.set_ai_mode(cars[0], "disabled")
         print(common.format_result(result))
-        common.write_json(args.out, "sensors.json", {"model": model, **result})
+        common.write_json(args.out, "sensors.json", {"model": args.model, "config": args.config, **result})
 
 
 def main(argv=None):

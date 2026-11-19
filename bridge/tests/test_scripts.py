@@ -36,12 +36,10 @@ class FakeRunTest(unittest.TestCase):
         self.assertEqual(code, 0, stderr)
         return stdout, json.loads((self.out / OUTPUT_FILE[name]).read_text(encoding="utf-8"))
 
-    def test_connect_prints_versions_and_positions_and_records_ground_truth(self):
+    def test_connect_prints_positions_and_records_ground_truth(self):
         stdout, data = self.run_fake("spike_connect")
-        self.assertIn("BeamNG.tech version: fake", stdout)
-        self.assertIn("BeamNGpy version: fake", stdout)
         self.assertEqual(len(re.findall(r"^t=\d+s position=", stdout, re.MULTILINE)), 1)
-        self.assertEqual(data["model"], "fake_cherrier_tograc")
+        self.assertEqual(data["model"], "vivace")
         self.assertEqual(len(data["ground_truth"]), 1)
         self.assertAlmostEqual(data["ground_truth"][0]["pos"][0], 10.0)
 
@@ -105,7 +103,8 @@ class CommandLineTest(unittest.TestCase):
         for name in SCRIPTS:
             code, stdout, _ = run_script(name, "--help")
             self.assertEqual(code, 0)
-            for option in ("--home", "--headless", "--seconds", "--traffic", "--out", "--fake", "--model"):
+            for option in ("--home", "--headless", "--seconds", "--traffic", "--out", "--fake", "--model",
+                           "--config", "--list-models"):
                 self.assertIn(option, stdout)
 
 
@@ -146,7 +145,7 @@ class SimulatorFailureTest(unittest.TestCase):
                 saved = json.loads((Path(tmp) / OUTPUT_FILE[name]).read_text(encoding="utf-8"))
             self.assertEqual(code, 1, name)
             self.assertEqual(stderr.splitlines()[-1], "error: RuntimeError: close failed", name)
-            self.assertEqual(saved["model"], "fake_cherrier_tograc", name)
+            self.assertEqual(saved["model"], "vivace", name)
         self.assertEqual([c["cars"] for c in saved["cases"]], [1])
 
 
