@@ -1,7 +1,8 @@
 """Spike 1: connect to the simulator, spawn our car, drive in traffic mode and print its position.
 
-Prints the BeamNG.tech and BeamNGpy versions the simulator reports. Writes connect.json to
---out. The positions in it are ground truth for scoring; they never drive anything.
+Prints the BeamNGpy package version, the BeamNGpy protocol version and a line saying BeamNGpy
+does not report the BeamNG.tech version. Writes connect.json to --out. The positions in it are
+ground truth for scoring; they never drive anything.
 """
 
 import sys
@@ -12,12 +13,10 @@ from kite_bridge.sim_api import STEP_HZ
 
 def run(args):
     with common.session(args) as sim:
-        versions = sim.versions()
-        for name, version in versions.items():
-            print(f"{name} version: {version}")
-        model = common.resolve_model(sim, args.model)
-        car = sim.load_scenario(model, 1)[0]
-        print(f"spawned {car} ({model})")
+        versions = common.version_report(sim)
+        for label, version in versions.items():
+            print(f"{label}: {version}")
+        car = common.spawn(sim, args, 1)[0]
         traffic = common.start_traffic(sim, args.traffic)
         sim.set_ai_mode(car, "traffic")
         ground_truth = []
@@ -28,7 +27,7 @@ def run(args):
             print(f"t={second}s position=({x:.2f}, {y:.2f}, {z:.2f})")
         sim.set_ai_mode(car, "disabled")
         common.write_json(args.out, "connect.json", {
-            "versions": versions, "model": model, "traffic_spawned": traffic,
+            "versions": versions, "model": args.model, "config": args.config, "traffic_spawned": traffic,
             "ground_truth": ground_truth})
 
 

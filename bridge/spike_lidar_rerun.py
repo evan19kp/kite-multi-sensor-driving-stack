@@ -40,8 +40,7 @@ def run(args):
     save_path = rerun_view.recording_path(args.out, args.save) if args.save else None
     no_lidar = no_image = 0
     with common.session(args) as sim:
-        model = common.resolve_model(sim, args.model)
-        car = sim.load_scenario(model, 1)[0]
+        car = common.spawn(sim, args, 1)[0]
         show_traffic = common.start_traffic(sim, args.traffic)
         sim.set_ai_mode(car, "traffic")
         sim.attach_sensors(car)

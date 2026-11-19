@@ -52,28 +52,44 @@ All four scripts take these options. `--home` is required for a real run.
 | `--seconds` | 30 | Simulated seconds to run, not wall-clock seconds. |
 | `--traffic` | 8 | AI traffic cars to spawn. |
 | `--out` | `recordings/` | Folder for the output files. |
-| `--model` | the single match found | Our car's vehicle model. |
+| `--model` | `vivace` | Our car's vehicle model. |
+| `--config` | `vehicles/vivace/tograc_qE.pc` | Our car's part configuration file. `--config=` (nothing after the equals sign) spawns the model's default configuration. |
+| `--list-models` | off | Print the simulator's vehicle model names, sorted, one per line, and exit without spawning anything. |
 | `--fake` | off | Use the fake simulator. Do not use it for the real run. |
 
 Each script starts BeamNG.tech itself and closes it when the run ends. Close any BeamNG.tech that is already running before you start a script. The bridge connects to the simulator on a fixed local port, so a second copy may block the connection.
 
 Without `--home` and without `--fake`, a script prints a usage error and exits with code 2. If `--home` is not a folder, it prints `error: --home is not a folder` and exits with code 1. Any other failure exits with code 1 too. A failure the script checks for prints `error: <message>`. An unexpected failure prints a traceback, then `error: <type>: <message>`.
 
-### Choosing the car model
+### Choosing the car
 
-Unless you pass `--model`, a script asks the simulator for its vehicle models and picks the one whose name contains `tograc` or `cherrier`. It prints a `model:` line for that match.
+By default every script spawns the Cherrier Tograc qE: model `vivace` with the part configuration `vehicles/vivace/tograc_qE.pc`. The script does not search for a model by name. A `spawned` line says what it asked for:
 
-If no model or several models match, the script prints every `model:` line it found and stops with an error that tells you to pass `--model`. Run it again with one of the printed names:
-
-```powershell
-python bridge/spike_connect.py --home "<your BeamNG.tech folder>" --model <name>
+```
+spawned kite1 (model: vivace, config: vehicles/vivace/tograc_qE.pc)
 ```
 
-If the script prints `could not list vehicle models`, the BeamNGpy call for that list failed. Send the error back (see "If a call fails"), and pass `--model` with a model name you know.
+To spawn a different configuration of the same model, pass `--config`. To spawn the model's own default configuration, pass `--config=` with nothing after the equals sign. The `spawned` line then reads `config: model default`.
+
+```powershell
+python bridge/spike_connect.py --home "<your BeamNG.tech folder>" --config=
+```
+
+Write `--config=` and not `--config ""`. Windows PowerShell 5.1 and PowerShell 7 before 7.3 drop an empty argument when they start a program, so `--config ""` fails there with "expected one argument". `--config=` works in every shell.
+
+If you change `--model`, also change `--config`. The default configuration file belongs to `vivace`, and the scripts do not check that a file matches the model.
+
+To see which model names the simulator offers, run any script with `--list-models`. It starts the simulator, prints the names sorted, one per line, and exits with code 0 without loading a scenario.
+
+```powershell
+python bridge/spike_connect.py --home "<your BeamNG.tech folder>" --list-models
+```
+
+If the listing fails, the script prints the error and exits with code 1. Send the error back (see "If a call fails").
 
 ### How to read the output
 
-The numbers in this guide come from `--fake` runs. The fake simulator is synthetic, so the version lines read `fake` and the rates, counts and step speed will differ on the real simulator. The shape of the output is what carries over.
+The numbers in this guide come from `--fake` runs. The fake simulator is synthetic, so the BeamNGpy version lines read `fake` and the rates, counts and step speed will differ on the real simulator. The shape of the output is what carries over.
 
 ## Run 1: connect (`spike_connect.py`)
 
@@ -85,19 +101,19 @@ python bridge/spike_connect.py --home "<your BeamNG.tech folder>"
 
 ### What it prints
 
-Version lines, a `model:` line, a `spawned` line, then one `t=` line per second, then the path of the file it wrote. With `--seconds 2` on the fake simulator:
+Three version lines, a `spawned` line, then one `t=` line per second, then the path of the file it wrote. With `--seconds 2` on the fake simulator:
 
 ```
-BeamNG.tech version: fake
 BeamNGpy version: fake
-model: fake_cherrier_tograc
-spawned kite1 (fake_cherrier_tograc)
+BeamNGpy protocol: fake
+BeamNG.tech version: not reported by BeamNGpy 1.36
+spawned kite1 (model: vivace, config: vehicles/vivace/tograc_qE.pc)
 t=1s position=(10.00, 0.00, 0.00)
 t=2s position=(20.00, 0.00, 0.00)
-wrote scratch\R20\out\connect.json
+wrote scratch\R27\out\connect.json
 ```
 
-On the real run, expect 30 `t=` lines and `wrote recordings\connect.json`. The two version lines show what the simulator reports. If AI traffic cannot start, the script prints `traffic not spawned (...)` with the error and continues with our car alone.
+On the real run, expect 30 `t=` lines and `wrote recordings\connect.json`. The first two version lines are the installed BeamNGpy package version and the protocol version it speaks to the simulator. BeamNGpy 1.36 has no call that returns the BeamNG.tech version, so the third line is fixed text. Read the BeamNG.tech version from the simulator itself, not from this output. If AI traffic cannot start, the script prints `traffic not spawned (...)` with the error and continues with our car alone.
 
 The positions are ground truth from the simulator. The script prints them and writes them to `connect.json`, apart from any sensor data.
 
@@ -107,7 +123,7 @@ The run covers 30 simulated seconds, plus the time the simulator needs to start.
 
 ### What to send back
 
-- The full printed output, including both version lines.
+- The full printed output, including the three version lines.
 - `recordings/connect.json`.
 - The `pip show` output from setup.
 - Any error, in full (see "If a call fails").
@@ -122,20 +138,20 @@ python bridge/spike_sensors.py --home "<your BeamNG.tech folder>"
 
 ### What it prints
 
-A `model:` line, a summary line, a table with one row per sensor, and footer lines. With `--seconds 2` on the fake simulator:
+A `spawned` line, a summary line, a table with one row per sensor, and footer lines. With `--seconds 2` on the fake simulator:
 
 ```
-model: fake_cherrier_tograc
-cars: 1  steps per second: 3037960.5
+spawned kite1 (model: vivace, config: vehicles/vivace/tograc_qE.pc)
+cars: 1  steps per second: 2784231.6
 car    sensor   polls  rate_hz   time  per_poll  mean_ms  p50_ms  p95_ms  max_ms  empty  repeat  unexp  points
 kite1  lidar      120    10.00 sensor         1     0.00    0.00    0.00    0.01      0      99      0    1000
 kite1  camera     120    20.00 sensor         1     0.00    0.00    0.00    0.00      0      79      0     n/a
 kite1  radar      120    20.00 sensor         1     0.00    0.00    0.00    0.00      0      79      0     n/a
-kite1  gps        120    10.00 sensor         1     0.00    0.00    0.00    0.00      0      99      0     n/a
-kite1  imu        120    59.80 sensor         2     0.00    0.00    0.00    0.00      0       0      0     n/a
+kite1  gps        120    10.00 sensor         1     0.00    0.00    0.00    0.01      0      99      0     n/a
+kite1  imu        120    59.80 sensor         2     0.00    0.00    0.00    0.03      0       0      0     n/a
 rate_hz: distinct reading timestamps per simulator second. It counts at most one new reading per poll, so it is limited to about the poll rate of 60 Hz. per_poll shows when a sensor delivered more.
 kite1 imu: polls returned up to 2 readings. rate_hz counts at most one per poll, so it undercounts this sensor.
-wrote scratch\R20\out\sensors.json
+wrote scratch\R27\out\sensors.json
 ```
 
 The columns:
@@ -167,7 +183,7 @@ A missing reading is never filled in. An empty poll counts under `empty`, and an
 
 - The full printed output, including the table and every footer line.
 - `recordings/sensors.json`.
-- The BeamNG.tech and BeamNGpy versions (from Run 1 and the `pip show` output).
+- The BeamNGpy version lines (from Run 1 and the `pip show` output).
 - Any error, in full.
 
 ### Headless run
@@ -190,7 +206,7 @@ python bridge/spike_multicar.py --home "<your BeamNG.tech folder>"
 
 ### What it prints
 
-One `model:` line from the first case, then three blocks, one for each case. Each block starts with a blank line and the same summary line, table and footer lines as Run 2, then `wrote ...multicar.json`. The summary lines read `cars: 1`, `cars: 2` and `cars: 4`, and the table has one row per sensor per car (`kite1` to `kite4`). Compare the `steps per second` figure across the three summary lines to see whether more cars slow the simulator.
+Three blocks, one for each case. Each block starts with a `spawned` line that lists the cars of that case, then a blank line and the same summary line, table and footer lines as Run 2, then `wrote ...multicar.json`. The summary lines read `cars: 1`, `cars: 2` and `cars: 4`, and the table has one row per sensor per car (`kite1` to `kite4`). Compare the `steps per second` figure across the three summary lines to see whether more cars slow the simulator.
 
 The script rewrites `multicar.json` after each case, so a run that fails in case 2 still leaves the result of case 1.
 
@@ -234,22 +250,22 @@ rerun recordings/demo.rrd
 
 ### What it prints
 
-A `model:` line, then a count of the logged steps. With `--seconds 2` on the fake simulator:
+A `spawned` line, then a count of the logged steps. With `--seconds 2` on the fake simulator:
 
 ```
-model: fake_cherrier_tograc
+spawned kite1 (model: vivace, config: vehicles/vivace/tograc_qE.pc)
 logged 120 steps
 ```
 
 These lines appear only when they apply:
 
-- `traffic not spawned (...)`, with the error, when AI traffic fails to start. It prints right after the `model:` line, before the run starts.
+- `traffic not spawned (...)`, with the error, when AI traffic fails to start. It prints right after the `spawned` line, before the run starts.
 - `other cars not logged (...)`, with the error, when the script cannot read the traffic cars' positions. It keeps running without them. It prints during the run, before `logged N steps`.
 - `lidar gave no reading on N of M steps; no lidar was logged for them`, after `logged N steps`.
 - `camera gave no reading on N of M steps; no image was logged for them`, after `logged N steps`.
 - `wrote recordings\demo.rrd`, with `--save`, after a successful run.
 
-On the fake simulator with `--save demo.rrd`, the script writes no file and prints `--fake keeps nothing; the recording would have gone to scratch\R20\out\demo.rrd` instead.
+On the fake simulator with `--save demo.rrd`, the script writes no file and prints `--fake keeps nothing; the recording would have gone to scratch\R27\out\demo.rrd` instead.
 
 ### How long it takes
 

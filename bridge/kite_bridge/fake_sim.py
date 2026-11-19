@@ -5,7 +5,7 @@ import time
 from kite_bridge.sim_api import POLL_TIME, SENSOR_KINDS, STEP_HZ, Reading, Simulator
 
 DEFAULT_RATES = {"lidar": 10.0, "camera": 20.0, "radar": 20.0, "gps": 10.0, "imu": 100.0}
-DEFAULT_MODELS = ("fake_sedan", "fake_cherrier_tograc", "fake_van")
+DEFAULT_MODELS = ("vivace", "fake_van", "fake_sedan")
 FAKE_SPEED_M_S = 10.0
 FAKE_LIDAR_POINTS = 200
 FAKE_LIDAR_RANGE_M = 60.0
@@ -34,6 +34,8 @@ class FakeSim(Simulator):
         self._last_tick = {}
         self.injected = {}
         self.traffic_requested = None
+        self.spawned_model = None
+        self.spawned_config = None
 
     def open(self):
         pass
@@ -42,14 +44,16 @@ class FakeSim(Simulator):
         pass
 
     def versions(self):
-        return {"BeamNG.tech": "fake", "BeamNGpy": "fake"}
+        return {"BeamNGpy version": "fake", "BeamNGpy protocol": "fake"}
 
     def list_models(self):
         return list(self._models)
 
-    def load_scenario(self, model, n_cars):
+    def load_scenario(self, model, n_cars, config=None):
         if n_cars < 1:
             raise ValueError("n_cars must be at least 1")
+        self.spawned_model = model
+        self.spawned_config = config
         cars = [f"kite{i + 1}" for i in range(n_cars)]
         self._positions = {car: (5.0 * i, 0.0, 0.0) for i, car in enumerate(cars)}
         self._modes = {car: "disabled" for car in cars}
