@@ -237,7 +237,7 @@ clean shutdown and output that stays out of the repo. No speed work (that is Spr
   written into `spike_sensors.py`'s JSON; `docs/SPIKE-0B.md` updated. Tests (fake only): numpy-like
   arrays whose truth value raises, radar N×7 and lidar N×3 including N = 0; a raising sensor gives
   `unexp`, other rows printed, exit 0; settings lines printed and in the JSON; camera colour only.
-- [ ] **R29 Clean shutdown on Ctrl+C, errors and timeouts** (fix, Opus builder; needs R27):
+- [x] **R29 Clean shutdown on Ctrl+C, errors and timeouts** (fix, Opus builder; needs R27):
   `--timeout <seconds>` (default 300, > 0) passed as `socket_timeout`; shutdown never waits forever
   and always ends BeamNG.tech (healthy: remove sensors then `bng.close()`; interrupted or timed out:
   straight to `bng.close()`; if that raises or overruns, end `bng.process`; a second Ctrl+C skips
