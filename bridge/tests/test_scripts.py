@@ -54,7 +54,10 @@ class FakeRunTest(unittest.TestCase):
             self.assertRegex(stdout, rf"(?m)^kite1\s+{sensor['sensor']}\s")
         by_sensor = {r["sensor"]: r for r in data["sensors"]}
         self.assertAlmostEqual(by_sensor["lidar"]["rate_hz"], 10.0)
+        # polls after steps 1 to 60 see 10 Hz samples 0 to 10 (11 distinct), so 60 - 11 = 49 repeat
         self.assertEqual(by_sensor["lidar"]["repeated"], 49)
+        self.assertEqual(by_sensor["imu"]["readings_per_poll_max"], 2)
+        self.assertIn("kite1 imu: polls returned up to 2 readings", stdout)
         self.assertEqual(by_sensor["lidar"]["time_source"], "sensor")
         self.assertEqual(by_sensor["lidar"]["unexpected"], {"count": 0, "first": None})
         self.assertTrue(900 <= by_sensor["lidar"]["points_mean"] < 1100)

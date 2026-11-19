@@ -9,9 +9,10 @@ from pathlib import Path
 
 from kite_bridge import measure
 from kite_bridge.fake_sim import FakeSim
-from kite_bridge.sim_api import SENSOR_KINDS, STEP_HZ
+from kite_bridge.sim_api import POLL_TIME, SENSOR_KINDS, STEP_HZ
 
 MODEL_HINTS = ("tograc", "cherrier")
+MIXED_TIME = "mixed"
 
 
 class SpikeError(Exception):
@@ -112,10 +113,18 @@ def steps_for(seconds):
 
 
 def _time_source(sources):
-    return "mixed" if len(sources) > 1 else next(iter(sources), None)
+    return MIXED_TIME if len(sources) > 1 else next(iter(sources), None)
 
 
 def measure_sensors(sim, cars, seconds):
+    """Steps the simulator for `seconds` of simulator time and polls every sensor once after
+    each step, so the poll rate is STEP_HZ per simulator second.
+
+    A row's `rate_hz` is the rate of distinct reading timestamps seen at poll time. It counts
+    one reading per poll, so it never exceeds the poll rate, whatever the sensor's own rate.
+    `readings_per_poll_max` is the most readings one poll returned; above 1, the sensor
+    produced readings faster than it was polled. Unexpected readings are left out of `polls`,
+    `empty`, `rate_hz` and `readings_per_poll_max`; the latency figures include their polls."""
     for car in cars:
         sim.attach_sensors(car)
     keys = [(car, kind) for car in cars for kind in SENSOR_KINDS]
@@ -124,6 +133,7 @@ def measure_sensors(sim, cars, seconds):
     points = {key: [] for key in keys}
     sources = {key: set() for key in keys}
     unexpected = {key: [] for key in keys}
+    per_poll = {key: [] for key in keys}
     steps = steps_for(seconds)
     step_time = 0.0
     for _ in range(steps):
@@ -140,11 +150,13 @@ def measure_sensors(sim, cars, seconds):
             series[key].append(reading.timestamp)
             if reading.timestamp is not None:
                 sources[key].add(reading.time_source)
+                per_poll[key].append(reading.count)
             if reading.points is not None:
                 points[key].append(reading.points)
     rows = [{"car": car, "sensor": kind,
              **measure.summarise(series[car, kind], latencies[car, kind], points[car, kind]),
              "time_source": _time_source(sources[car, kind]),
+             "readings_per_poll_max": max(per_poll[car, kind], default=None),
              "unexpected": {"count": len(unexpected[car, kind]),
                             "first": unexpected[car, kind][0] if unexpected[car, kind] else None}}
             for car, kind in keys]
@@ -158,17 +170,23 @@ def _fmt(value, scale=1.0, digits=2):
 
 def format_result(result):
     lines = [f"cars: {result['cars']}  steps per second: {_fmt(result['steps_per_second'], digits=1)}",
-             f"{'car':<7}{'sensor':<8}{'polls':>6}{'rate_hz':>9}{'time':>7}{'mean_ms':>9}{'p50_ms':>8}"
-             f"{'p95_ms':>8}{'max_ms':>8}{'empty':>7}{'repeat':>8}{'unexp':>7}{'points':>8}"]
+             f"{'car':<7}{'sensor':<8}{'polls':>6}{'rate_hz':>9}{'time':>7}{'per_poll':>10}{'mean_ms':>9}"
+             f"{'p50_ms':>8}{'p95_ms':>8}{'max_ms':>8}{'empty':>7}{'repeat':>8}{'unexp':>7}{'points':>8}"]
     for r in result["sensors"]:
         lat = r["latency_s"]
         lines.append(f"{r['car']:<7}{r['sensor']:<8}{r['polls']:>6}{_fmt(r['rate_hz']):>9}"
-                     f"{r['time_source'] or 'n/a':>7}"
+                     f"{r['time_source'] or 'n/a':>7}{r['readings_per_poll_max'] or 'n/a':>10}"
                      f"{_fmt(lat['mean'], 1000):>9}{_fmt(lat['p50'], 1000):>8}{_fmt(lat['p95'], 1000):>8}"
                      f"{_fmt(lat['max'], 1000):>8}{r['empty']:>7}{r['repeated']:>8}"
                      f"{r['unexpected']['count']:>7}{_fmt(r['points_mean'], digits=0):>8}")
+    lines.append(f"rate_hz: distinct reading timestamps per simulator second, one per poll at most, "
+                 f"so never above the poll rate of {STEP_HZ} Hz")
+    for r in result["sensors"]:
+        if (r["readings_per_poll_max"] or 0) > 1:
+            lines.append(f"{r['car']} {r['sensor']}: polls returned up to {r['readings_per_poll_max']} "
+                         "readings; rate_hz counts one per poll and is capped at the poll rate")
     from_poll = [f"{r['car']} {r['sensor']}" for r in result["sensors"]
-                 if r["time_source"] in ("poll", "mixed")]
+                 if r["time_source"] in (POLL_TIME, MIXED_TIME)]
     if from_poll:
         lines.append(f"no sensor time for {', '.join(from_poll)}: rate_hz there is the "
                      "polling rate, not the sensor's")

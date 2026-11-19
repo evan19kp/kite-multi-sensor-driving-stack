@@ -10,7 +10,11 @@ on it.
 
 - `kite_bridge/sim_api.py`: the small `Simulator` interface the scripts use.
 - `kite_bridge/beamng_adapter.py`: the real simulator. The only module that imports `beamngpy`,
-  and only inside methods. Calls not verified against BeamNGpy 1.36 are marked ASSUMPTION.
+  and only inside methods. None of its BeamNGpy calls has run against BeamNGpy 1.36 yet. Calls
+  whose name, arguments or result format are guesses carry an `# ASSUMPTION:` comment.
+- `kite_bridge/readings.py`: turns a BeamNGpy poll result into a reading. It does not import
+  `beamngpy`, so tests drive it with plain dicts and lists. Its format guesses are marked
+  ASSUMPTION too.
 - `kite_bridge/fake_sim.py`: a seeded synthetic simulator with configurable sensor rates,
   dropouts, repeated readings and latency. All tests use it.
 - `kite_bridge/measure.py`: pure measurement functions (effective rate, latency statistics,
@@ -40,6 +44,13 @@ Each sensor row says where its timestamps came from. `time` is `sensor` when the
 their own time, `poll` when they had none and the poll time was used (then `rate_hz` is the
 polling rate, not the sensor's, and the table says so), and `mixed` for both. A lidar reading
 without `pointCloud` is counted under `unexp` and printed with its keys, not as an empty poll.
+
+The scripts poll each sensor once per step, 60 times per simulator second. `rate_hz` is the rate
+of distinct reading timestamps seen at poll time. It counts one reading per poll, so it can never
+exceed 60 Hz, even for a sensor that runs faster. It does not try to recover the sensor's own
+rate. Instead, the `per_poll` column is the most readings one poll returned, and the JSON field
+`readings_per_poll_max` has the same value. When it is above 1, the table prints a line for that
+sensor saying so.
 
 Output goes only to `--out`, which is gitignored as `recordings/`. Ground truth (the car's true
 position) is written in its own file, `connect.json`, apart from sensor data, and scores results

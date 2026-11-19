@@ -2,13 +2,15 @@
 
 This is the only module that imports `beamngpy`, and it does so lazily, inside methods, so
 importing the module needs no simulator and no installed packages. Every BeamNGpy call lives
-here. Calls not verified against BeamNGpy 1.36 are marked ASSUMPTION; the first real run
+here, and none has run against BeamNGpy 1.36 yet. Calls whose name, arguments or result format
+are guesses carry an `# ASSUMPTION:` comment, here and in `readings.py`; the first real run
 checks them.
 """
 
 import importlib.metadata
 
-from kite_bridge.sim_api import POLL_TIME, STEP_HZ, Reading, Simulator
+from kite_bridge.readings import reading_from_raw
+from kite_bridge.sim_api import STEP_HZ, Simulator
 
 PORT = 25252
 SCENARIO_LEVEL = "west_coast_usa"
@@ -100,25 +102,10 @@ class BeamNGAdapter(Simulator):
         })
 
     def poll(self, car, kind):
-        raw = self._sensors[(car, kind)].poll()
-        points = None
-        if kind == "lidar" and raw:
-            if not isinstance(raw, dict) or "pointCloud" not in raw:
-                keys = sorted(map(str, raw)) if isinstance(raw, dict) else type(raw).__name__
-                return Reading(None, unexpected=f"lidar reading has no 'pointCloud'; got {keys}")
-            points = len(raw["pointCloud"])
-            if points == 0:
-                return Reading(None)
-        latest = _latest(raw)
-        if latest is None:
-            return Reading(None)
-        # ASSUMPTION: readings carry "time" in simulator seconds; without it the poll time is used
-        if isinstance(latest, dict) and "time" in latest:
-            return Reading(float(latest["time"]), points)
-        return Reading(self.sim_time, points, POLL_TIME)
+        return reading_from_raw(kind, self._sensors[(car, kind)].poll(), self.sim_time)
 
     def step(self, n=1):
-        self._bng.control.step(n)
+        self._bng.control.step(n)  # ASSUMPTION: the 1.36 call, and it returns once the n steps are done
         self._steps += n
 
     def set_ai_mode(self, car, mode):
@@ -133,11 +120,3 @@ class BeamNGAdapter(Simulator):
     @property
     def sim_time(self):
         return self._steps / STEP_HZ
-
-
-def _latest(raw):
-    if isinstance(raw, list):
-        return raw[-1] if raw else None
-    if isinstance(raw, dict) and raw and all(isinstance(v, dict) for v in raw.values()):
-        return list(raw.values())[-1]
-    return raw or None

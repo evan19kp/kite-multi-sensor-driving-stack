@@ -24,6 +24,7 @@ class FakeSim(Simulator):
         self._modes = {}
         self._attached = set()
         self._last = {}
+        self._last_tick = {}
         self.injected = {}
         self.traffic_requested = None
 
@@ -68,13 +69,16 @@ class FakeSim(Simulator):
         if not self._sensor_time:
             return Reading(self.sim_time, points, POLL_TIME)
         rate = self._rates[kind]
-        timestamp = math.floor(self.sim_time * rate + 1e-9) / rate
+        tick = math.floor(self.sim_time * rate + 1e-9)
+        count = max(1, tick - self._last_tick.get(key, tick))
+        self._last_tick[key] = tick
+        timestamp = tick / rate
         last = self._last.get(key)
         if last is not None and self._rng.random() < self._repeat:
             self.injected[key]["repeated"] += 1
-            timestamp = last
+            timestamp, count = last, 1
         self._last[key] = timestamp
-        return Reading(timestamp, points)
+        return Reading(timestamp, points, count=count)
 
     def step(self, n=1):
         self._steps += n

@@ -1,11 +1,13 @@
 import contextlib
 import io
 import json
+import math
 import unittest
 
 from kite_bridge import common
 from kite_bridge.fake_sim import FakeSim
-from kite_bridge.sim_api import POLL_TIME, SENSOR_KINDS, STEP_HZ, Reading
+from kite_bridge.readings import reading_from_raw
+from kite_bridge.sim_api import SENSOR_KINDS, STEP_HZ
 
 
 def measured(sim, n_cars=1, seconds=1.0):
@@ -21,6 +23,7 @@ class SensorRateTest(unittest.TestCase):
         for row in rows.values():
             self.assertAlmostEqual(row["rate_hz"], 10.0)
             self.assertEqual(row["polls"], 60)
+            # polls after steps 1 to 60 see samples 0 to 10 (11 distinct), so 60 - 11 = 49 repeat
             self.assertEqual(row["repeated"], 49)
             self.assertEqual(row["empty"], 0)
 
@@ -95,7 +98,7 @@ class TimeSourceTest(unittest.TestCase):
         class Switching(FakeSim):
             def poll(self, car, kind):
                 if kind == "gps" and self.sim_time > 0.5:
-                    return Reading(self.sim_time, None, POLL_TIME)
+                    return reading_from_raw("gps", {"lat": 0.0}, self.sim_time)
                 return super().poll(car, kind)
 
         rows, _ = measured(Switching())
@@ -113,12 +116,10 @@ class UnexpectedReadingTest(unittest.TestCase):
     MESSAGE = "lidar reading has no 'pointCloud'; got ['colours', 'time']"
 
     def broken_lidar(self):
-        message = self.MESSAGE
-
         class BrokenLidar(FakeSim):
             def poll(self, car, kind):
                 if kind == "lidar":
-                    return Reading(None, unexpected=message)
+                    return reading_from_raw("lidar", {"time": self.sim_time, "colours": []}, self.sim_time)
                 return super().poll(car, kind)
 
         return BrokenLidar()
@@ -138,6 +139,32 @@ class UnexpectedReadingTest(unittest.TestCase):
         rows, _ = measured(self.broken_lidar())
         self.assertEqual(rows["kite1", "camera"]["unexpected"], {"count": 0, "first": None})
         self.assertAlmostEqual(rows["kite1", "camera"]["rate_hz"], 20.0)
+
+
+class ReadingsPerPollTest(unittest.TestCase):
+    def test_a_sensor_faster_than_the_poll_rate_reports_readings_per_poll(self):
+        _, result = measured(FakeSim(rates={**dict.fromkeys(SENSOR_KINDS, 10.0), "imu": 100.0}))
+        rows = {r["sensor"]: r for r in json.loads(json.dumps(result))["sensors"]}
+        # 100 Hz polled at 60 Hz gives 1 or 2 new samples per poll
+        self.assertEqual(rows["imu"]["readings_per_poll_max"], math.ceil(100 / STEP_HZ))
+        self.assertLessEqual(rows["imu"]["rate_hz"], STEP_HZ)
+        self.assertEqual(rows["lidar"]["readings_per_poll_max"], 1)
+        table = common.format_result(result)
+        self.assertIn("kite1 imu: polls returned up to 2 readings; rate_hz counts one per poll "
+                      "and is capped at the poll rate", table)
+        self.assertNotIn("kite1 lidar: polls returned", table)
+        self.assertIn(f"never above the poll rate of {STEP_HZ} Hz", table)
+        self.assertRegex(table, r"(?m)^kite1\s+imu\s+\d+\s+\d+\.\d+\s+sensor\s+2\s")
+
+    def test_no_sensor_faster_than_the_poll_rate_prints_no_readings_per_poll_line(self):
+        _, result = measured(FakeSim(rates=dict.fromkeys(SENSOR_KINDS, 20.0)))
+        self.assertEqual({r["readings_per_poll_max"] for r in result["sensors"]}, {1})
+        self.assertNotIn("polls returned", common.format_result(result))
+
+    def test_a_sensor_that_never_answers_has_no_readings_per_poll(self):
+        rows, _ = measured(FakeSim(dropout=1.0))
+        for row in rows.values():
+            self.assertIsNone(row["readings_per_poll_max"])
 
 
 class SecondsRuleTest(unittest.TestCase):

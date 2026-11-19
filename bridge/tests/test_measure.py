@@ -31,6 +31,7 @@ class PercentileTest(unittest.TestCase):
         self.assertEqual(measure.percentile([1, 2, 3, 4], 50), 2.5)
 
     def test_p95_of_four_is_hand_computed(self):
+        # rank 0.95 * 3 = 2.85, so 3 + 0.85 * (4 - 3) = 3.85
         self.assertAlmostEqual(measure.percentile([1, 2, 3, 4], 95), 3.85)
 
     def test_ends_and_unsorted_input(self):
@@ -78,6 +79,7 @@ class CountsTest(unittest.TestCase):
         self.assertEqual(measure.count_empty(self.SERIES), 3)
 
     def test_repeated_readings_compare_with_the_previous_non_empty_one(self):
+        # 0.0 twice in a row, 0.0 again after a None, 0.1 twice in a row
         self.assertEqual(measure.count_repeated(self.SERIES), 3)
 
     def test_fresh_timestamps_drop_repeats_and_gaps(self):
