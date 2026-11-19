@@ -55,11 +55,38 @@ All four scripts take these options. `--home` is required for a real run.
 | `--model` | `vivace` | Our car's vehicle model. |
 | `--config` | `vehicles/vivace/tograc_qE.pc` | Our car's part configuration file. `--config=` (nothing after the equals sign) spawns the model's default configuration. |
 | `--list-models` | off | Print the simulator's vehicle model names, sorted, one per line, and exit without spawning anything. |
+| `--timeout` | 300 | The longest wait, in seconds, for any one simulator call, including the map load. Must be above 0. See "Stopping a run". |
 | `--fake` | off | Use the fake simulator. Do not use it for the real run. |
 
 Each script starts BeamNG.tech itself and closes it when the run ends. Close any BeamNG.tech that is already running before you start a script. The bridge connects to the simulator on a fixed local port, so a second copy may block the connection.
 
 Without `--home` and without `--fake`, a script prints a usage error and exits with code 2. If `--home` is not a folder, it prints `error: --home is not a folder` and exits with code 1. Any other failure exits with code 1 too. A failure the script checks for prints `error: <message>`. An unexpected failure prints a traceback, then `error: <type>: <message>`.
+
+### Stopping a run
+
+Press Ctrl+C once to stop a run. The script closes BeamNG.tech, prints one line and exits with code 130:
+
+```
+interrupted: BeamNG.tech closed
+```
+
+A run that is waiting for the simulator does not wait forever. If one simulator call takes longer than `--timeout` seconds (300 by default), the run stops, closes BeamNG.tech and exits with code 1. A call that waits too long while the script removes the sensors at the end also counts. The script then prints `warning: could not remove <car> <sensor>: <type>: <message>` before the timeout line. If the run had already failed, the warning still appears, but the last line reports that earlier failure. The timeout line names the limit:
+
+```
+timed out after 300 s: BeamNG.tech closed
+```
+
+Neither line comes with a traceback. The limit covers loading the map too, which can take a minute or more, so keep the limit well above that. Raise it if the map load times out, for example with `--timeout 600`.
+
+The script ends BeamNG.tech the same way whether the run succeeded, failed, timed out or was stopped with Ctrl+C:
+
+1. After a normal run or an ordinary error, it removes the sensors, then closes BeamNG.tech.
+2. After Ctrl+C or a timeout, a call may have stopped halfway, so the script skips the sensors and closes BeamNG.tech straight away.
+3. If closing raises an error or takes longer than 20 seconds, the script ends the BeamNG.tech process that BeamNGpy launched and prints `BeamNG.tech not closed (<reason>); ended the process BeamNGpy launched`.
+
+If shutdown is slow, press Ctrl+C a second time. The script skips to step 3 at once.
+
+The script ends only the process BeamNGpy launched. If BeamNGpy connected to a BeamNG.tech that was already running, the script does not end it. It prints `...BeamNGpy did not launch it, so nothing was ended: close BeamNG.tech by hand`, and the last line reads `BeamNG.tech may still be running`. Close BeamNG.tech yourself in that case.
 
 ### Choosing the car
 
@@ -200,7 +227,7 @@ The `rate_hz:` explanation line always prints. The other footer lines appear onl
 - `no sensor time for <car> <sensor>, <car> <sensor>: rate_hz there is the polling rate, not the sensor's` is one line that lists every affected sensor, separated by commas. It appears when at least one sensor has `time` of `poll` or `mixed`.
 - `unexpected format: <car> <sensor> N readings, first: ...` appears when `unexp` is above 0. It prints the first message for each sensor, so send those lines back in full. A poll that raised an error reads `first: poll raised <type>: <message>`.
 
-One sensor that fails never stops the run. Its polls count under `unexp`, and the other sensors keep their rows. A run where every sensor fails still exits with code 0, so read the `unexp` column.
+One sensor that fails never stops the run. Its polls count under `unexp`, and the other sensors keep their rows. A run where every sensor fails still exits with code 0, so read the `unexp` column. A poll that takes longer than `--timeout` is the exception: it stops the run as a timeout (see "Stopping a run").
 
 A missing reading is never filled in. An empty poll counts under `empty`, and an unexpected format or a failed poll counts under `unexp`.
 
@@ -271,6 +298,8 @@ python bridge/spike_lidar_rerun.py --home "<your BeamNG.tech folder>" --save dem
 
 With `--save`, the script writes `recordings/demo.rrd` and opens no viewer. The name must end in `.rrd` and stay inside `--out`. An absolute path, a drive or `..` gives a usage error. Change the folder with `--out` and the file goes there instead.
 
+If you stop the run with Ctrl+C, the script closes the recording before it closes BeamNG.tech, so the file keeps every step logged before you pressed it. It does not print `wrote ...` in that case. The last line is `interrupted: BeamNG.tech closed`. The close call that writes out the file has not run against an installed Rerun yet, so check that the file opens.
+
 To view the saved file later, run `rerun` with the file path. The script's `--help` gives this form.
 
 ```powershell
@@ -317,7 +346,16 @@ Many BeamNGpy calls are marked as unverified for BeamNGpy 1.36, and the Rerun ca
 2. Copy the exact command you ran, with the placeholder in place of your real folder.
 3. Send both to the director, with the output of `python -m pip show beamngpy rerun-sdk`.
 
-A failed run exits with code 1 and ends with one of two lines. A failure the script checks for prints `error: <message>` and no traceback. An unexpected failure prints a traceback, then `error: <type>: <message>`. The output may contain a folder path from your machine. The repo is public, so do not paste such text into a pull request, issue or comment. Send it to the director only.
+A failed run exits with code 1 and ends with one of these lines:
+
+```
+error: <message>
+error: <type>: <message>
+timed out after <s> s: BeamNG.tech closed
+timed out after <s> s: BeamNG.tech may still be running
+```
+
+A failure the script checks for prints `error: <message>` and no traceback. An unexpected failure prints a traceback, then `error: <type>: <message>`. A timeout prints no traceback. A run stopped with Ctrl+C exits with code 130 and ends with `interrupted: BeamNG.tech closed` or `interrupted: BeamNG.tech may still be running`. `may still be running` means the script could not end BeamNG.tech, so close it by hand. Send a timeout back like any other failure, with the command and the output before the last line. The output may contain a folder path from your machine. The repo is public, so do not paste such text into a pull request, issue or comment. Send it to the director only.
 
 ## Recordings stay out of the repo
 

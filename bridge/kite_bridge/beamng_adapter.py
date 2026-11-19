@@ -11,7 +11,7 @@ import importlib.metadata
 
 from kite_bridge.readings import image_from_raw, points_from_raw, reading_from_raw
 from kite_bridge.sensor_settings import SENSOR_SETTINGS
-from kite_bridge.sim_api import STEP_HZ, Simulator, release
+from kite_bridge.sim_api import STEP_HZ, Simulator, remove_all
 
 PORT = 25252
 SCENARIO_LEVEL = "west_coast_usa"
@@ -21,9 +21,10 @@ SPAWN_SPACING_M = 5.0  # ASSUMPTION: extra cars start this far apart along x, on
 
 
 class BeamNGAdapter(Simulator):
-    def __init__(self, home, headless):
+    def __init__(self, home, headless, timeout):
         self._home = home
         self._headless = headless
+        self._timeout = timeout
         self._bng = None
         self._vehicles = {}
         self._sensors = {}
@@ -33,13 +34,23 @@ class BeamNGAdapter(Simulator):
         from beamngpy import BeamNGpy
 
         self._bng = BeamNGpy("localhost", PORT, home=self._home, headless=self._headless,
-                             gfx="dx11", quit_on_close=True)
+                             gfx="dx11", quit_on_close=True, socket_timeout=self._timeout)
         self._bng.open(launch=True)
 
-    def close(self):
+    def remove_sensors(self):
         sensors, self._sensors = self._sensors, {}
-        bng, self._bng = self._bng, None
-        release(sensors, bng.close if bng is not None else lambda: None)
+        remove_all(sensors)
+
+    def close(self):
+        if self._bng is not None:
+            self._bng.close()
+
+    def end_process(self):
+        process = self._bng.process if self._bng is not None else None
+        if process is None:
+            return False
+        process.kill()
+        return True
 
     def versions(self):
         from beamngpy.connection.connection import Connection

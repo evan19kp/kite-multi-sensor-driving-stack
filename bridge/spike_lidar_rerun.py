@@ -8,8 +8,9 @@ lidar or the camera gives no reading logs nothing for that sensor; the run says 
 that was.
 
 --save <name.rrd> writes the recording to that file inside --out and does not open a viewer;
-open it later with `rerun <file>`. --fake uses the fake simulator and a recorder that keeps
-nothing: it opens no viewer, imports no Rerun and writes no file, even with --save.
+open it later with `rerun <file>`. After Ctrl+C the file keeps every step logged before it.
+--fake uses the fake simulator and a recorder that keeps nothing: it opens no viewer, imports
+no Rerun and writes no file, even with --save.
 """
 
 import argparse
@@ -54,6 +55,8 @@ def run(args):
                 if show_traffic:
                     try:
                         others = sim.other_positions()
+                    except TimeoutError:
+                        raise
                     except Exception as error:
                         print(f"other cars not logged ({type(error).__name__}: {error})")
                         show_traffic = False
