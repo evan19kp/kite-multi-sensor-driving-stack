@@ -82,7 +82,7 @@ Neither line comes with a traceback. The limit covers loading the map too, which
 
 The script ends BeamNG.tech the same way whether the run succeeded, failed, timed out or was stopped with Ctrl+C:
 
-1. After a normal run or an ordinary error, it removes the sensors, then closes BeamNG.tech. With `--mode free`, it pauses the simulator first. If the pause fails, the script skips the sensors, still closes BeamNG.tech, and reports the pause error.
+1. After a normal run or an ordinary error, it removes the sensors, then closes BeamNG.tech. With `--mode free`, it pauses the simulator first. If the pause fails, the script prints `warning: could not pause: <error>; sensors not removed`, skips the sensors and still closes BeamNG.tech. It prints that line even when the run had already failed, and then the run's own error follows it. If the run had succeeded, the pause error is the last line: `timed out after <s> s: ...` for a timeout, otherwise `error: ...`. The exit code is 1 in every case.
 2. After Ctrl+C or a timeout, a call may have stopped halfway, so the script skips the pause and the sensors and closes BeamNG.tech straight away.
 3. If closing raises an error or takes longer than 20 seconds, the script ends the BeamNG.tech process that BeamNGpy launched and prints `BeamNG.tech not closed (<reason>); ended the process BeamNGpy launched`.
 
@@ -410,6 +410,7 @@ With `--mode free`:
 - It polls the Timer in its own request, at the higher of the GPS and IMU rates. With the default rates that is 10 per wall second.
 - The run ends at the first Timer reading that is at least `--seconds` past the run's first Timer reading. `--seconds` therefore still counts simulated seconds.
 - If that has not happened after `--seconds` × 20 wall seconds, the run stops with an error. For the default of 30 seconds the limit is 600 wall seconds. A Timer that stands still, for example because the simulator is paused, reaches this limit. The run does not hang.
+- A Timer reading that is not a number of seconds from 0 up stops the run with one line, `error: free run: unusable Timer reading: ...`, and exit code 1. A bad sensor reading counts under `unexp` and the run goes on. A bad Timer reading stops the run instead, because the Timer decides when the run ends.
 
 Nobody has run free mode against the real simulator yet. Your run decides whether it works, and only your run can show a real-time factor. This mode claims no target.
 

@@ -61,7 +61,9 @@ fake simulator and needs no simulator. `spike_sensors.py` and `spike_multicar.py
 `--timeout` is the longest wait in seconds for any one simulator call, map loading included; it
 must be above 0. Every run ends BeamNG.tech through one shutdown path. After a normal run or an
 ordinary error it removes the sensors, then closes BeamNG.tech; with `--mode free` it pauses the
-simulator before it removes them. After Ctrl+C or a timeout it closes BeamNG.tech without
+simulator before it removes them. If the pause fails, the script prints `warning: could not
+pause: <error>; sensors not removed` whatever the run's outcome, skips the removal and still
+closes BeamNG.tech. After Ctrl+C or a timeout it closes BeamNG.tech without
 pausing or removing the sensors. If closing raises or takes more than 20 s, or
 Ctrl+C is pressed again during shutdown, it ends the process BeamNGpy launched, and only that
 process. Ctrl+C prints `interrupted: BeamNG.tech closed` and exits with code 130. A timeout
@@ -147,7 +149,9 @@ every due sensor once and moves it to the first `k / r` after the pass started, 
 skips the times it missed instead of making them up (`kite_bridge/rates.py`, `next_due`). The
 Timer is polled in its own request at the higher of the GPS and IMU rates. The run ends when the
 Timer has advanced `--seconds` since its first reading, or fails with one `error:` line (exit
-code 1) after `--seconds` x 20 wall seconds, which a Timer that stands still also reaches.
+code 1) after `--seconds` x 20 wall seconds, which a Timer that stands still also reaches. A
+Timer reading that is not a number of seconds from 0 up fails the run the same way. It is not
+counted under `unexp` like a bad sensor reading, because the Timer decides when the run ends.
 Simulated seconds, the real-time factor (Timer seconds over wall seconds) and the per-second
 counts use the Timer; `poll_hz` is per wall second. A reading without its own time gets the
 latest Timer reading and shows `time` `timer`. The timing splits the wall time into `waiting to
