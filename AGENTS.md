@@ -293,6 +293,16 @@ Each item that introduces a lasting rule adds a "## Standing rules (R<n>)" secti
 
 - Test helpers shared by several core test files live in `core/tests/test_helpers.hpp`. A helper shared by several tools lives in one header in `tools/` (`tools/format.hpp` for `format_int`, `tools/study_common.hpp` for the study tools' table helpers). Add to the matching header instead of copying a helper into a second file.
 
+## Standing rules (R17)
+
+- Only `bridge/kite_bridge/beamng_adapter.py` imports `beamngpy`, and only lazily inside methods.
+- Bridge tests use only the fake simulator (`kite_bridge/fake_sim.py`); they never import the
+  adapter and never start, connect to or locate the real simulator.
+- The simulator's folder comes only from `--home`. Recorded data goes only to `--out`
+  (`recordings/` by default, gitignored) and is never committed.
+- Ground truth recorded from the simulator goes in its own file, apart from sensor data, and is
+  never fed to anything that drives.
+
 ## Simulator files (hard rule)
 
 - Never read, list, search, copy, launch or write about the simulator's install folder, its user
