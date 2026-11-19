@@ -399,11 +399,26 @@ NEW_RERUN = ("init", "save", "set_time", "log", "Points3D", "Image", "disconnect
 OLD_RERUN = ("init", "save", "set_time_seconds", "log", "Points3D", "Image", "disconnect")
 
 
+def fake_rerun(api=NEW_RERUN):
+    fake = types.ModuleType("rerun")
+    for name in api:
+        setattr(fake, name, mock.Mock(name=name))
+    return fake
+
+
+@contextlib.contextmanager
+def fake_session(args):
+    sim = FakeSim()
+    sim.open()
+    try:
+        yield sim
+    finally:
+        sim.close()
+
+
 class RerunRecorderTest(unittest.TestCase):
     def recorder(self, save_path=None, api=NEW_RERUN):
-        fake = types.ModuleType("rerun")
-        for name in api:
-            setattr(fake, name, mock.Mock(name=name))
+        fake = fake_rerun(api)
         with mock.patch.dict(sys.modules, {"rerun": fake}):
             recorder = rerun_view.RerunRecorder(save_path)
         self.assertNotIn("rerun", sys.modules)
@@ -453,6 +468,52 @@ class RerunRecorderTest(unittest.TestCase):
         recorder, fake = self.recorder()
         recorder.close()
         fake.disconnect.assert_called_once_with()
+
+
+class RealRecorderTest(unittest.TestCase):
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.tmp = Path(tmp.name)
+        self.fake = fake_rerun()
+
+    def make(self, save_path):
+        import spike_lidar_rerun
+
+        with mock.patch.dict(sys.modules, {"rerun": self.fake}):
+            spike_lidar_rerun.make_recorder(save_path, False)
+        self.assertNotIn("rerun", sys.modules)
+
+    def test_with_a_save_path_the_recording_goes_to_that_file_and_no_viewer_opens(self):
+        path = self.tmp / "out" / "demo.rrd"
+        self.make(path)
+        self.fake.save.assert_called_once_with(str(path))
+        self.assertNotIn(mock.call("kite_lidar", spawn=True), self.fake.init.call_args_list)
+
+    def test_without_a_save_path_a_viewer_opens_and_nothing_is_saved(self):
+        self.make(None)
+        self.fake.init.assert_called_once_with("kite_lidar", spawn=True)
+        self.fake.save.assert_not_called()
+
+    def test_a_run_with_save_records_to_the_file_inside_out_and_says_so(self):
+        import spike_lidar_rerun
+
+        out = self.tmp / "out"
+        argv = ["--home", str(self.tmp), "--out", str(out), "--seconds", "0.05",
+                "--traffic", "0", "--save", "day1/demo.rrd"]
+        stdout, stderr = io.StringIO(), io.StringIO()
+        with contextlib.ExitStack() as stack:
+            stack.enter_context(mock.patch.dict(sys.modules, {"rerun": self.fake}))
+            stack.enter_context(mock.patch.object(common, "session", fake_session))
+            stack.enter_context(contextlib.redirect_stdout(stdout))
+            stack.enter_context(contextlib.redirect_stderr(stderr))
+            code = spike_lidar_rerun.main(argv)
+        self.assertEqual(code, 0, stderr.getvalue())
+        path = out / "day1" / "demo.rrd"
+        self.fake.save.assert_called_once_with(str(path))
+        self.assertIn(f"wrote {path}", stdout.getvalue())
+        self.fake.disconnect.assert_called_once_with()
+        self.assertNotIn("rerun", sys.modules)
 
 
 class NoRerunTest(unittest.TestCase):
