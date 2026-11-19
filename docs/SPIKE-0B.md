@@ -70,7 +70,7 @@ Press Ctrl+C once to stop a run. The script closes BeamNG.tech, prints one line 
 interrupted: BeamNG.tech closed
 ```
 
-A run that is waiting for the simulator does not wait forever. If one simulator call takes longer than `--timeout` seconds (300 by default), the run stops, closes BeamNG.tech and exits with code 1. A call that waits too long while the script removes the sensors at the end also counts. The line names the limit:
+A run that is waiting for the simulator does not wait forever. If one simulator call takes longer than `--timeout` seconds (300 by default), the run stops, closes BeamNG.tech and exits with code 1. A call that waits too long while the script removes the sensors at the end also counts. The script then prints `warning: could not remove <car> <sensor>: <type>: <message>` before the timeout line. If the run had already failed, the warning still appears, but the last line reports that earlier failure. The timeout line names the limit:
 
 ```
 timed out after 300 s: BeamNG.tech closed
@@ -346,7 +346,16 @@ Many BeamNGpy calls are marked as unverified for BeamNGpy 1.36, and the Rerun ca
 2. Copy the exact command you ran, with the placeholder in place of your real folder.
 3. Send both to the director, with the output of `python -m pip show beamngpy rerun-sdk`.
 
-A failed run exits with code 1 and ends with one of three lines. A failure the script checks for prints `error: <message>` and no traceback. An unexpected failure prints a traceback, then `error: <type>: <message>`. A timeout prints `timed out after <s> s: BeamNG.tech closed` and no traceback. Send a timeout back like any other failure, with the command and the output before the last line. The output may contain a folder path from your machine. The repo is public, so do not paste such text into a pull request, issue or comment. Send it to the director only.
+A failed run exits with code 1 and ends with one of these lines:
+
+```
+error: <message>
+error: <type>: <message>
+timed out after <s> s: BeamNG.tech closed
+timed out after <s> s: BeamNG.tech may still be running
+```
+
+A failure the script checks for prints `error: <message>` and no traceback. An unexpected failure prints a traceback, then `error: <type>: <message>`. A timeout prints no traceback. A run stopped with Ctrl+C exits with code 130 and ends with `interrupted: BeamNG.tech closed` or `interrupted: BeamNG.tech may still be running`. `may still be running` means the script could not end BeamNG.tech, so close it by hand. Send a timeout back like any other failure, with the command and the output before the last line. The output may contain a folder path from your machine. The repo is public, so do not paste such text into a pull request, issue or comment. Send it to the director only.
 
 ## Recordings stay out of the repo
 

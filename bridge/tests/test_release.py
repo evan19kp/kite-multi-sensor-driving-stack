@@ -43,9 +43,12 @@ class RemoveAllTest(unittest.TestCase):
         timeout = socket.timeout("timed out")
         sensors = {("kite1", "lidar"): Sensor(OSError("busy")), ("kite1", "camera"): Sensor(timeout),
                    ("kite1", "radar"): Sensor()}
-        raised, _ = run_remove_all(sensors)
+        raised, stderr = run_remove_all(sensors)
         self.assertIs(raised, timeout)
         self.assertFalse(sensors["kite1", "radar"].removed)
+        self.assertEqual(stderr.splitlines(), [
+            "warning: could not remove kite1 lidar: OSError: busy",
+            "warning: could not remove kite1 camera: TimeoutError: timed out"])
 
     def test_clean_removal_removes_everything_and_prints_nothing(self):
         sensors = {("kite1", "imu"): Sensor()}

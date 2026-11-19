@@ -13,9 +13,11 @@ from pathlib import Path
 from unittest import mock
 
 from tests import BRIDGE_DIR
+from tests.test_release import Sensor
 from tests.test_rerun_view import RecordingRecorder
 from kite_bridge import common
 from kite_bridge.fake_sim import FakeSim
+from kite_bridge.sim_api import remove_all
 
 LIMIT_S = 5.0
 SCRIPTS = ("spike_connect", "spike_sensors", "spike_multicar", "spike_lidar_rerun")
@@ -127,6 +129,39 @@ class ShutdownTest(unittest.TestCase):
         self.assertEqual(stderr, ["timed out after 300 s: BeamNG.tech closed"])
         self.assertEqual((sim.closed, sim.process_ended), (True, False))
         self.assertTrue((self.out / "sensors.json").is_file())
+
+    def test_a_removal_timeout_after_a_run_error_is_printed_and_the_run_error_is_reported(self):
+        class FailingStepTimedOutSensor(FakeSim):
+            def step(self, n=1):
+                raise RuntimeError("step failed")
+
+            def remove_sensors(self):
+                remove_all({("kite1", "lidar"): Sensor(socket.timeout("timed out"))})
+
+        code, stderr, (sim,) = self.run_main(FailingStepTimedOutSensor)
+        self.assertEqual(code, 1)
+        self.assertEqual(stderr[0], "warning: could not remove kite1 lidar: TimeoutError: timed out")
+        self.assertIn("Traceback (most recent call last):", stderr)
+        self.assertEqual(stderr[-1], "error: RuntimeError: step failed")
+        self.assertEqual((sim.closed, sim.process_ended), (True, False))
+
+    def test_a_traffic_spawn_that_times_out_stops_the_run(self):
+        class TimedOutTraffic(FakeSim):
+            def spawn_traffic(self, n):
+                raise socket.timeout("timed out")
+
+        code, stderr, (sim,) = self.run_main(TimedOutTraffic, "--traffic", "2")
+        self.assertEqual((code, stderr), (1, ["timed out after 300 s: BeamNG.tech closed"]))
+        self.assertEqual((sim.sensors_removed, sim.closed), (False, True))
+
+    def test_reading_the_other_cars_positions_that_times_out_stops_the_run(self):
+        class TimedOutOthers(FakeSim):
+            def other_positions(self):
+                raise socket.timeout("timed out")
+
+        code, stderr, (sim,) = self.run_main(TimedOutOthers, "--traffic", "2", script="spike_lidar_rerun")
+        self.assertEqual((code, stderr), (1, ["timed out after 300 s: BeamNG.tech closed"]))
+        self.assertEqual((sim.sensors_removed, sim.closed), (False, True))
 
     def test_a_close_that_raises_ends_the_process_and_reports_the_error(self):
         code, stderr, (sim,) = self.run_main(FailingClose)

@@ -30,16 +30,17 @@ class Reading:
 
 def remove_all(sensors):
     """Calls `remove()` on every sensor in `sensors`, a dict keyed by (car, kind), prints each
-    failure to stderr and raises the first after trying them all. A timeout raises at once: the
-    connection is then out of step, so every later removal would wait for its timeout too."""
+    failure to stderr and raises the first after trying them all. A timeout is printed and raised
+    at once: the connection is then out of step, so every later removal would wait for its
+    timeout too."""
     failure = None
     for (car, kind), sensor in sensors.items():
         try:
             sensor.remove()
-        except TimeoutError:
-            raise
         except Exception as error:
             print(f"warning: could not remove {car} {kind}: {type(error).__name__}: {error}", file=sys.stderr)
+            if isinstance(error, TimeoutError):
+                raise
             failure = failure or error
     if failure is not None:
         raise failure
