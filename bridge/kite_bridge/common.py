@@ -299,13 +299,13 @@ def measure_sensors(sim, cars, seconds, clock=time.perf_counter, dump=None, poll
     With `stream`, the STREAMED_KINDS sensors (lidar, camera) are attached streaming and read
     with `sim.stream` instead of `sim.poll`, on the same schedule; everything below that says
     poll covers those reads too, except the timing split. Their time goes to `stream_reads_s`,
-    not `sensor_reads_s`: everything inside the adapter's stream call, which is BeamNGpy's
-    `stream()` (a copy out of shared memory, no request) plus the checks in `stream_check` and
-    the parse in `readings.py`. Each row says how it was read (`read`) and what was dropped
+    not `sensor_reads_s`. It covers everything inside the adapter's stream call: BeamNGpy's
+    `stream()`, which copies shared memory and sends no request, the checks in `stream_check`
+    and the parse in `readings.py`. Each row says how it was read (`read`) and what was dropped
     (`suspect`: whole readings dropped, the first reason, and all-zero rows cut off kept lidar
     scans, summed over reads; None for a polled sensor). A dropped reading is left out of the
     same counts as an unexpected one. Without `stream` the result has none of these fields
-    and every sensor is polled, as before; `stream` in the result says which it was.
+    and every sensor is polled; `stream` in the result says which it was.
 
     A row's `configured_rate_hz` is the poll rate and `requested_update_hz` the update rate the
     adapter asks of the sensor (None for GPS and IMU). `possible_loss` is True only when the

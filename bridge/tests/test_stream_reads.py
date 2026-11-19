@@ -28,8 +28,6 @@ def measure(stream, sim_class=FakeSim, poll_rates=ALL_60, seconds=1.0, **sim_arg
 
 
 class Rows:
-    """A small numpy-like array of float rows: `shape`, `len()`, `tobytes()` and row slicing."""
-
     def __init__(self, rows, code="f", columns=3):
         self._rows, self._code = [tuple(row) for row in rows], code
         self.shape = (len(self._rows), columns)

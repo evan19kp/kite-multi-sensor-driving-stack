@@ -95,10 +95,13 @@ def trusted_rows(cloud):
     row_bytes = itemsize * columns
     kept = -(-len(data.rstrip(b"\x00")) // row_bytes)
     values = array.array(FLOAT_CODES[itemsize], data[:kept * row_bytes])
-    # A sum of finite floats is finite unless it overflows, so all() runs only to tell overflow from nan or inf.
-    if not math.isfinite(sum(values)) and not all(map(math.isfinite, values)):
+    if not _all_finite(values):
         raise Suspect("pointCloud holds a value that is not finite (nan or inf)")
     return kept
+
+
+def _all_finite(values):
+    return math.isfinite(sum(values)) or all(map(math.isfinite, values))
 
 
 def _check_camera(raw):

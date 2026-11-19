@@ -19,7 +19,8 @@ FAKE_TRAFFIC_GAP_M = 15.0
 FAKE_LANE_M = 3.5
 FAKE_RADAR_ROWS = 20
 FAKE_FLOAT32_BYTES = 4
-FAKE_STREAM_ROWS = 1100  # one more than the longest default scan, so a streamed block always ends in zero rows
+FAKE_LIDAR_ROW_RANGE = (900, 1100)
+FAKE_STREAM_ROWS = FAKE_LIDAR_ROW_RANGE[1]
 FAKE_LIDAR_COLUMNS = 3
 
 
@@ -189,7 +190,7 @@ class FakeSim(Simulator):
 
     def _scan_rows(self, car, tick):
         if self._lidar_rows is None:
-            return random.Random(f"{self._seed}:{car}:{tick}").randrange(900, 1100)
+            return random.Random(f"{self._seed}:{car}:{tick}").randrange(*FAKE_LIDAR_ROW_RANGE)
         if isinstance(self._lidar_rows, int):
             return self._lidar_rows
         return self._lidar_rows[tick % len(self._lidar_rows)]
