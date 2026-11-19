@@ -182,7 +182,7 @@ change; every existing test passes unchanged.
 BeamNG.tech spike scripts, tested against a fake simulator, for Evan to run on the real one.
 Agents never run the real simulator; every test uses the fake.
 
-- [ ] **R17 Simulator adapter, fake simulator and the connect/sensor/multi-car spike scripts**
+- [x] **R17 Simulator adapter, fake simulator and the connect/sensor/multi-car spike scripts**
   (feat, Sonnet): package `bridge/kite_bridge/` with `sim_api.py` (small simulator interface),
   `beamng_adapter.py` (the only module that imports `beamngpy`, lazily), `fake_sim.py` (seeded
   synthetic readings with configurable rates, dropouts and latency) and `measure.py` (pure

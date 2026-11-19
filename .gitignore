@@ -15,6 +15,9 @@ scratch/
 graphify-out/
 .impeccable/config.local.json
 
+# ---- Recorded simulator data (never committed) ----
+recordings/
+
 # ---- Python ----
 __pycache__/
 *.py[cod]
