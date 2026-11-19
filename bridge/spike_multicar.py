@@ -12,12 +12,10 @@ CAR_COUNTS = (1, 2, 4)
 
 
 def run(args):
-    model = args.model
     cases = []
     for n_cars in CAR_COUNTS:
         with common.session(args) as sim:
-            model = model or common.resolve_model(sim, None)
-            cars = sim.load_scenario(model, n_cars)
+            cars = common.spawn(sim, args, n_cars)
             common.start_traffic(sim, args.traffic)
             for car in cars:
                 sim.set_ai_mode(car, "traffic")
@@ -26,7 +24,7 @@ def run(args):
                 sim.set_ai_mode(car, "disabled")
             print(f"\n{common.format_result(result)}")
             cases.append(result)
-            common.write_json(args.out, "multicar.json", {"model": model, "cases": cases})
+            common.write_json(args.out, "multicar.json", {"model": args.model, "config": args.config, "cases": cases})
 
 
 def main(argv=None):

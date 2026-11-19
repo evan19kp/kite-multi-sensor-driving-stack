@@ -53,15 +53,17 @@ class Simulator(ABC):
 
     @abstractmethod
     def versions(self) -> dict[str, str]:
-        """Version strings the simulator and its Python library report."""
+        """The Python library's version lines, label to value: its package version and its
+        protocol version. The simulator's own version is not among them."""
 
     @abstractmethod
     def list_models(self) -> list[str]:
         """Names of the vehicle models the simulator offers."""
 
     @abstractmethod
-    def load_scenario(self, model: str, n_cars: int) -> list[str]:
-        """Load the West Coast scenario with n_cars of `model` and start it.
+    def load_scenario(self, model: str, n_cars: int, config: str | None = None) -> list[str]:
+        """Load the West Coast scenario with n_cars of `model` and start it. `config` is the
+        part configuration file path; None spawns the model's default configuration.
         Returns the car names."""
 
     @abstractmethod

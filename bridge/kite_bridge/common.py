@@ -11,7 +11,9 @@ from kite_bridge import measure
 from kite_bridge.fake_sim import FakeSim
 from kite_bridge.sim_api import POLL_TIME, SENSOR_KINDS, STEP_HZ
 
-MODEL_HINTS = ("tograc", "cherrier")
+DEFAULT_MODEL = "vivace"
+DEFAULT_CONFIG = "vehicles/vivace/tograc_qE.pc"
+TECH_VERSION_TEXT = "not reported by BeamNGpy 1.36"
 MIXED_TIME = "mixed"
 
 
@@ -42,19 +44,32 @@ def parse_args(description, argv=None, extra=None):
     parser.add_argument("--traffic", type=_count, default=8,
                         help="AI traffic cars to spawn (default 8)")
     parser.add_argument("--out", default="recordings", help="output folder (default recordings/)")
-    parser.add_argument("--model", help="our car's vehicle model (default: the single match found)")
+    parser.add_argument("--model", default=DEFAULT_MODEL,
+                        help=f"our car's vehicle model (default {DEFAULT_MODEL})")
+    parser.add_argument("--config", default=DEFAULT_CONFIG, metavar="PATH",
+                        help=f"our car's part configuration file (default {DEFAULT_CONFIG}); "
+                             '--config "" spawns the model\'s default configuration')
+    parser.add_argument("--list-models", action="store_true",
+                        help="print the simulator's vehicle model names, sorted, and exit without spawning")
     parser.add_argument("--fake", action="store_true", help="use the fake simulator")
     if extra:
         extra(parser)
     args = parser.parse_args(argv)
     if not args.fake and not args.home:
         parser.error("--home is required unless --fake is given")
+    args.config = args.config or None
     return args
+
+
+def list_models(args):
+    with session(args) as sim:
+        for name in sorted(sim.list_models()):
+            print(name)
 
 
 def guarded(run, args):
     try:
-        run(args)
+        (list_models if args.list_models else run)(args)
     except SpikeError as error:
         print(f"error: {error}", file=sys.stderr)
         return 1
@@ -82,21 +97,14 @@ def session(args):
         sim.close()
 
 
-def resolve_model(sim, requested):
-    if requested:
-        return requested
-    try:
-        models = sim.list_models()
-    except Exception as error:
-        raise SpikeError(
-            f"could not list vehicle models ({type(error).__name__}: {error}); pass --model") from error
-    matches = [m for m in models if any(hint in m.lower() for hint in MODEL_HINTS)]
-    for name in matches or models:
-        print(f"model: {name}")
-    if len(matches) != 1:
-        found = "several models match" if matches else "no model matches"
-        raise SpikeError(f"{found} {'/'.join(MODEL_HINTS)}; pass --model with one of the names above")
-    return matches[0]
+def version_report(sim):
+    return {**sim.versions(), "BeamNG.tech version": TECH_VERSION_TEXT}
+
+
+def spawn(sim, args, n_cars):
+    cars = sim.load_scenario(args.model, n_cars, args.config)
+    print(f"spawned {', '.join(cars)} (model: {args.model}, config: {args.config or 'model default'})")
+    return cars
 
 
 def start_traffic(sim, count):

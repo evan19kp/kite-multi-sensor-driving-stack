@@ -43,23 +43,23 @@ class BeamNGAdapter(Simulator):
         release(sensors, bng.close if bng is not None else lambda: None)
 
     def versions(self):
-        try:
-            tech = str(self._bng.get_tech_version())  # ASSUMPTION: this call exists in 1.36
-        except Exception as error:
-            tech = f"unavailable ({type(error).__name__}: {error})"
-        return {"BeamNG.tech": tech, "BeamNGpy": importlib.metadata.version("beamngpy")}
+        from beamngpy.connection import Connection
+
+        return {"BeamNGpy version": importlib.metadata.version("beamngpy"),
+                "BeamNGpy protocol": str(Connection.PROTOCOL_VERSION)}
 
     def list_models(self):
-        return [str(name) for name in self._bng.vehicles.get_available()]  # ASSUMPTION: this is the 1.36 call, and it yields names
+        return [str(name) for name in self._bng.vehicles.get_available()]
 
-    def load_scenario(self, model, n_cars):
+    def load_scenario(self, model, n_cars, config=None):
         from beamngpy import Scenario, Vehicle
 
         scenario = Scenario(SCENARIO_LEVEL, "kite_spike", description="Kite sensor spike")
         x, y, z = SPAWN_POS
+        part_config = {"part_config": config} if config else {}
         for i in range(n_cars):
             name = f"kite{i + 1}"
-            vehicle = Vehicle(name, model=model, license="KITE")
+            vehicle = Vehicle(name, model=model, license="KITE", **part_config)
             scenario.add_vehicle(vehicle, pos=(x + i * SPAWN_SPACING_M, y, z),
                                  rot_quat=SPAWN_ROT_QUAT)
             self._vehicles[name] = vehicle

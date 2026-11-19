@@ -31,16 +31,21 @@ the spikes on it, and nothing here has run against an installed Rerun yet.
 ## Scripts
 
 All three take `--home <simulator folder>` (required unless `--fake`), `--headless`,
-`--seconds` (default 30), `--traffic` (default 8), `--out` (default `recordings/`), `--model` and
-`--fake`. `--fake` runs against the fake simulator and needs no simulator.
+`--seconds` (default 30), `--traffic` (default 8), `--out` (default `recordings/`), `--model`,
+`--config`, `--list-models` and `--fake`. `--fake` runs against the fake simulator and needs no
+simulator.
 
 ```
 python bridge/spike_sensors.py --fake --seconds 2 --out scratch/example
 ```
 
-Without `--model`, a script lists the vehicle models the simulator reports and picks the single
-one whose name contains "tograc" or "cherrier"; with none or several it stops and asks for
-`--model`.
+The car is the Cherrier Tograc qE by default: `--model vivace --config
+vehicles/vivace/tograc_qE.pc`. `--config ""` spawns the model's default configuration instead.
+The `spawned` line prints the model and the configuration. `--list-models` prints the
+simulator's vehicle model names, sorted, one per line, and exits without spawning anything.
+
+`spike_connect.py` prints three version lines: the BeamNGpy package version, the BeamNGpy
+protocol version and `BeamNG.tech version: not reported by BeamNGpy 1.36`.
 
 `--seconds` rounds to the nearest whole step (`spike_connect.py`: the nearest whole second), at
 least one.

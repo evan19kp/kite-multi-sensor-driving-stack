@@ -187,52 +187,6 @@ class MultiCarTest(unittest.TestCase):
         self.assertGreater(result["steps_per_second"], 0)
 
 
-class ResolveModelTest(unittest.TestCase):
-    def resolve(self, sim, requested=None):
-        out = io.StringIO()
-        with contextlib.redirect_stdout(out):
-            try:
-                return common.resolve_model(sim, requested), out.getvalue()
-            except common.SpikeError as error:
-                return error, out.getvalue()
-
-    def test_the_single_match_is_chosen_and_printed(self):
-        model, printed = self.resolve(FakeSim())
-        self.assertEqual(model, "fake_cherrier_tograc")
-        self.assertIn("fake_cherrier_tograc", printed)
-        self.assertNotIn("fake_van", printed)
-
-    def test_matching_is_case_insensitive(self):
-        model, _ = self.resolve(FakeSim(models=["Plain", "ToGrAc_One"]))
-        self.assertEqual(model, "ToGrAc_One")
-
-    def test_no_match_prints_all_names_and_fails(self):
-        error, printed = self.resolve(FakeSim(models=["alpha", "beta"]))
-        self.assertIsInstance(error, common.SpikeError)
-        self.assertIn("alpha", printed)
-        self.assertIn("beta", printed)
-        self.assertIn("--model", str(error))
-
-    def test_several_matches_print_only_the_matches_and_fail(self):
-        error, printed = self.resolve(FakeSim(models=["tograc_a", "cherrier_b", "other"]))
-        self.assertIsInstance(error, common.SpikeError)
-        self.assertIn("tograc_a", printed)
-        self.assertIn("cherrier_b", printed)
-        self.assertNotIn("other", printed)
-
-    def test_a_listing_failure_asks_for_model(self):
-        class Broken(FakeSim):
-            def list_models(self):
-                raise RuntimeError("no such call")
-
-        error, _ = self.resolve(Broken())
-        self.assertIsInstance(error, common.SpikeError)
-        self.assertIn("--model", str(error))
-        self.assertIn("no such call", str(error))
-        model, _ = self.resolve(Broken(), "chosen")
-        self.assertEqual(model, "chosen")
-
-
 class TrafficTest(unittest.TestCase):
     def test_a_failure_is_reported_and_not_fatal(self):
         class NoTraffic(FakeSim):
