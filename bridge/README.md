@@ -21,9 +21,13 @@ the spikes on it, and nothing here has run against an installed Rerun yet.
 - `kite_bridge/sensor_settings.py`: the one table of every setting the adapter passes to a
   sensor, and the `sensor:` lines the scripts print from it. It imports nothing.
 - `kite_bridge/fake_sim.py`: a seeded synthetic simulator with configurable sensor rates,
-  dropouts, repeated readings and latency. All tests use it.
+  dropouts, repeated readings, latency, buffered GPS and IMU readings and, with a `FakeClock`, a
+  fake cost per request and per step (no real waiting). All tests use it.
 - `kite_bridge/measure.py`: pure measurement functions (effective rate, latency statistics,
-  empty and repeated readings, steps per second). Its docstring states the input domain.
+  empty and repeated readings, steps per second, real-time factor, the processing remainder and
+  new-reading counts). Its docstring states the input domain.
+- `kite_bridge/raw_data.py`: the one place that counts the bytes of a raw poll and fingerprints
+  it, and that turns a raw reading into plain data for the dump. Standard library only.
 - `kite_bridge/common.py`: command-line parsing, the step-and-poll loop and the one shutdown path
   shared by the scripts.
 - `kite_bridge/output_guard.py`: the provenance text every written file carries and the `--out`
@@ -40,7 +44,8 @@ the spikes on it, and nothing here has run against an installed Rerun yet.
 All four take `--home <simulator folder>` (required unless `--fake`), `--headless`,
 `--seconds` (default 30), `--traffic` (default 8), `--out` (default `recordings/`, see below), `--model`,
 `--config`, `--list-models`, `--timeout` (default 300) and `--fake`. `--fake` runs against the
-fake simulator and needs no simulator.
+fake simulator and needs no simulator. `spike_sensors.py` and `spike_multicar.py` also take
+`--dump-raw N` (default 0).
 
 `--timeout` is the longest wait in seconds for any one simulator call, map loading included; it
 must be above 0. Every run ends BeamNG.tech through one shutdown path. After a normal run or an
@@ -88,6 +93,15 @@ it is limited to about 60 Hz, the poll rate, even for a sensor that runs faster.
 to recover the sensor's own rate. Instead, the `per_poll` column is the most readings one poll
 returned, and the JSON field `readings_per_poll_max` has the same value. When it is above 1, the table prints a line for that
 sensor saying so.
+
+`spike_sensors.py` and `spike_multicar.py` also print and write, per run, the wall time split
+into waiting for steps, in sensor reads and in our own processing, the simulated and wall seconds
+and the real-time factor (simulated over wall seconds; `n/a` and `null` when the wall time is 0),
+and per sensor the read time in total and per poll, the new readings per simulated second and the
+raw bytes per simulated second. `spike_connect.py` polls no sensor and `spike_lidar_rerun.py` is
+a viewer demo, so neither prints them. `--dump-raw N` on the two measuring scripts writes the first
+N raw GPS and the first N raw IMU readings of each car to `raw_gps_imu.json` in `--out`, each with
+its poll's wall time and step count. `docs/SPIKE-0B.md` explains each number.
 
 Output goes only to `--out`, `recordings/` by default, which is gitignored. Every JSON file has a
 top-level `"provenance"` field that marks the file as simulator output not to commit. The text is

@@ -357,6 +357,14 @@ Each item that introduces a lasting rule adds a "## Standing rules (R<n>)" secti
   the `provenance` field and point to the `PROVENANCE` constant;
   `bridge/tests/test_marker_spelling.py` fails if any other file there spells it.
 
+## Standing rules (R32)
+
+- Raw-poll byte counts and fingerprints come only from `bridge/kite_bridge/raw_data.py`; scripts
+  and docs say what it documents and keep no second counting rule.
+- `common.measure_sensors` takes its clock as a parameter. Tests use `FakeClock` with costs on
+  `FakeSim` and never wait for real. A real-time factor with 0 wall seconds is `None` (`null` in
+  JSON, `n/a` printed), never infinite.
+
 ## Simulator files (hard rule)
 
 - Never read, list, search, copy, launch or write about the simulator's install folder, its user

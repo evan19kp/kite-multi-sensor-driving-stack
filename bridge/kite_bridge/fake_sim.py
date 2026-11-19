@@ -2,7 +2,8 @@ import math
 import random
 import time
 
-from kite_bridge.sim_api import POLL_TIME, SENSOR_KINDS, STEP_HZ, Reading, Simulator
+from kite_bridge.readings import reading_from_raw
+from kite_bridge.sim_api import BUFFERED_KINDS, SENSOR_KINDS, STEP_HZ, Simulator
 
 DEFAULT_RATES = {"lidar": 10.0, "camera": 20.0, "radar": 20.0, "gps": 10.0, "imu": 100.0}
 DEFAULT_MODELS = ("vivace", "fake_van", "fake_sedan")
@@ -13,11 +14,59 @@ FAKE_IMAGE_WIDTH = 8
 FAKE_IMAGE_HEIGHT = 4
 FAKE_TRAFFIC_GAP_M = 15.0
 FAKE_LANE_M = 3.5
+FAKE_RADAR_ROWS = 20
+FAKE_FLOAT32_BYTES = 4
+
+
+class FakeClock:
+    """A clock that moves only when told to, so a test knows the wall time exactly."""
+
+    def __init__(self):
+        self._now = 0.0
+
+    def now(self):
+        return self._now
+
+    def advance(self, seconds):
+        self._now += seconds
+
+
+class FakeCloud:
+    """Stands in for a numpy array of float32 rows: it has `len()` and `tobytes()`, and its truth
+    value raises, like numpy's. Its content depends on `tick` alone."""
+
+    def __init__(self, rows, tick, columns):
+        self._rows, self._tick, self._columns = rows, tick, columns
+
+    def __len__(self):
+        return self._rows
+
+    def __bool__(self):
+        raise ValueError("The truth value of an array with more than one element is ambiguous")
+
+    def tobytes(self):
+        return self._tick.to_bytes(FAKE_FLOAT32_BYTES, "little") * (self._rows * self._columns)
 
 
 class FakeSim(Simulator):
+    """A seeded synthetic simulator. With a `clock` it also has a cost in fake seconds: each poll
+    advances the clock by `request_cost` (one number for every sensor, or a dict by sensor) and
+    each step by `step_cost`; nothing waits for real. Sensor `kind` produces a new sample
+    `rates[kind]` times per simulated second. A poll returns the sample current at its time, so a
+    poll between two samples repeats the last one. GPS and IMU keep every sample made since the
+    last poll and return them together, like BeamNGpy's buffer. `lidar_rows` fixes the lidar
+    point count; by default it varies between 900 and 1099 with the sample."""
+
     def __init__(self, seed=0, rates=None, dropout=0.0, repeat=0.0, latency=0.0,
-                 models=DEFAULT_MODELS, sensor_time=True):
+                 models=DEFAULT_MODELS, sensor_time=True, clock=None, request_cost=0.0,
+                 step_cost=0.0, lidar_rows=None):
+        self._request_cost = (dict(request_cost) if isinstance(request_cost, dict)
+                              else dict.fromkeys(SENSOR_KINDS, request_cost))
+        if clock is None and any((step_cost, *self._request_cost.values())):
+            raise ValueError("a request or step cost needs a clock")
+        self._clock = clock
+        self._step_cost = step_cost
+        self._lidar_rows = lidar_rows
         self._sensor_time = sensor_time
         self._seed = seed
         self._rng = random.Random(seed)
@@ -78,30 +127,51 @@ class FakeSim(Simulator):
         for kind in SENSOR_KINDS:
             self.injected[(car, kind)] = {"empty": 0, "repeated": 0}
 
+    def _charge(self, seconds):
+        if self._clock is not None:
+            self._clock.advance(seconds)
+
+    def _sample(self, car, kind, tick):
+        sample = {}
+        if self._sensor_time:
+            sample["time"] = tick / self._rates[kind]
+        if kind == "lidar":
+            rows = (random.Random(f"{self._seed}:{car}:{tick}").randrange(900, 1100)
+                    if self._lidar_rows is None else self._lidar_rows)
+            sample["pointCloud"] = FakeCloud(rows, tick, 3)
+        elif kind == "camera":
+            pixels = FAKE_IMAGE_WIDTH * FAKE_IMAGE_HEIGHT * 3
+            sample["colour"] = tick.to_bytes(FAKE_FLOAT32_BYTES, "little") * pixels
+        elif kind == "radar":
+            sample["returns"] = FakeCloud(FAKE_RADAR_ROWS, tick, 7)
+        else:
+            sample["tick"] = tick
+            sample["value"] = tick * 0.5
+        return sample
+
     def poll(self, car, kind):
         self._require_attached(car, kind)
         if self._latency:
             time.sleep(self._latency)
+        self._charge(self._request_cost.get(kind, 0.0))
         key = (car, kind)
         if self._rng.random() < self._dropout:
             self.injected[key]["empty"] += 1
-            return Reading(None)
-        points = self._rng.randrange(900, 1100) if kind == "lidar" else None
-        if not self._sensor_time:
-            return Reading(self.sim_time, points, POLL_TIME)
-        rate = self._rates[kind]
-        tick = math.floor(self.sim_time * rate + 1e-9)
-        count = max(1, tick - self._last_tick.get(key, tick))
+            return reading_from_raw(kind, None, self.sim_time)
+        tick = math.floor(self.sim_time * self._rates[kind] + 1e-9)
+        made = max(1, tick - self._last_tick.get(key, tick))
         self._last_tick[key] = tick
-        timestamp = tick / rate
+        samples = [self._sample(car, kind, t) for t in range(tick - made + 1, tick + 1)]
         last = self._last.get(key)
-        if last is not None and self._rng.random() < self._repeat:
+        if self._sensor_time and last is not None and self._rng.random() < self._repeat:
             self.injected[key]["repeated"] += 1
-            timestamp, count = last, 1
-        self._last[key] = timestamp
-        return Reading(timestamp, points, count=count)
+            samples = [last]
+        self._last[key] = samples[-1]
+        raw = samples if kind in BUFFERED_KINDS else samples[-1]
+        return reading_from_raw(kind, raw, self.sim_time)
 
     def step(self, n=1):
+        self._charge(self._step_cost * n)
         self._steps += n
         for car, mode in self._modes.items():
             if mode == "traffic":

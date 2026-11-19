@@ -115,7 +115,7 @@ class BeamNGAdapter(Simulator):
         return positions
 
     def step(self, n=1):
-        self._bng.control.step(n)  # ASSUMPTION: the 1.36 call, and it returns once the n steps are done
+        self._bng.control.step(n, wait=True)  # ASSUMPTION: the 1.36 call, and wait=True makes it return once the n steps are done
         self._steps += n
 
     def set_ai_mode(self, car, mode):
