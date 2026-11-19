@@ -4,7 +4,6 @@ Prints the BeamNG.tech and BeamNGpy versions the simulator reports. Writes conne
 --out. The positions in it are ground truth for scoring; they never drive anything.
 """
 
-import math
 import sys
 
 from kite_bridge import common
@@ -22,7 +21,7 @@ def run(args):
         traffic = common.start_traffic(sim, args.traffic)
         sim.set_ai_mode(car, "traffic")
         ground_truth = []
-        for second in range(1, math.ceil(args.seconds) + 1):
+        for second in range(1, max(1, round(args.seconds)) + 1):
             sim.step(STEP_HZ)
             x, y, z = sim.position(car)
             ground_truth.append({"t": second, "pos": [x, y, z]})

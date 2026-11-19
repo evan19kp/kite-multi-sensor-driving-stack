@@ -55,6 +55,8 @@ class FakeRunTest(unittest.TestCase):
         by_sensor = {r["sensor"]: r for r in data["sensors"]}
         self.assertAlmostEqual(by_sensor["lidar"]["rate_hz"], 10.0)
         self.assertEqual(by_sensor["lidar"]["repeated"], 49)
+        self.assertEqual(by_sensor["lidar"]["time_source"], "sensor")
+        self.assertEqual(by_sensor["lidar"]["unexpected"], {"count": 0, "first": None})
         self.assertTrue(900 <= by_sensor["lidar"]["points_mean"] < 1100)
         self.assertEqual(set(by_sensor["lidar"]["latency_s"]), {"mean", "p50", "p95", "max"})
 

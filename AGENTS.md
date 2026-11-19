@@ -302,6 +302,9 @@ Each item that introduces a lasting rule adds a "## Standing rules (R<n>)" secti
   (`recordings/` by default, gitignored) and is never committed.
 - Ground truth recorded from the simulator goes in its own file, apart from sensor data, and is
   never fed to anything that drives.
+- The bridge never fills in missing sensor data silently. A reading without a sensor time keeps
+  the poll time and is labelled `poll` in the table and JSON; a reading in an unexpected format is
+  reported as unexpected, not counted as an empty poll.
 
 ## Simulator files (hard rule)
 

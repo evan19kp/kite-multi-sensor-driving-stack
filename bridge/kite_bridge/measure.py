@@ -7,8 +7,8 @@ Input domain, and nothing beyond it:
   non-empty timestamps are non-decreasing. A timestamp equal to the previous non-empty
   one is a repeated reading.
 
-Input outside this domain raises ValueError. Where a statistic is undefined (no data, or a
-zero time span) the result is None.
+Numeric input outside this domain raises ValueError (a non-number raises TypeError). Where a
+statistic is undefined (no data, or a zero time span) the result is None.
 """
 
 import math
@@ -31,7 +31,6 @@ def _present(series):
 
 
 def count_empty(series):
-    """Number of None entries in the series."""
     _present(series)
     return sum(1 for value in series if value is None)
 
@@ -43,7 +42,6 @@ def count_repeated(series):
 
 
 def fresh_timestamps(series):
-    """The non-empty timestamps with repeated readings dropped."""
     present = _present(series)
     return [b for a, b in zip([None] + present, present) if a != b]
 
@@ -91,8 +89,6 @@ def steps_per_second(steps, seconds):
 
 
 def summarise(series, latencies, points=()):
-    """One sensor's results: poll count, effective rate of the fresh readings, latency
-    statistics, empty and repeated counts, and the mean lidar points per scan."""
     return {
         "polls": len(series),
         "rate_hz": effective_rate(fresh_timestamps(series)),

@@ -8,7 +8,7 @@ checks them.
 
 import importlib.metadata
 
-from kite_bridge.sim_api import STEP_HZ, Reading, Simulator
+from kite_bridge.sim_api import POLL_TIME, STEP_HZ, Reading, Simulator
 
 PORT = 25252
 SCENARIO_LEVEL = "west_coast_usa"
@@ -36,14 +36,18 @@ class BeamNGAdapter(Simulator):
         self._bng.open(launch=True)
 
     def close(self):
-        try:
-            for sensor in self._sensors.values():
+        failures = []
+        for sensor in self._sensors.values():
+            try:
                 sensor.remove()
-        finally:
-            self._sensors.clear()
-            if self._bng is not None:
-                bng, self._bng = self._bng, None
-                bng.close()
+            except Exception as error:
+                failures.append(error)
+        self._sensors.clear()
+        if self._bng is not None:
+            bng, self._bng = self._bng, None
+            bng.close()
+        if failures:
+            raise failures[0]
 
     def versions(self):
         try:
@@ -98,17 +102,20 @@ class BeamNGAdapter(Simulator):
     def poll(self, car, kind):
         raw = self._sensors[(car, kind)].poll()
         points = None
-        if kind == "lidar":
-            points = len(raw["pointCloud"]) if raw and "pointCloud" in raw else 0
+        if kind == "lidar" and raw:
+            if not isinstance(raw, dict) or "pointCloud" not in raw:
+                keys = sorted(map(str, raw)) if isinstance(raw, dict) else type(raw).__name__
+                return Reading(None, unexpected=f"lidar reading has no 'pointCloud'; got {keys}")
+            points = len(raw["pointCloud"])
             if points == 0:
                 return Reading(None)
         latest = _latest(raw)
         if latest is None:
             return Reading(None)
-        # ASSUMPTION: readings carry "time" in simulator seconds. Without it the poll time is
-        # used, so such a sensor's rate then reflects the polling rate, not the sensor's.
-        timestamp = latest.get("time", self.sim_time) if isinstance(latest, dict) else self.sim_time
-        return Reading(float(timestamp), points)
+        # ASSUMPTION: readings carry "time" in simulator seconds; without it the poll time is used
+        if isinstance(latest, dict) and "time" in latest:
+            return Reading(float(latest["time"]), points)
+        return Reading(self.sim_time, points, POLL_TIME)
 
     def step(self, n=1):
         self._bng.control.step(n)
@@ -129,7 +136,6 @@ class BeamNGAdapter(Simulator):
 
 
 def _latest(raw):
-    """The newest reading out of a poll result that is a list, a dict of readings or one dict."""
     if isinstance(raw, list):
         return raw[-1] if raw else None
     if isinstance(raw, dict) and raw and all(isinstance(v, dict) for v in raw.values()):

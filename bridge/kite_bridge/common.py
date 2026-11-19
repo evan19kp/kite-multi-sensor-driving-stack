@@ -1,5 +1,3 @@
-"""Shared command-line and measurement-loop code for the spike scripts."""
-
 import argparse
 import contextlib
 import json
@@ -17,7 +15,7 @@ MODEL_HINTS = ("tograc", "cherrier")
 
 
 class SpikeError(Exception):
-    """A failure to report to the user as one clear line."""
+    pass
 
 
 def _positive_float(text):
@@ -109,16 +107,24 @@ def start_traffic(sim, count):
     return True
 
 
+def steps_for(seconds):
+    return max(1, round(seconds * STEP_HZ))
+
+
+def _time_source(sources):
+    return "mixed" if len(sources) > 1 else next(iter(sources), None)
+
+
 def measure_sensors(sim, cars, seconds):
-    """Attach every sensor to every car, then step and poll once per step for `seconds`
-    simulated seconds. Steps per second counts only the time spent inside `sim.step`."""
     for car in cars:
         sim.attach_sensors(car)
     keys = [(car, kind) for car in cars for kind in SENSOR_KINDS]
     series = {key: [] for key in keys}
     latencies = {key: [] for key in keys}
     points = {key: [] for key in keys}
-    steps = max(1, round(seconds * STEP_HZ))
+    sources = {key: set() for key in keys}
+    unexpected = {key: [] for key in keys}
+    steps = steps_for(seconds)
     step_time = 0.0
     for _ in range(steps):
         started = time.perf_counter()
@@ -128,11 +134,19 @@ def measure_sensors(sim, cars, seconds):
             started = time.perf_counter()
             reading = sim.poll(*key)
             latencies[key].append(time.perf_counter() - started)
+            if reading.unexpected:
+                unexpected[key].append(reading.unexpected)
+                continue
             series[key].append(reading.timestamp)
+            if reading.timestamp is not None:
+                sources[key].add(reading.time_source)
             if reading.points is not None:
                 points[key].append(reading.points)
-    rows = [{"car": car, "sensor": kind, **measure.summarise(series[car, kind], latencies[car, kind],
-                                                              points[car, kind])}
+    rows = [{"car": car, "sensor": kind,
+             **measure.summarise(series[car, kind], latencies[car, kind], points[car, kind]),
+             "time_source": _time_source(sources[car, kind]),
+             "unexpected": {"count": len(unexpected[car, kind]),
+                            "first": unexpected[car, kind][0] if unexpected[car, kind] else None}}
             for car, kind in keys]
     return {"cars": len(cars), "steps": steps, "steps_per_second": measure.steps_per_second(steps, step_time),
             "sensors": rows}
@@ -144,14 +158,24 @@ def _fmt(value, scale=1.0, digits=2):
 
 def format_result(result):
     lines = [f"cars: {result['cars']}  steps per second: {_fmt(result['steps_per_second'], digits=1)}",
-             f"{'car':<7}{'sensor':<8}{'polls':>6}{'rate_hz':>9}{'mean_ms':>9}{'p50_ms':>8}"
-             f"{'p95_ms':>8}{'max_ms':>8}{'empty':>7}{'repeat':>8}{'points':>8}"]
+             f"{'car':<7}{'sensor':<8}{'polls':>6}{'rate_hz':>9}{'time':>7}{'mean_ms':>9}{'p50_ms':>8}"
+             f"{'p95_ms':>8}{'max_ms':>8}{'empty':>7}{'repeat':>8}{'unexp':>7}{'points':>8}"]
     for r in result["sensors"]:
         lat = r["latency_s"]
         lines.append(f"{r['car']:<7}{r['sensor']:<8}{r['polls']:>6}{_fmt(r['rate_hz']):>9}"
+                     f"{r['time_source'] or 'n/a':>7}"
                      f"{_fmt(lat['mean'], 1000):>9}{_fmt(lat['p50'], 1000):>8}{_fmt(lat['p95'], 1000):>8}"
                      f"{_fmt(lat['max'], 1000):>8}{r['empty']:>7}{r['repeated']:>8}"
-                     f"{_fmt(r['points_mean'], digits=0):>8}")
+                     f"{r['unexpected']['count']:>7}{_fmt(r['points_mean'], digits=0):>8}")
+    from_poll = [f"{r['car']} {r['sensor']}" for r in result["sensors"]
+                 if r["time_source"] in ("poll", "mixed")]
+    if from_poll:
+        lines.append(f"no sensor time for {', '.join(from_poll)}: rate_hz there is the "
+                     "polling rate, not the sensor's")
+    for r in result["sensors"]:
+        if r["unexpected"]["count"]:
+            lines.append(f"unexpected format: {r['car']} {r['sensor']} {r['unexpected']['count']} readings, "
+                         f"first: {r['unexpected']['first']}")
     return "\n".join(lines)
 
 

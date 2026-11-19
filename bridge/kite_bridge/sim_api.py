@@ -1,23 +1,25 @@
-"""The small interface the spike scripts use to talk to a simulator.
-
-Two classes implement it: `fake_sim.FakeSim` (synthetic, for tests and dry runs) and
-`beamng_adapter.BeamNGAdapter` (the real simulator). The scripts only see this interface.
-"""
-
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 
 STEP_HZ = 60
 SENSOR_KINDS = ("lidar", "camera", "radar", "gps", "imu")
+SENSOR_TIME = "sensor"
+POLL_TIME = "poll"
 
 
 @dataclass(frozen=True)
 class Reading:
-    """One poll result. `timestamp` is the simulator time in seconds the reading was taken;
-    None means the poll returned nothing. `points` is the lidar point count, else None."""
+    """One poll result. `timestamp` is the simulator time in seconds; None means the poll
+    returned nothing. `time_source` says where the timestamp came from: SENSOR_TIME when the
+    reading carried its own time, POLL_TIME when it had none and the time of the poll was used
+    (a rate computed from those timestamps is the polling rate, not the sensor's). `points` is
+    the lidar point count, else None. `unexpected` is a message when the reading was not in the
+    format the adapter expects; such a reading has no timestamp and is not an empty poll."""
 
     timestamp: float | None
     points: int | None = None
+    time_source: str = SENSOR_TIME
+    unexpected: str | None = None
 
 
 class Simulator(ABC):

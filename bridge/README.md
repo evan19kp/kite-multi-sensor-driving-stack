@@ -33,6 +33,14 @@ Without `--model`, a script lists the vehicle models the simulator reports and p
 one whose name contains "tograc" or "cherrier"; with none or several it stops and asks for
 `--model`.
 
+`--seconds` rounds to the nearest whole step (`spike_connect.py`: the nearest whole second), at
+least one.
+
+Each sensor row says where its timestamps came from. `time` is `sensor` when the readings carried
+their own time, `poll` when they had none and the poll time was used (then `rate_hz` is the
+polling rate, not the sensor's, and the table says so), and `mixed` for both. A lidar reading
+without `pointCloud` is counted under `unexp` and printed with its keys, not as an empty poll.
+
 Output goes only to `--out`, which is gitignored as `recordings/`. Ground truth (the car's true
 position) is written in its own file, `connect.json`, apart from sensor data, and scores results
 but never drives anything.

@@ -1,18 +1,8 @@
-"""A synthetic simulator for tests and dry runs. No real simulator, no network.
-
-A sensor with rate r Hz produces a sample at every k / r seconds of simulator time. A poll
-returns the newest sample, so polling faster than r returns repeated readings. On top of that
-the fake injects empty polls (`dropout`) and stale polls (`repeat`), each with that
-probability per poll, and sleeps `latency` seconds per poll. `injected` counts what it
-injected per (car, sensor). It matches what `measure` reports when every rate is at least
-STEP_HZ, because then no repeat happens naturally.
-"""
-
 import math
 import random
 import time
 
-from kite_bridge.sim_api import SENSOR_KINDS, STEP_HZ, Reading, Simulator
+from kite_bridge.sim_api import POLL_TIME, SENSOR_KINDS, STEP_HZ, Reading, Simulator
 
 DEFAULT_RATES = {"lidar": 10.0, "camera": 20.0, "radar": 20.0, "gps": 10.0, "imu": 100.0}
 DEFAULT_MODELS = ("fake_sedan", "fake_cherrier_tograc", "fake_van")
@@ -21,7 +11,8 @@ FAKE_SPEED_M_S = 10.0
 
 class FakeSim(Simulator):
     def __init__(self, seed=0, rates=None, dropout=0.0, repeat=0.0, latency=0.0,
-                 models=DEFAULT_MODELS):
+                 models=DEFAULT_MODELS, sensor_time=True):
+        self._sensor_time = sensor_time
         self._rng = random.Random(seed)
         self._rates = dict(DEFAULT_RATES if rates is None else rates)
         self._dropout = dropout
@@ -51,7 +42,6 @@ class FakeSim(Simulator):
     def load_scenario(self, model, n_cars):
         if n_cars < 1:
             raise ValueError("n_cars must be at least 1")
-        self.model = model
         cars = [f"kite{i + 1}" for i in range(n_cars)]
         self._positions = {car: (5.0 * i, 0.0, 0.0) for i, car in enumerate(cars)}
         self._modes = {car: "disabled" for car in cars}
@@ -74,6 +64,9 @@ class FakeSim(Simulator):
         if self._rng.random() < self._dropout:
             self.injected[key]["empty"] += 1
             return Reading(None)
+        points = self._rng.randrange(900, 1100) if kind == "lidar" else None
+        if not self._sensor_time:
+            return Reading(self.sim_time, points, POLL_TIME)
         rate = self._rates[kind]
         timestamp = math.floor(self.sim_time * rate + 1e-9) / rate
         last = self._last.get(key)
@@ -81,7 +74,6 @@ class FakeSim(Simulator):
             self.injected[key]["repeated"] += 1
             timestamp = last
         self._last[key] = timestamp
-        points = self._rng.randrange(900, 1100) if kind == "lidar" else None
         return Reading(timestamp, points)
 
     def step(self, n=1):
