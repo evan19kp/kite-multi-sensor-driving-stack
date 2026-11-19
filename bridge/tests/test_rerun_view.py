@@ -395,8 +395,8 @@ class CommandLineTest(unittest.TestCase):
             self.assertFalse(out.exists())
 
 
-NEW_RERUN = ("init", "save", "set_time", "log", "Points3D", "Image", "disconnect")
-OLD_RERUN = ("init", "save", "set_time_seconds", "log", "Points3D", "Image", "disconnect")
+NEW_RERUN = ("init", "save", "set_time", "log", "Points3D", "Image", "TextLog", "disconnect")
+OLD_RERUN = ("init", "save", "set_time_seconds", "log", "Points3D", "Image", "TextLog", "disconnect")
 
 
 def fake_rerun(api=NEW_RERUN):
@@ -448,6 +448,7 @@ class RerunRecorderTest(unittest.TestCase):
 
     def test_a_step_reaches_rerun_as_plain_lists_on_the_entity_paths(self):
         recorder, fake = self.recorder()
+        fake.log.reset_mock()
         ego, lidar, others = (0.0, 0.0, 0.0), [(5.0, 0.0, 0.0)], [(40.0, 3.5, 0.0)]
         log_step(recorder, 1.5, ego, lidar, IMAGE, others)
         self.assertEqual(fake.Points3D.call_args_list, [
