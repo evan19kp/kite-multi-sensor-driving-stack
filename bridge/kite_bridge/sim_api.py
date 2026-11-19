@@ -14,8 +14,9 @@ class Reading:
     returned nothing. `time_source` says where the timestamp came from: SENSOR_TIME when the
     reading carried its own time, POLL_TIME when it had none and the time of the poll was used
     (a rate computed from those timestamps is the polling rate, not the sensor's). `points` is
-    the lidar point count, else None. `unexpected` is a message when the reading was not in the
-    format the adapter expects; such a reading has no timestamp and is not an empty poll.
+    the lidar point count, else None. `unexpected` is a message when the poll raised or the
+    reading was not in the format the adapter expects; such a reading has no timestamp and is
+    not an empty poll.
     `count` is how many readings the poll returned; `timestamp` is the latest one's. It means
     nothing for an empty poll. `detections` is the number of rows in a radar array, else None."""
 

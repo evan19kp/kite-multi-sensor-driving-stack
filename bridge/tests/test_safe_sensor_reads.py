@@ -1,6 +1,7 @@
 import ast
 import contextlib
 import io
+import itertools
 import json
 import re
 import tempfile
@@ -50,14 +51,32 @@ class ArrayPollTest(unittest.TestCase):
         self.assertRegex(table, r"(?m)^kite1\s+radar\s.*\s6$")
         self.assertRegex(table, r"(?m)^kite1\s+lidar\s.*\s250\s+n/a$")
 
-    def test_arrays_with_no_rows_are_empty_polls_not_unexpected(self):
+    def test_a_radar_array_with_no_rows_is_a_reading_and_a_lidar_scan_with_no_points_is_empty(self):
         rows, _ = measured_rows(array_polls(radar_rows=0, lidar_rows=0))
-        for kind in ("radar", "lidar"):
-            self.assertEqual(rows[kind]["empty"], rows[kind]["polls"], kind)
-            self.assertEqual(rows[kind]["polls"], STEP_HZ, kind)
-            self.assertEqual(rows[kind]["unexpected"]["count"], 0, kind)
-            self.assertIsNone(rows[kind]["detections_mean"], kind)
-            self.assertIsNone(rows[kind]["points_mean"], kind)
+        self.assertEqual(rows["radar"]["polls"], STEP_HZ)
+        self.assertEqual(rows["radar"]["empty"], 0)
+        self.assertEqual(rows["radar"]["detections_mean"], 0)
+        self.assertEqual(rows["radar"]["unexpected"]["count"], 0)
+        self.assertEqual(rows["lidar"]["polls"], STEP_HZ)
+        self.assertEqual(rows["lidar"]["empty"], STEP_HZ)
+        self.assertEqual(rows["lidar"]["unexpected"]["count"], 0)
+        self.assertIsNone(rows["lidar"]["points_mean"])
+
+    def test_detections_mean_counts_the_zero_row_polls(self):
+        row_cycle = itertools.cycle((0, 2, 7))
+
+        class VaryingRadar(FakeSim):
+            def poll(self, car, kind):
+                if kind == "radar":
+                    return reading_from_raw(kind, FakeArray(next(row_cycle), 7), self.sim_time)
+                return super().poll(car, kind)
+
+        rows, _ = measured_rows(VaryingRadar())
+        # 60 polls cycle 0, 2, 7 rows twenty times each: (20 * 0 + 20 * 2 + 20 * 7) / 60 = 180 / 60 = 3.
+        # Dropping the zero-row polls would give (20 * 2 + 20 * 7) / 40 = 4.5 instead.
+        self.assertEqual(rows["radar"]["detections_mean"], 3)
+        self.assertEqual(rows["radar"]["empty"], 0)
+        self.assertEqual(rows["radar"]["polls"], STEP_HZ)
 
 
 class BadSensorTest(unittest.TestCase):

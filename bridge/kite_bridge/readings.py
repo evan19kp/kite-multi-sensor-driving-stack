@@ -1,5 +1,6 @@
 """Turns one BeamNGpy sensor poll result into plain data: a `Reading` for any sensor, the lidar
-points, or the camera image. An empty poll, including a lidar scan with no points, is no reading.
+points, or the camera image. An empty poll, including a lidar scan with no points, is no reading;
+a radar array with no rows is a reading with 0 detections.
 
 Input domain, and nothing beyond it: a raw poll is None, a dict, a list, bytes, or an array-like
 object, which is any object with `__len__` (its truth value may raise, like a numpy array's, so
@@ -15,8 +16,9 @@ def reading_from_raw(kind, raw, poll_time):
 
     A dict is one reading, a list is its readings, a dict of dicts is its readings, and any
     other non-empty object is one reading. A radar array-like is one reading with one detection
-    per row, in `detections`; the columns are not read. A lidar poll must be a dict with a
-    "pointCloud". An empty poll is no reading. A poll outside the domain, or a lidar poll
+    per row, in `detections`, even with zero rows; the columns are not read. A lidar poll must
+    be a dict with a "pointCloud". Any other empty poll, including a lidar scan with no points,
+    is no reading. A poll outside the domain, or a lidar poll
     without "pointCloud", gives a reading with `unexpected` set."""
     try:
         return _reading(kind, raw, poll_time)
@@ -49,22 +51,22 @@ def image_from_raw(raw):
 
 
 def _reading(kind, raw, poll_time):
+    if kind == "radar" and hasattr(raw, "__len__") and not isinstance(raw, (dict, list, bytes)):
+        return Reading(poll_time, time_source=POLL_TIME, detections=len(raw))
     if _is_empty(raw):
         return Reading(None)
-    points = detections = None
+    points = None
     if kind == "lidar":
         cloud = _point_cloud(raw)
         if cloud is None:
             return Reading(None)
         points = len(cloud)
-    elif kind == "radar" and not isinstance(raw, (dict, list, bytes)):
-        detections = len(raw)
     readings = _readings(raw)
     latest = readings[-1]
     # ASSUMPTION: readings carry "time" in simulator seconds, and the last one is the latest
     if isinstance(latest, dict) and "time" in latest:
-        return Reading(float(latest["time"]), points, count=len(readings), detections=detections)
-    return Reading(poll_time, points, POLL_TIME, count=len(readings), detections=detections)
+        return Reading(float(latest["time"]), points, count=len(readings))
+    return Reading(poll_time, points, POLL_TIME, count=len(readings))
 
 
 def _is_empty(raw):

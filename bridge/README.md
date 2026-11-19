@@ -14,9 +14,10 @@ the spikes on it, and nothing here has run against an installed Rerun yet.
   whose name, arguments or result format are guesses carry an `# ASSUMPTION:` comment.
 - `kite_bridge/readings.py`: turns a BeamNGpy poll result into plain data: a reading for any
   sensor, the lidar points or the camera image. An empty poll, including a lidar scan with no
-  points, is no reading. It never truth-tests a poll, so numpy arrays are safe, and it states
-  its input domain in its docstring. It does not import `beamngpy` or numpy, so tests drive it
-  with plain dicts, lists and small array-like classes. Its format guesses are marked ASSUMPTION too.
+  points, is no reading; a radar array with no rows is a reading with 0 detections. It never
+  truth-tests a poll, so numpy arrays are safe, and it states its input domain in its docstring.
+  It does not import `beamngpy` or numpy, so tests drive it with plain dicts, lists and small
+  array-like classes. Its format guesses are marked ASSUMPTION too.
 - `kite_bridge/sensor_settings.py`: the one table of every setting the adapter passes to a
   sensor, and the `sensor:` lines the scripts print from it. It imports nothing.
 - `kite_bridge/fake_sim.py`: a seeded synthetic simulator with configurable sensor rates,
@@ -60,7 +61,8 @@ without `pointCloud` is counted under `unexp` and printed with its keys, not as 
 poll that raises, or returns a type outside the input domain in `readings.py`, is counted under
 `unexp` for that sensor, with the first message printed in the footer; the run goes on with the
 other sensors. A radar array is one reading per poll, and the `detect` column is its mean row
-count; the columns are not read.
+count, including polls with 0 rows; the columns are not read. Only a lidar scan with no points
+counts under `empty`.
 
 Before the run every script prints one `sensor:` line per sensor with every setting the adapter
 passes, taken from `kite_bridge/sensor_settings.py`. `spike_sensors.py` writes the same table

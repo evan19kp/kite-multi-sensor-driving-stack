@@ -98,10 +98,10 @@ class RadarArrayTest(unittest.TestCase):
         self.assertIsNone(reading.unexpected)
         self.assertIsNone(reading.points)
 
-    def test_an_array_with_no_rows_is_an_empty_poll(self):
+    def test_an_array_with_no_rows_is_one_reading_with_no_detections(self):
         reading = reading_from_raw("radar", FakeArray(0, 7), POLL_AT)
-        self.assertIsNone(reading.timestamp)
-        self.assertIsNone(reading.detections)
+        self.assertEqual((reading.timestamp, reading.time_source, reading.count), (POLL_AT, POLL_TIME, 1))
+        self.assertEqual(reading.detections, 0)
         self.assertIsNone(reading.unexpected)
 
     def test_other_shapes_record_no_detections(self):
@@ -113,6 +113,8 @@ class InputDomainTest(unittest.TestCase):
     def test_every_kind_of_empty_input_is_an_empty_poll(self):
         for raw in (None, {}, [], b"", FakeArray(0, 7)):
             for kind in SENSOR_KINDS:
+                if kind == "radar" and isinstance(raw, FakeArray):
+                    continue
                 reading = reading_from_raw(kind, raw, POLL_AT)
                 self.assertIsNone(reading.timestamp, (kind, raw))
                 self.assertIsNone(reading.unexpected, (kind, raw))

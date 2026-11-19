@@ -192,7 +192,7 @@ The columns:
 - `points`: mean lidar points per scan. Other sensors show `n/a`.
 - `detect`: mean radar detections per poll. A radar poll that returns an array counts as one reading, and `detect` is its number of rows. The bridge does not read the array's columns. Other sensors show `n/a`.
 
-A poll with no rows, such as a radar array with zero detections, counts under `empty`, like a lidar scan with no points.
+Only a lidar scan with no points counts under `empty`. A radar array with zero rows is one reading that records 0 detections.
 
 The `rate_hz:` explanation line always prints. The other footer lines appear only when they apply:
 
