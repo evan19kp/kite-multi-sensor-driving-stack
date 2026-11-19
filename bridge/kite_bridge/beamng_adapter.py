@@ -43,7 +43,7 @@ class BeamNGAdapter(Simulator):
         release(sensors, bng.close if bng is not None else lambda: None)
 
     def versions(self):
-        from beamngpy.connection import Connection
+        from beamngpy.connection.connection import Connection
 
         return {"BeamNGpy version": importlib.metadata.version("beamngpy"),
                 "BeamNGpy protocol": str(Connection.PROTOCOL_VERSION)}

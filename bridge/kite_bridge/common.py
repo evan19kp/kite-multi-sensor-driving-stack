@@ -48,7 +48,7 @@ def parse_args(description, argv=None, extra=None):
                         help=f"our car's vehicle model (default {DEFAULT_MODEL})")
     parser.add_argument("--config", default=DEFAULT_CONFIG, metavar="PATH",
                         help=f"our car's part configuration file (default {DEFAULT_CONFIG}); "
-                             '--config "" spawns the model\'s default configuration')
+                             "--config= spawns the model's default configuration")
     parser.add_argument("--list-models", action="store_true",
                         help="print the simulator's vehicle model names, sorted, and exit without spawning")
     parser.add_argument("--fake", action="store_true", help="use the fake simulator")

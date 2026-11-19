@@ -53,7 +53,7 @@ All four scripts take these options. `--home` is required for a real run.
 | `--traffic` | 8 | AI traffic cars to spawn. |
 | `--out` | `recordings/` | Folder for the output files. |
 | `--model` | `vivace` | Our car's vehicle model. |
-| `--config` | `vehicles/vivace/tograc_qE.pc` | Our car's part configuration file. `--config ""` spawns the model's default configuration. |
+| `--config` | `vehicles/vivace/tograc_qE.pc` | Our car's part configuration file. `--config=` (nothing after the equals sign) spawns the model's default configuration. |
 | `--list-models` | off | Print the simulator's vehicle model names, sorted, one per line, and exit without spawning anything. |
 | `--fake` | off | Use the fake simulator. Do not use it for the real run. |
 
@@ -69,11 +69,13 @@ By default every script spawns the Cherrier Tograc qE: model `vivace` with the p
 spawned kite1 (model: vivace, config: vehicles/vivace/tograc_qE.pc)
 ```
 
-To spawn a different configuration of the same model, pass `--config`. To spawn the model's own default configuration, pass an empty `--config`. The `spawned` line then reads `config: model default`.
+To spawn a different configuration of the same model, pass `--config`. To spawn the model's own default configuration, pass `--config=` with nothing after the equals sign. The `spawned` line then reads `config: model default`.
 
 ```powershell
-python bridge/spike_connect.py --home "<your BeamNG.tech folder>" --config ""
+python bridge/spike_connect.py --home "<your BeamNG.tech folder>" --config=
 ```
+
+Write `--config=` and not `--config ""`. Windows PowerShell 5.1 and PowerShell 7 before 7.3 drop an empty argument when they start a program, so `--config ""` fails there with "expected one argument". `--config=` works in every shell.
 
 If you change `--model`, also change `--config`. The default configuration file belongs to `vivace`, and the scripts do not check that a file matches the model.
 

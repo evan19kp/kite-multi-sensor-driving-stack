@@ -61,6 +61,17 @@ class CarSelectionTest(FakeRunCase):
                     self.assertEqual(sim.spawned_model, "vivace")
                     self.assertIsNone(sim.spawned_config)
 
+    def test_config_with_an_equals_sign_and_no_value_spawns_the_model_default(self):
+        for script in SCRIPTS:
+            with self.subTest(script=script):
+                done = self.run_script(script, "--config=")
+                self.assertEqual(done.code, 0, done.stderr)
+                self.assertTrue(done.sims)
+                for sim in done.sims:
+                    self.assertEqual(sim.spawned_model, "vivace")
+                    self.assertIsNone(sim.spawned_config)
+                self.assertIn("config: model default", done.stdout)
+
     def test_model_and_config_from_the_command_line_reach_the_spawn(self):
         for script in SCRIPTS:
             with self.subTest(script=script):
