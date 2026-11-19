@@ -1,3 +1,5 @@
+import contextlib
+import io
 import json
 import tempfile
 import unittest
@@ -161,14 +163,14 @@ class FreshReadingTest(unittest.TestCase):
         self.assertEqual(rows["kite1", "lidar"]["new_per_simulated_s"], 10.5)
         self.assertEqual(rows["kite1", "lidar"]["bytes_per_simulated_s"], 120 * 1222 / 2)
 
-    def identical(self, kind, raw_for_poll):
+    def identical(self, kind, raw_for_poll, dump=None):
         class Same(FakeSim):
             def poll(self, car, kind_):
                 if kind_ != kind:
                     return super().poll(car, kind_)
                 return reading_from_raw(kind_, raw_for_poll(self._steps), self.sim_time)
 
-        _, rows, _ = measure_with_fake_clock(Same, rates=RATES)
+        _, rows, _ = measure_with_fake_clock(Same, rates=RATES, dump=dump)
         return rows["kite1", kind]
 
     def test_a_lidar_that_returns_the_same_scan_every_poll_has_one_new_reading(self):
@@ -202,6 +204,29 @@ class FreshReadingTest(unittest.TestCase):
         pair = [{"time": 0.1, "lat": 1.0}, {"time": 0.2, "lat": 2.0}]
         row = self.identical("gps", lambda step: pair)
         self.assertEqual(row["new_readings"], 2)
+
+    def test_a_gps_poll_keyed_by_int_is_measured_and_dumped(self):
+        def poll(step):
+            time = step // 30 / 10
+            return {0: {"time": time, 2: 1.0}, 1: {"time": time + 0.05, 2: 1.0}}
+
+        dump = common.RawDump(3)
+        row = self.identical("gps", poll, dump)
+        self.assertEqual((row["polls"], row["unexpected"]["count"]), (STEP_HZ, 0))
+        # step // 30 is 0 for steps 1-29, 1 for 30-59 and 2 for 60, so the readings have the times
+        # 0.0, 0.05, 0.1, 0.15, 0.2 and 0.25: 6 distinct readings.
+        self.assertEqual(row["new_readings"], 6)
+        # One poll: outer int keys 0 and 1 (8 + 8), and per reading "time" 4 + a float 8 and the
+        # int key 2 (8) + a float 8 = 28, so 16 + 2 * 28 = 72 bytes; 60 polls give 4320.
+        self.assertEqual(row["bytes_read"], 4320)
+        with tempfile.TemporaryDirectory() as tmp, contextlib.redirect_stdout(io.StringIO()):
+            common.write_raw_dump(tmp, 3, [(1, dump)])
+            saved = json.loads((Path(tmp) / common.RAW_DUMP_FILE).read_text(encoding="utf-8"))
+        # Steps 1 and 2 each return the readings at 0.0 and 0.05; the dump keeps the first 3 of
+        # them. The int key 2 is written as the JSON key "2".
+        gps = [(e["step"], e["reading"]) for e in saved["cases"][0]["entries"] if e["sensor"] == "gps"]
+        self.assertEqual(gps, [(1, {"time": 0.0, "2": 1.0}), (1, {"time": 0.05, "2": 1.0}),
+                               (2, {"time": 0.0, "2": 1.0})])
 
     def test_an_empty_poll_adds_no_new_reading_and_no_bytes(self):
         row = self.identical("lidar", lambda step: None)

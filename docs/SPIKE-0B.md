@@ -195,27 +195,29 @@ sensor: radar requested_update_time=0.1 ...
 sensor: gps pos=(0, 1.5, 2.0) ...
 sensor: imu pos=(0, 0, 0.5) ...
 spawned kite1 (model: vivace, config: vehicles/vivace/tograc_qE.pc)
-cars: 1  steps per second: 1230767.2
+cars: 1  steps per second: 1363638.6
 car    sensor   polls  rate_hz   time  per_poll  mean_ms  p50_ms  p95_ms  max_ms  empty  repeat  unexp  points  detect
-kite1  lidar      120    10.00 sensor         1     0.01    0.01    0.02    0.11      0      99      0    1017     n/a
-kite1  camera     120    20.00 sensor         1     0.00    0.00    0.01    0.06      0      79      0     n/a     n/a
-kite1  radar      120    20.00 sensor         1     0.00    0.00    0.01    0.01      0      79      0     n/a     n/a
+kite1  lidar      120    10.00 sensor         1     0.01    0.01    0.02    0.10      0      99      0    1017     n/a
+kite1  camera     120    20.00 sensor         1     0.00    0.00    0.00    0.01      0      79      0     n/a     n/a
+kite1  radar      120    20.00 sensor         1     0.00    0.00    0.01    0.12      0      79      0     n/a     n/a
 kite1  gps        120    10.00 sensor         1     0.00    0.00    0.00    0.01      0      99      0     n/a     n/a
-kite1  imu        120    59.80 sensor         2     0.00    0.00    0.00    0.04      0       0      0     n/a     n/a
-timing: 2.000 simulated s in 0.009 wall s, real-time factor 215.592
-  waiting for steps     0.000 s    1.1%
-  in sensor reads       0.003 s   34.4%
-  our processing        0.006 s   64.5%
+kite1  imu        120    59.80 sensor         2     0.00    0.00    0.00    0.01      0       0      0     n/a     n/a
+timing: 2.000 simulated s in 0.011 wall s, real-time factor 175.236
+  waiting for steps     0.000 s    0.8%
+  in sensor reads       0.003 s   27.1%
+  our processing        0.008 s   72.1%
 car    sensor     read_s  per_poll_ms    new  new_per_s       bytes  kB_per_s
 kite1  lidar       0.002         0.01     21      10.50     1466784     733.4
-kite1  camera      0.001         0.00     41      20.50       48240      24.1
-kite1  radar       0.000         0.00     41      20.50       69480      34.7
+kite1  camera      0.000         0.00     41      20.50       48240      24.1
+kite1  radar       0.001         0.00     41      20.50       69480      34.7
 kite1  gps         0.000         0.00     21      10.50        4440       2.2
 kite1  imu         0.000         0.00    200     100.00        7400       3.7
 rate_hz: distinct reading timestamps per simulator second. It counts at most one new reading per poll, so it is limited to about the poll rate of 60 Hz. per_poll shows when a sensor delivered more.
 kite1 imu: polls returned up to 2 readings. rate_hz counts at most one per poll, so it undercounts this sensor.
-wrote scratch\R27\out\sensors.json
+wrote .worktrees\R32\scratch\R32\sample\sensors.json
 ```
+
+The last line shows the `--out` folder of that run. Without `--out`, it is `recordings`.
 
 The columns:
 
@@ -227,7 +229,7 @@ The columns:
 - `mean_ms`, `p50_ms`, `p95_ms`, `max_ms`: how long a poll took, in milliseconds.
 - `empty`: polls that returned no reading.
 - `repeat`: readings with the same timestamp as the previous reading.
-- `unexp`: polls that the bridge could not read. This counts a poll that raised an error, a poll that returned a type outside None, a dict, a list, bytes or an array-like object (anything with a length), a lidar poll without a `pointCloud`, and a poll holding a value the bridge cannot size or fingerprint (`first: raw data not measurable: ...`).
+- `unexp`: polls that the bridge could not read. This counts a poll that raised an error, a poll that returned a type outside None, a dict, a list, bytes or an array-like object (anything with a length), a lidar poll without a `pointCloud`, and a poll holding a value the bridge cannot size or fingerprint (`first: raw data not measurable: ...`). That last case is a value of a type `raw_data.py` does not list, such as a complex number, an integer beyond 64 bits, or an object with a length that can be neither iterated nor turned into bytes. The bridge measures dict keys of every type that `raw_data.py` lists: text, numbers, true/false, None, bytes and tuples.
 - `points`: mean lidar points per scan. Other sensors show `n/a`.
 - `detect`: mean radar detections over the polls that returned an array. A radar poll that returns an array counts as one reading, and its detections are the array's rows. The bridge does not read the array's columns. Other sensors, and a radar that returned no array, show `n/a`.
 
@@ -250,7 +252,7 @@ The three parts add up to the wall time by construction. The percentage after ea
 
 - `new`: how many readings had content that was new. For lidar, camera and radar, a poll counts when its raw data differs from the previous non-empty poll's, compared by a hash of the raw bytes and values. A poll that is identical to the one before is not new. For GPS and IMU, every different reading a poll returned counts once, where "different" means a different `time` or different values; a reading returned again in a later poll is not counted again. A run of S simulated seconds on a sensor that makes R new readings per second shows about R times S, and one more when the first reading counts, so a short run overstates the rate by up to 1 reading per run.
 - `new_per_s`: `new` divided by the simulated seconds. Unlike `rate_hz`, it does not depend on timestamps. For lidar, camera and radar, which carry no timestamp, `rate_hz` is the polling rate (the table says so), and `new_per_s` shows how often their content changed. For GPS and IMU, `rate_hz` counts at most one reading per poll, and `new_per_s` counts all of them. A sensor that returns identical data while it is running, for example a lidar in a scene where nothing changes, shows fewer new readings than it produced.
-- `bytes`: the raw payload size of all the polls that returned data, counted as `bridge/kite_bridge/raw_data.py` documents: an array or image counts its buffer, a number 8 bytes, a name its UTF-8 length. The whole poll is counted by that one rule, so a GPS or IMU poll that holds a dict of readings also counts the dict's keys. It is what the bridge received, not what crossed the wire. Empty polls and unexpected polls count 0.
+- `bytes`: the raw payload size of all the polls that returned data, counted as `bridge/kite_bridge/raw_data.py` documents: an array or image counts its buffer, a number 8 bytes, a name its UTF-8 length, and a dict key the same as a value of its type, so the key `0` counts 8 bytes and the key `"gps_0"` 5. The whole poll is counted by that one rule, so a GPS or IMU poll that holds a dict of readings also counts the dict's keys. It is what the bridge received, not what crossed the wire. Empty polls and unexpected polls count 0.
 - `kB_per_s`: `bytes` divided by the simulated seconds, in kilobytes of 1000 bytes. The JSON has `bytes_read` and `bytes_per_simulated_s` in bytes.
 
 The JSON rows also have `new_readings` and `new_per_simulated_s`.
@@ -269,7 +271,7 @@ The file has the top-level `provenance` field, `readings_per_car_and_sensor` (N)
 - `step`: the number of steps taken when the poll was made. The simulated time of the poll is `step` divided by 60.
 - `wall_s`: wall seconds from the first step to the end of the poll.
 - `poll_wall_s`: how long the poll call took, in wall seconds. When one poll returned several readings, they share `step`, `wall_s` and `poll_wall_s`.
-- `reading`: every field of one raw reading, numbers and names only. A number that is not finite is written as the text `nan`, `inf` or `-inf`. Anything that is not a number, a name, a list or a dict is written as `<unsupported TypeName>`, never copied.
+- `reading`: every field of one raw reading, numbers and names only. A number that is not finite is written as the text `nan`, `inf` or `-inf`. JSON object keys are always text, so a key that is not text is written as its text: the key `2` becomes `"2"`. If one reading has two keys with the same text, such as `2` and `"2"`, only the later one is written. Anything that is not a number, a name, a list or a dict is written as `<unsupported TypeName>`, never copied.
 
 Readings are in the order the polls returned them, and a reading that a later poll returns again is dumped again. Count entries with the same `time` and the same values to see how often that happens.
 

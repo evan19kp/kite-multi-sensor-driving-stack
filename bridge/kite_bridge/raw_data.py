@@ -3,9 +3,17 @@ reading for the raw dump. Standard library only: it never imports numpy or PIL, 
 `tobytes()` on whatever has it.
 
 Input domain, and nothing beyond it: a raw value is None, bytes, bytearray, str, bool, int
-(within 64 bits), float, a dict with str keys, a list, a tuple, an object with `tobytes()` (a
-numpy array or scalar, a PIL image), or an object with `__len__` and `__iter__` whose items are
-in this domain. Anything else raises ValueError. A raw value is never truth-tested (R28).
+(within 64 bits), float, a dict whose keys and values are in this domain, a list, a tuple, an
+object with `tobytes()` (a numpy array or scalar, a PIL image), or an object with `__len__` and
+`__iter__` whose items are in this domain. Anything else raises ValueError. A raw value is never
+truth-tested (R28).
+
+This covers every poll shape that `readings.py` reads, including a dict of readings keyed by int,
+float, bool, None, bytes or a tuple. Three kinds of poll that `readings.py` reads are left
+outside, so the measuring loop counts them under `unexp`: one holding a value of another type
+anywhere in it (a custom object, a complex number), one holding an int beyond 64 bits, and an
+object with `__len__` but neither `__iter__` nor `tobytes()`. The rule below gives no size for
+them without guessing.
 
 How bytes are counted, here and nowhere else. The count is the payload the bridge received, not
 what crossed the wire:
@@ -13,12 +21,15 @@ what crossed the wire:
 - bytes and bytearray: their length.
 - an object with `tobytes()`: the length of what it returns. It is called once per object.
 - bool: 1. int: 8 (a signed 64-bit value). float: 8 (a 64-bit float).
-- str, and every dict key: the length of its UTF-8 encoding.
+- str: the length of its UTF-8 encoding.
 - None: 0.
-- a dict, list, tuple or other iterable: the sum of its items. Brackets, lengths and type tags
-  that go into the fingerprint are not counted.
+- a dict key: counted like a value of its type, so a str key its UTF-8 length, an int or float
+  key 8, a bool key 1, a None key 0 and a tuple key the sum of its items.
+- a dict, list, tuple or other iterable: the sum of its items (for a dict, its keys and values).
+  Brackets, lengths and type tags that go into the fingerprint are not counted.
 
-The fingerprint is a hash of the same content with type tags and lengths added. Two raw values
+The fingerprint is a hash of the same content with type tags and lengths added, so the int key 1,
+the float key 1.0, the bool key True and the str key "1" are four different keys. Two raw values
 get the same fingerprint when they hold the same content, whatever the dict key order.
 """
 
@@ -94,13 +105,12 @@ class _Walk:
             raise ValueError(f"cannot measure raw data of type {type(value).__name__}")
 
     def dict(self, value):
-        if not all(isinstance(key, str) for key in value):
-            raise ValueError("cannot measure a dict with a key that is not a str")
+        pairs = sorted(describe(pair) for pair in value.items())
         self.tag(b"D")
-        self.hash.update(len(value).to_bytes(8, "little"))
-        for key in sorted(value):
-            self.payload(key.encode("utf-8"))
-            self.visit(value[key])
+        self.hash.update(len(pairs).to_bytes(8, "little"))
+        for nbytes, fingerprint in pairs:
+            self.hash.update(bytes.fromhex(fingerprint))
+            self.nbytes += nbytes
 
 
 def describe(raw):
@@ -125,9 +135,11 @@ def poll_stats(kind, raw):
 def to_plain(value):
     """A JSON-safe copy of one raw reading holding numbers, names and structure only. Booleans,
     None and strings are kept. A float that is not finite becomes the string "nan", "inf" or
-    "-inf". An object with `tolist()` (a numpy array) is converted through it. A dict key is
-    written as text. Anything else, bytes included, becomes the text "<unsupported TypeName>"
-    so that nothing but numbers and names reaches the file."""
+    "-inf". An object with `tolist()` (a numpy array) is converted through it. JSON object keys
+    are strings, so a dict key is written as its text, `str(key)`, as `readings.py` names keys:
+    1 becomes "1", 2.5 "2.5", True "True", None "None". Two keys of one dict with the same text,
+    such as 1 and "1", keep only the later one. Anything else, bytes included, becomes the text
+    "<unsupported TypeName>" so that nothing but numbers and names reaches the file."""
     if value is None or isinstance(value, (bool, int, str)):
         return value
     if isinstance(value, float):
