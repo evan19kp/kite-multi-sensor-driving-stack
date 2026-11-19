@@ -26,6 +26,8 @@ the spikes on it, and nothing here has run against an installed Rerun yet.
   empty and repeated readings, steps per second). Its docstring states the input domain.
 - `kite_bridge/common.py`: command-line parsing, the step-and-poll loop and the one shutdown path
   shared by the scripts.
+- `kite_bridge/output_guard.py`: the provenance text every written file carries and the `--out`
+  check. It imports nothing outside the standard library.
 - `kite_bridge/rerun_view.py`: the only module that imports `rerun`, and only inside a method.
   It holds the entity paths, the pure distance-to-colour function, `log_step` and the recorders.
   Its Rerun calls are guesses until the first real run and carry `# ASSUMPTION:` comments.
@@ -36,7 +38,7 @@ the spikes on it, and nothing here has run against an installed Rerun yet.
 ## Scripts
 
 All four take `--home <simulator folder>` (required unless `--fake`), `--headless`,
-`--seconds` (default 30), `--traffic` (default 8), `--out` (default `recordings/`), `--model`,
+`--seconds` (default 30), `--traffic` (default 8), `--out` (default `recordings/`, see below), `--model`,
 `--config`, `--list-models`, `--timeout` (default 300) and `--fake`. `--fake` runs against the
 fake simulator and needs no simulator.
 
@@ -87,9 +89,18 @@ to recover the sensor's own rate. Instead, the `per_poll` column is the most rea
 returned, and the JSON field `readings_per_poll_max` has the same value. When it is above 1, the table prints a line for that
 sensor saying so.
 
-Output goes only to `--out`, which is gitignored as `recordings/`. Ground truth (the car's true
-position) is written in its own file, `connect.json`, apart from sensor data, and scores results
-but never drives anything.
+Output goes only to `--out`, `recordings/` by default, which is gitignored. Every JSON file has a
+top-level `"provenance"` field with the text `BeamNG.tech-generated data - never commit`.
+
+A script refuses an `--out` that resolves inside the repo unless it is under `recordings/` or
+`scratch/`, both gitignored. It prints a usage error naming `--out` and exits with code 2 before
+it starts the simulator or writes anything. A folder outside the repo is allowed. The check
+resolves `..` and symlinks first, so `--out recordings/../docs` is refused. A relative `--out`
+is taken from the folder you run the script in. The repo is the folder with `AGENTS.md` above the
+script; for a worktree under `.worktrees/` that includes the main checkout around it.
+
+Ground truth (the car's true position) is written in its own file, `connect.json`, apart from
+sensor data, and scores results but never drives anything.
 
 ## Rerun lidar demo
 
@@ -114,7 +125,9 @@ was. It takes the common options above plus `--save NAME.rrd`.
 python bridge/spike_lidar_rerun.py --fake --seconds 2 --out scratch/example
 ```
 
-`.rrd` files are recordings: they go only under `--out` and are never committed.
+`.rrd` files are recordings: they go only under `--out` and are never committed. A recording
+logs the same provenance text once as its first entry, as a text log under `meta/provenance`.
+That call has not run against an installed Rerun yet.
 
 ## Tests
 

@@ -246,7 +246,7 @@ clean shutdown and output that stays out of the repo. No speed work (that is Spr
   only, each under 5 s): `KeyboardInterrupt` in `step`, sensor removal raising `socket.timeout`,
   `close()` raising; path taken, close or process end called, printed line, exit code; recording
   flushed.
-- [ ] **R30 Simulator output can't end up in the repo** (fix, Sonnet; needs R27): one constant
+- [x] **R30 Simulator output can't end up in the repo** (fix, Sonnet; needs R27): one constant
   `BeamNG.tech-generated data - never commit` as a top-level `"provenance"` field in every JSON
   written and a text entry logged once at the start of `.rrd` recordings; `--out` inside the repo
   is a usage error (exit 2) unless under `recordings/` or `scratch/`, outside the repo allowed,

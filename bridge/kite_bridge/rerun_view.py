@@ -5,6 +5,9 @@ only and always under `ground_truth/`, which is what separates them from sensor 
 import math
 from pathlib import Path, PurePosixPath, PureWindowsPath
 
+from kite_bridge.output_guard import PROVENANCE
+
+PROVENANCE_PATH = "meta/provenance"
 LIDAR_PATH = "world/ego/lidar"
 CAMERA_PATH = "camera/image"
 EGO_PATH = "ground_truth/ego/position"
@@ -73,6 +76,7 @@ class RerunRecorder:
             Path(save_path).parent.mkdir(parents=True, exist_ok=True)
             rerun.init("kite_lidar")
             rerun.save(str(save_path))  # ASSUMPTION: save(path) sends the recording to a file instead of a viewer
+        rerun.log(PROVENANCE_PATH, rerun.TextLog(PROVENANCE))  # ASSUMPTION: TextLog(text) is a log entry that takes one string
 
     def set_time(self, seconds):
         if hasattr(self._rr, "set_time"):

@@ -123,7 +123,7 @@ class ListModelsTest(FakeRunCase):
         for script in SCRIPTS:
             with self.subTest(script=script):
                 done = subprocess.run([sys.executable, str(BRIDGE_DIR / f"{script}.py"), "--fake",
-                                       "--list-models"], capture_output=True, text=True, timeout=120)
+                                       "--list-models", "--out", str(self.out)], capture_output=True, text=True, timeout=120)
                 names = done.stdout.splitlines()
                 self.assertEqual(done.returncode, 0, done.stderr)
                 self.assertIn("vivace", names)
