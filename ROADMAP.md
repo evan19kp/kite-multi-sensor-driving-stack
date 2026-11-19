@@ -177,6 +177,42 @@ change; every existing test passes unchanged.
   tests pass with the same count plus any message test; no printed output, table, golden file or
   random sequence changes.
 
+## Sprint 0B
+
+BeamNG.tech spike scripts, tested against a fake simulator, for Evan to run on the real one.
+Agents never run the real simulator; every test uses the fake.
+
+- [ ] **R17 Simulator adapter, fake simulator and the connect/sensor/multi-car spike scripts**
+  (feat, Sonnet): package `bridge/kite_bridge/` with `sim_api.py` (small simulator interface),
+  `beamng_adapter.py` (the only module that imports `beamngpy`, lazily), `fake_sim.py` (seeded
+  synthetic readings with configurable rates, dropouts and latency) and `measure.py` (pure
+  functions: effective update rate, poll latency mean/p50/p95/max, empty and repeated readings,
+  steps per second; documented input domain); scripts `bridge/spike_connect.py`,
+  `bridge/spike_sensors.py`, `bridge/spike_multicar.py` with `--home` (required unless `--fake`),
+  `--headless`, `--seconds`, `--traffic`, `--out`, `--fake`; `bridge/requirements.txt`
+  (`beamngpy==1.36`, `rerun-sdk`); `.gitignore` adds `recordings/`. Tests: each script end to end
+  against the fake writes valid JSON; hand-computed rates and percentiles; injected dropouts and
+  repeats counted exactly; missing `--home` without `--fake` is a usage error; `beamngpy` never
+  imported by tests.
+- [ ] **R18 CI runs the bridge tests** (ci, Sonnet; needs R17): the `python` job also runs
+  `python -m unittest discover -s bridge -v` (no installs); a test confirms `bridge/` changes select
+  `python`; `scripts/ci_paths.json` maps `docs/INVESTIGATION-ASSOCIATION.md` to `app` and
+  `app-windows` in `md_read_by_tests`, with a test. Tests: CI's `python` job log shows the bridge
+  tests running and passing.
+- [ ] **R19 Live lidar into Rerun for Demo 1** (feat, Sonnet; needs R17):
+  `bridge/kite_bridge/rerun_view.py` (the only module that imports `rerun`, lazily; one simulator
+  timeline; lidar coloured by distance near blue to far red, our car's position, the camera image,
+  other cars as a separate ground-truth layer); `bridge/spike_lidar_rerun.py` (traffic mode with AI
+  traffic, live viewer, `--save <file.rrd>` inside `--out`). Tests: with `--fake` and a fake Rerun
+  logger: log calls per step, colours monotonic in distance, ground truth only under its own entity
+  path, recording path inside `--out`; `rerun` never imported by tests.
+- [ ] **R20 How Evan runs the spike** (docs, Sonnet; needs R17, R19): `docs/SPIKE-0B.md` (setup
+  with PowerShell commands, each script's exact command with the `--home` placeholder, expected
+  output, run time, what to send back, a headless run, the Demo 1 run with and without `--save`,
+  what to do when a BeamNGpy call fails, recordings stay out of the repo); one README.md line under
+  "Build and test". Tests: forbidden-files check passes; every command matches the scripts' real
+  `--help`.
+
 ## Later
 
 Planned, not scheduled. Do not pick these up as roadmap items.
