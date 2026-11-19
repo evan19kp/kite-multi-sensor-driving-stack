@@ -194,7 +194,7 @@ Agents never run the real simulator; every test uses the fake.
   against the fake writes valid JSON; hand-computed rates and percentiles; injected dropouts and
   repeats counted exactly; missing `--home` without `--fake` is a usage error; `beamngpy` never
   imported by tests.
-- [ ] **R18 CI runs the bridge tests** (ci, Sonnet; needs R17): the `python` job also runs
+- [x] **R18 CI runs the bridge tests** (ci, Sonnet; needs R17): the `python` job also runs
   `python -m unittest discover -s bridge -v` (no installs); a test confirms `bridge/` changes select
   `python`; `scripts/ci_paths.json` maps `docs/INVESTIGATION-ASSOCIATION.md` to `app` and
   `app-windows` in `md_read_by_tests`, with a test. Tests: CI's `python` job log shows the bridge
