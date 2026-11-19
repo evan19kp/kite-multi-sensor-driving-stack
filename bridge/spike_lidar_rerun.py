@@ -38,6 +38,7 @@ def make_recorder(save_path, fake):
 
 def run(args):
     save_path = rerun_view.recording_path(args.out, args.save) if args.save else None
+    common.print_sensor_settings()
     no_lidar = no_image = 0
     with common.session(args) as sim:
         car = common.spawn(sim, args, 1)[0]

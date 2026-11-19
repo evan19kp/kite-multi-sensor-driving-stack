@@ -10,6 +10,7 @@ checks them.
 import importlib.metadata
 
 from kite_bridge.readings import image_from_raw, points_from_raw, reading_from_raw
+from kite_bridge.sensor_settings import SENSOR_SETTINGS
 from kite_bridge.sim_api import STEP_HZ, Simulator, release
 
 PORT = 25252
@@ -17,8 +18,6 @@ SCENARIO_LEVEL = "west_coast_usa"
 SPAWN_POS = (-717.121, 101.0, 118.675)
 SPAWN_ROT_QUAT = (0.0, 0.0, 0.3826834, 0.9238795)
 SPAWN_SPACING_M = 5.0  # ASSUMPTION: extra cars start this far apart along x, on or near the road
-FORWARD = (0, -1, 0)
-UP = (0, 0, 1)
 
 
 class BeamNGAdapter(Simulator):
@@ -77,19 +76,10 @@ class BeamNGAdapter(Simulator):
         from beamngpy.sensors import GPS, AdvancedIMU, Camera, Lidar, Radar
 
         bng, vehicle = self._bng, self._vehicles[car]
+        classes = {"lidar": Lidar, "camera": Camera, "radar": Radar, "gps": GPS, "imu": AdvancedIMU}
         self._sensors.update({
-            (car, "lidar"): Lidar(f"lidar_{car}", bng, vehicle, requested_update_time=0.01,
-                                  is_using_shared_memory=True, is_360_mode=True),
-            (car, "camera"): Camera(f"camera_{car}", bng, vehicle, requested_update_time=0.05,
-                                    is_using_shared_memory=True, resolution=(640, 360),
-                                    pos=(0, -0.5, 1.5), dir=FORWARD, field_of_view_y=70),
-            (car, "radar"): Radar(f"radar_{car}", bng, vehicle, requested_update_time=0.01,
-                                  pos=(0, 0, 1.7), dir=FORWARD, up=UP),
-            (car, "gps"): GPS(f"gps_{car}", bng, vehicle, pos=(0, 1.5, 2.0),
-                              ref_lon=0.0, ref_lat=0.0),
-            (car, "imu"): AdvancedIMU(f"imu_{car}", bng, vehicle, pos=(0, 0, 0.5),
-                                      dir=FORWARD, up=UP, gfx_update_time=0.01,
-                                      physics_update_time=0.01),
+            (car, kind): sensor_class(f"{kind}_{car}", bng, vehicle, **SENSOR_SETTINGS[kind])
+            for kind, sensor_class in classes.items()
         })
 
     def poll(self, car, kind):

@@ -17,13 +17,14 @@ class Reading:
     the lidar point count, else None. `unexpected` is a message when the reading was not in the
     format the adapter expects; such a reading has no timestamp and is not an empty poll.
     `count` is how many readings the poll returned; `timestamp` is the latest one's. It means
-    nothing for an empty poll."""
+    nothing for an empty poll. `detections` is the number of rows in a radar array, else None."""
 
     timestamp: float | None
     points: int | None = None
     time_source: str = SENSOR_TIME
     unexpected: str | None = None
     count: int = 1
+    detections: int | None = None
 
 
 def release(sensors, close):

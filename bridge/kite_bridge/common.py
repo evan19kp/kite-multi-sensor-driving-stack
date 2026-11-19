@@ -9,7 +9,8 @@ from pathlib import Path
 
 from kite_bridge import measure
 from kite_bridge.fake_sim import FakeSim
-from kite_bridge.sim_api import POLL_TIME, SENSOR_KINDS, STEP_HZ
+from kite_bridge.sensor_settings import settings_lines
+from kite_bridge.sim_api import POLL_TIME, SENSOR_KINDS, STEP_HZ, Reading
 
 DEFAULT_MODEL = "vivace"
 DEFAULT_CONFIG = "vehicles/vivace/tograc_qE.pc"
@@ -101,6 +102,10 @@ def version_report(sim):
     return {**sim.versions(), "BeamNG.tech version": TECH_VERSION_TEXT}
 
 
+def print_sensor_settings():
+    print("\n".join(settings_lines()))
+
+
 def spawn(sim, args, n_cars):
     cars = sim.load_scenario(args.model, n_cars, args.config)
     print(f"spawned {', '.join(cars)} (model: {args.model}, config: {args.config or 'model default'})")
@@ -133,14 +138,17 @@ def measure_sensors(sim, cars, seconds):
     A row's `rate_hz` is the rate of distinct reading timestamps seen at poll time. It counts
     at most one new reading per poll, so it is limited to about the poll rate.
     `readings_per_poll_max` is the most readings one poll returned; above 1, the sensor
-    produced readings faster than it was polled. Unexpected readings are left out of `polls`,
-    `empty`, `rate_hz` and `readings_per_poll_max`; the latency figures include their polls."""
+    produced readings faster than it was polled. A poll that raises counts as an unexpected
+    reading, with the error as its message, and the run goes on. Unexpected readings are left
+    out of `polls`, `empty`, `rate_hz` and `readings_per_poll_max`; the latency figures include
+    their polls."""
     for car in cars:
         sim.attach_sensors(car)
     keys = [(car, kind) for car in cars for kind in SENSOR_KINDS]
     series = {key: [] for key in keys}
     latencies = {key: [] for key in keys}
     points = {key: [] for key in keys}
+    detections = {key: [] for key in keys}
     sources = {key: set() for key in keys}
     unexpected = {key: [] for key in keys}
     per_poll = {key: [] for key in keys}
@@ -152,7 +160,10 @@ def measure_sensors(sim, cars, seconds):
         step_time += time.perf_counter() - started
         for key in keys:
             started = time.perf_counter()
-            reading = sim.poll(*key)
+            try:
+                reading = sim.poll(*key)
+            except Exception as error:
+                reading = Reading(None, unexpected=f"poll raised {type(error).__name__}: {error}")
             latencies[key].append(time.perf_counter() - started)
             if reading.unexpected:
                 unexpected[key].append(reading.unexpected)
@@ -163,8 +174,11 @@ def measure_sensors(sim, cars, seconds):
                 per_poll[key].append(reading.count)
             if reading.points is not None:
                 points[key].append(reading.points)
+            if reading.detections is not None:
+                detections[key].append(reading.detections)
     rows = [{"car": car, "sensor": kind,
-             **measure.summarise(series[car, kind], latencies[car, kind], points[car, kind]),
+             **measure.summarise(series[car, kind], latencies[car, kind], points[car, kind],
+                                 detections[car, kind]),
              "time_source": _time_source(sources[car, kind]),
              "readings_per_poll_max": max(per_poll[car, kind], default=None),
              "unexpected": {"count": len(unexpected[car, kind]),
@@ -181,14 +195,16 @@ def _fmt(value, scale=1.0, digits=2):
 def format_result(result):
     lines = [f"cars: {result['cars']}  steps per second: {_fmt(result['steps_per_second'], digits=1)}",
              f"{'car':<7}{'sensor':<8}{'polls':>6}{'rate_hz':>9}{'time':>7}{'per_poll':>10}{'mean_ms':>9}"
-             f"{'p50_ms':>8}{'p95_ms':>8}{'max_ms':>8}{'empty':>7}{'repeat':>8}{'unexp':>7}{'points':>8}"]
+             f"{'p50_ms':>8}{'p95_ms':>8}{'max_ms':>8}{'empty':>7}{'repeat':>8}{'unexp':>7}{'points':>8}"
+             f"{'detect':>8}"]
     for r in result["sensors"]:
         lat = r["latency_s"]
         lines.append(f"{r['car']:<7}{r['sensor']:<8}{r['polls']:>6}{_fmt(r['rate_hz']):>9}"
                      f"{r['time_source'] or 'n/a':>7}{r['readings_per_poll_max'] or 'n/a':>10}"
                      f"{_fmt(lat['mean'], 1000):>9}{_fmt(lat['p50'], 1000):>8}{_fmt(lat['p95'], 1000):>8}"
                      f"{_fmt(lat['max'], 1000):>8}{r['empty']:>7}{r['repeated']:>8}"
-                     f"{r['unexpected']['count']:>7}{_fmt(r['points_mean'], digits=0):>8}")
+                     f"{r['unexpected']['count']:>7}{_fmt(r['points_mean'], digits=0):>8}"
+                     f"{_fmt(r['detections_mean'], digits=0):>8}")
     lines.append(f"rate_hz: distinct reading timestamps per simulator second. It counts at most one "
                  f"new reading per poll, so it is limited to about the poll rate of {STEP_HZ} Hz. "
                  "per_poll shows when a sensor delivered more.")
