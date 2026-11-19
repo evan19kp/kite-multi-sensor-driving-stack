@@ -3,7 +3,7 @@ import math
 import random
 import time
 
-from kite_bridge.readings import reading_from_raw
+from kite_bridge.readings import reading_from_raw, timer_value
 from kite_bridge.sensor_settings import SENSOR_SETTINGS
 from kite_bridge.sim_api import BUFFERED_KINDS, SENSOR_KINDS, STEP_HZ, STREAMED_KINDS, Simulator
 from kite_bridge.stream_check import reading_from_stream
@@ -22,6 +22,7 @@ FAKE_FLOAT32_BYTES = 4
 FAKE_LIDAR_ROW_RANGE = (900, 1100)
 FAKE_STREAM_ROWS = FAKE_LIDAR_ROW_RANGE[1]
 FAKE_LIDAR_COLUMNS = 3
+TIMER = "timer"
 
 
 class FakeClock:
@@ -35,6 +36,8 @@ class FakeClock:
 
     def advance(self, seconds):
         self._now += seconds
+
+    sleep = advance
 
 
 class FakeCloud:
@@ -106,16 +109,26 @@ class FakeSim(Simulator):
     from an earlier longer scan, then zero rows. Row r of sample t is (t + 1, r + 1, 2). Until
     the next sample the block does not change. The
     streamed camera gives one image of the configured resolution per sample. Streamed readings
-    carry no time, like BeamNGpy's lidar and camera."""
+    carry no time, like BeamNGpy's lidar and camera.
+
+    Free running (`start_free_running`, then `pause`): while running, simulated time advances by
+    itself, `free_speed` simulated seconds per wall second (finite, >= 0) of the `clock`, or of
+    the real `time.perf_counter` without one. Paused, it stands still. The Timer reads the
+    simulated time; polling it costs `request_cost["timer"]` (or the one number)."""
 
     def __init__(self, seed=0, rates=None, dropout=0.0, repeat=0.0, latency=0.0,
                  models=DEFAULT_MODELS, sensor_time=True, clock=None, request_cost=0.0,
-                 step_cost=0.0, lidar_rows=None, stream_rows=FAKE_STREAM_ROWS):
+                 step_cost=0.0, lidar_rows=None, stream_rows=FAKE_STREAM_ROWS, free_speed=1.0):
         self._request_cost = (dict(request_cost) if isinstance(request_cost, dict)
-                              else dict.fromkeys(SENSOR_KINDS, request_cost))
+                              else dict.fromkeys((*SENSOR_KINDS, TIMER), request_cost))
         if clock is None and any((step_cost, *self._request_cost.values())):
             raise ValueError("a request or step cost needs a clock")
         self._clock = clock
+        self._wall = time.perf_counter if clock is None else clock.now
+        self._free_speed = free_speed
+        self._free_since = None
+        self._free_s = 0.0
+        self._timer_car = None
         self._step_cost = step_cost
         self._lidar_rows = lidar_rows
         self._stream_rows = stream_rows
@@ -266,6 +279,27 @@ class FakeSim(Simulator):
                 x, y, z = self._positions[car]
                 self._positions[car] = (x + FAKE_SPEED_M_S * n / STEP_HZ, y, z)
 
+    def start_free_running(self, car):
+        self._timer_car = car
+        self._free_since = self._wall()
+
+    def pause(self):
+        self._free_s += self._running_s()
+        self._free_since = None
+
+    @property
+    def free_running(self):
+        return self._free_since is not None
+
+    def timer_seconds(self):
+        if self._timer_car is None:
+            raise KeyError("no Timer is attached")
+        self._charge(self._request_cost.get(TIMER, 0.0))
+        return timer_value(self.sim_time)
+
+    def _running_s(self):
+        return 0.0 if self._free_since is None else (self._wall() - self._free_since) * self._free_speed
+
     def lidar_points(self, car):
         self._require_attached(car, "lidar")
         rng = random.Random(f"{self._seed}:{self._steps}")
@@ -300,4 +334,4 @@ class FakeSim(Simulator):
 
     @property
     def sim_time(self):
-        return self._steps / STEP_HZ
+        return self._steps / STEP_HZ + self._free_s + self._running_s()

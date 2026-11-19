@@ -287,7 +287,7 @@ unless Evan's run prints it. Agents never run the real simulator; every test use
   dropped; streamed reads timed separately; `docs/SPIKE-0B.md` updated. Tests (fake only): valid
   scan followed by stale or zero rows, unchanged memory not new, wrong-size image, `--stream` off
   unchanged.
-- [ ] **R35 Free-running mode** (feat, Opus builder; needs R32, R33): `--mode lockstep|free`
+- [x] **R35 Free-running mode** (feat, Opus builder; needs R32, R33): `--mode lockstep|free`
   (default `lockstep`); `free` runs the simulator on its own, polls sensors on a wall-clock schedule
   at their rates, reads simulated time from a `Timer` sensor, ends at `--seconds` of Timer time or
   errors after `--seconds` x 20 of wall time; real-time factor from the Timer; shutdown pauses

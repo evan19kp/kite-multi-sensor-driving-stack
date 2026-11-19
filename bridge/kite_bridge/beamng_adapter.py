@@ -9,7 +9,7 @@ checks them.
 
 import importlib.metadata
 
-from kite_bridge.readings import image_from_raw, points_from_raw, reading_from_raw
+from kite_bridge.readings import image_from_raw, points_from_raw, reading_from_raw, timer_value
 from kite_bridge.sensor_settings import settings_for
 from kite_bridge.sim_api import STEP_HZ, Simulator, remove_all
 from kite_bridge.stream_check import reading_from_stream
@@ -30,6 +30,8 @@ class BeamNGAdapter(Simulator):
         self._vehicles = {}
         self._sensors = {}
         self._steps = 0
+        self._timer_car = None
+        self._pause_owed = False
 
     def open(self):
         from beamngpy import BeamNGpy
@@ -123,6 +125,32 @@ class BeamNGAdapter(Simulator):
     def step(self, n=1):
         self._bng.control.step(n, wait=True)  # ASSUMPTION: the 1.36 call, and wait=True makes it return once the n steps are done
         self._steps += n
+
+    def start_free_running(self, car):
+        from beamngpy.sensors import Timer
+
+        vehicle = self._vehicles[car]
+        # ASSUMPTION: these four calls are as the director read them in the installed 1.36 package; never run
+        vehicle.sensors.attach("timer", Timer())
+        self._timer_car = car
+        self._pause_owed = True
+        self._bng.settings.set_nondeterministic()
+        self._bng.control.resume()
+
+    def pause(self):
+        self._bng.control.pause()  # ASSUMPTION: read in the 1.36 package by the director; never run
+        self._pause_owed = False
+
+    @property
+    def free_running(self):
+        return self._pause_owed
+
+    def timer_seconds(self):
+        vehicle = self._vehicles[self._timer_car]
+        # ASSUMPTION: poll("timer") polls only the Timer, and its "time" is simulated seconds since the
+        # scenario started that stops while paused; read in the 1.36 package by the director, never run
+        vehicle.sensors.poll("timer")
+        return timer_value(vehicle.sensors["timer"]["time"])
 
     def set_ai_mode(self, car, mode):
         self._vehicles[car].ai.set_mode(mode)

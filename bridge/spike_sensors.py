@@ -10,7 +10,8 @@ with the settings the bridge passes, before the run. Writes the same numbers and
 sensors.json in --out. A sensor whose poll raises or returns an unexpected format is counted
 under `unexp`; the run goes on with the other sensors. --dump-raw N also writes the first N raw
 GPS and IMU readings to raw_gps_imu.json. --stream reads the lidar and camera from shared memory
-with stream() and counts what it drops under `suspect`.
+with stream() and counts what it drops under `suspect`. --mode free lets the simulator run on its
+own, polls on a wall-clock schedule and reads simulated time from a Timer sensor.
 """
 
 import sys
@@ -27,7 +28,7 @@ def run(args):
         sim.set_ai_mode(cars[0], "traffic")
         dump = common.RawDump(args.dump_raw)
         result = common.measure_sensors(sim, cars, args.seconds, dump=dump, poll_rates=args.rates,
-                                        stream=args.stream)
+                                        stream=args.stream, mode=args.mode)
         sim.set_ai_mode(cars[0], "disabled")
         print(common.format_result(result))
         common.write_json(args.out, "sensors.json", {"model": args.model, "config": args.config,
