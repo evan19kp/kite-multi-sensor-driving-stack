@@ -49,7 +49,7 @@ class FakeRunTest(unittest.TestCase):
         self.assertEqual(len(re.findall(r"^t=\d+s position=", stdout, re.MULTILINE)), 3)
 
     def test_sensors_prints_a_table_and_writes_the_same_numbers(self):
-        stdout, data = self.run_fake("spike_sensors")
+        stdout, data = self.run_fake("spike_sensors", "--rates", "all=60")
         self.assertEqual([r["sensor"] for r in data["sensors"]], ["lidar", "camera", "radar", "gps", "imu"])
         for sensor in data["sensors"]:
             self.assertRegex(stdout, rf"(?m)^kite1\s+{sensor['sensor']}\s")

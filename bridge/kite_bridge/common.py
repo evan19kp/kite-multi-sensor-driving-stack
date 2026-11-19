@@ -8,11 +8,11 @@ import time
 import traceback
 from pathlib import Path
 
-from kite_bridge import measure, raw_data
+from kite_bridge import measure, raw_data, rates
 from kite_bridge.fake_sim import FakeSim
 from kite_bridge.output_guard import PROVENANCE, out_refusal, repo_roots
 from kite_bridge.readings import readings_in
-from kite_bridge.sensor_settings import settings_lines
+from kite_bridge.sensor_settings import requested_update_hz, settings_lines
 from kite_bridge.sim_api import BUFFERED_KINDS, POLL_TIME, SENSOR_KINDS, STEP_HZ, Reading
 
 RAW_DUMP_FILE = "raw_gps_imu.json"
@@ -60,7 +60,20 @@ def _count(text):
     return value
 
 
+def _rates_option(text):
+    try:
+        return rates.parse_rates(text)
+    except ValueError as error:
+        raise argparse.ArgumentTypeError(str(error)) from None
+
+
 def add_measure_options(parser):
+    parser.add_argument("--rates", type=_rates_option, default=rates.DEFAULT_RATES_TEXT,
+                        metavar="KIND=RATE,...",
+                        help="polls per simulated second for each sensor (lidar, camera, radar, gps, imu), "
+                             f"each above 0 and at most {STEP_HZ}; all=RATE sets every sensor and a named "
+                             f"sensor overrides it (default {rates.DEFAULT_RATES_TEXT}; all={STEP_HZ} polls "
+                             "every sensor after every step)")
     parser.add_argument("--dump-raw", type=_count, default=0, metavar="N",
                         help=f"write the first N raw GPS and the first N raw IMU readings of each car, "
                              f"with each poll's wall time and step count, to {RAW_DUMP_FILE} in --out "
@@ -271,10 +284,18 @@ def write_raw_dump(out, per_sensor, cases):
         "cases": [{"cars": cars, "entries": dump.entries} for cars, dump in cases]})
 
 
-def measure_sensors(sim, cars, seconds, clock=time.perf_counter, dump=None):
-    """Steps the simulator for `seconds` of simulator time and polls every sensor once after
-    each step, so the poll rate is STEP_HZ per simulator second. `clock` returns wall seconds; a
-    test passes a fake one. `dump`, a RawDump, collects the raw GPS and IMU readings.
+def measure_sensors(sim, cars, seconds, clock=time.perf_counter, dump=None, poll_rates=None):
+    """Steps the simulator for `seconds` of simulator time and polls each sensor at its rate in
+    `poll_rates`, a dict by sensor kind of polls per simulated second (see `rates` for the
+    schedule). By default every sensor is polled once after each step, STEP_HZ per simulator
+    second. `clock` returns wall seconds; a test passes a fake one. `dump`, a RawDump, collects
+    the raw GPS and IMU readings.
+
+    A row's `configured_rate_hz` is the poll rate and `requested_update_hz` the update rate the
+    adapter asks of the sensor (None for GPS and IMU). `possible_loss` is True only when the
+    sensor is polled slower than every step, has a requested rate, and gave fewer new readings
+    than it (see `measure.possible_loss`). For GPS and IMU it is always False: their buffer size
+    is not known, so one run cannot say; compare `new_readings` with a run at every step.
 
     The wall time is the stepping and polling loop only, not the scenario load or the sensor
     set-up. `timing` splits it into `step_wait_s` (inside `sim.step`), `sensor_reads_s` and
@@ -295,6 +316,7 @@ def measure_sensors(sim, cars, seconds, clock=time.perf_counter, dump=None):
     timeout, which stops the run. Unexpected readings are left out of `polls`, `empty`,
     `rate_hz`, `readings_per_poll_max`, `new_readings` and `bytes_read`; the latency and read
     time figures include their polls."""
+    poll_rates = rates.every_step() if poll_rates is None else poll_rates
     for car in cars:
         sim.attach_sensors(car)
     keys = [(car, kind) for car in cars for kind in SENSOR_KINDS]
@@ -316,6 +338,8 @@ def measure_sensors(sim, cars, seconds, clock=time.perf_counter, dump=None):
         sim.step(1)
         step_time += clock() - started
         for key in keys:
+            if not rates.polled(step_number, poll_rates[key[1]]):
+                continue
             started = clock()
             try:
                 reading = sim.poll(*key)
@@ -358,8 +382,13 @@ def measure_sensors(sim, cars, seconds, clock=time.perf_counter, dump=None):
         new = (measure.count_distinct(reading_keys[car, kind]) if kind in BUFFERED_KINDS
                else measure.count_new(poll_keys[car, kind]))
         read_total = math.fsum(latencies[car, kind])
+        requested = requested_update_hz(kind)
         rows.append({
             "car": car, "sensor": kind,
+            "configured_rate_hz": float(poll_rates[kind]),
+            "requested_update_hz": requested,
+            "possible_loss": (poll_rates[kind] < STEP_HZ and requested is not None
+                              and measure.possible_loss(new, simulated, requested)),
             **measure.summarise(series[car, kind], latencies[car, kind], points[car, kind],
                                 detections[car, kind]),
             "time_source": _time_source(sources[car, kind]),
@@ -395,13 +424,30 @@ def _timing_lines(result):
              f"real-time factor {_fmt(t['real_time_factor'], digits=3)}",
              part("waiting for steps", t["step_wait_s"]), part("in sensor reads", t["sensor_reads_s"]),
              part("our processing", t["processing_s"]),
-             f"{'car':<7}{'sensor':<8}{'read_s':>9}{'per_poll_ms':>13}{'new':>7}{'new_per_s':>11}"
-             f"{'bytes':>12}{'kB_per_s':>10}"]
+             f"{'car':<7}{'sensor':<8}{'read_s':>9}{'per_poll_ms':>13}{'poll_hz':>9}{'new':>7}"
+             f"{'new_per_s':>11}{'req_hz':>8}{'bytes':>12}{'kB_per_s':>10}"]
     for r in result["sensors"]:
         lines.append(f"{r['car']:<7}{r['sensor']:<8}{r['read_total_s']:>9.3f}"
-                     f"{_fmt(r['read_per_poll_s'], 1000):>13}{r['new_readings']:>7}"
-                     f"{_fmt(r['new_per_simulated_s']):>11}{r['bytes_read']:>12}"
+                     f"{_fmt(r['read_per_poll_s'], 1000):>13}{_fmt(r['configured_rate_hz']):>9}"
+                     f"{r['new_readings']:>7}{_fmt(r['new_per_simulated_s']):>11}"
+                     f"{_fmt(r['requested_update_hz']):>8}{r['bytes_read']:>12}"
                      f"{_fmt(r['bytes_per_simulated_s'], 0.001, 1):>10}")
+    return lines
+
+
+def _loss_lines(result):
+    lines = []
+    for r in result["sensors"]:
+        if r["possible_loss"]:
+            lines.append(f"possible loss: {r['car']} {r['sensor']} gave {r['new_per_simulated_s']:.2f} new "
+                         f"readings per simulated second at {r['configured_rate_hz']:g} polls per second, "
+                         f"fewer than the {r['requested_update_hz']:g} Hz requested. "
+                         f"Compare with a run at --rates all={STEP_HZ}.")
+    buffered = sorted({r["sensor"] for r in result["sensors"]
+                       if r["sensor"] in BUFFERED_KINDS and r["configured_rate_hz"] < STEP_HZ})
+    if buffered:
+        lines.append(f"loss not checkable for {', '.join(buffered)}: a buffered sensor's capacity is not "
+                     f"known, so compare its new readings with a run at --rates all={STEP_HZ}.")
     return lines
 
 
@@ -419,9 +465,10 @@ def format_result(result):
                      f"{r['unexpected']['count']:>7}{_fmt(r['points_mean'], digits=0):>8}"
                      f"{_fmt(r['detections_mean'], digits=0):>8}")
     lines += _timing_lines(result)
-    lines.append(f"rate_hz: distinct reading timestamps per simulator second. It counts at most one "
-                 f"new reading per poll, so it is limited to about the poll rate of {STEP_HZ} Hz. "
-                 "per_poll shows when a sensor delivered more.")
+    lines.append("rate_hz: distinct reading timestamps per simulator second. It counts at most one "
+                 f"new reading per poll, so it is limited to about the sensor's poll rate (poll_hz, "
+                 f"at most {STEP_HZ}). per_poll shows when a sensor delivered more.")
+    lines += _loss_lines(result)
     for r in result["sensors"]:
         if (r["readings_per_poll_max"] or 0) > 1:
             lines.append(f"{r['car']} {r['sensor']}: polls returned up to {r['readings_per_poll_max']} "

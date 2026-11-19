@@ -365,6 +365,14 @@ Each item that introduces a lasting rule adds a "## Standing rules (R<n>)" secti
   `FakeSim` and never wait for real. A real-time factor with 0 wall seconds is `None` (`null` in
   JSON, `n/a` printed), never infinite.
 
+## Standing rules (R33)
+
+- `--rates` parsing and the choice of which steps a sensor is polled on live only in
+  `bridge/kite_bridge/rates.py`; scripts and tests keep no second schedule. `--rates all=60` polls
+  every sensor after every step, as the scripts did before `--rates`.
+- A `possible loss` note is decided only from a requested update rate that `sensor_settings.py`
+  passes; GPS and IMU have none, so their loss is checked by comparing `new` between two runs.
+
 ## Simulator files (hard rule)
 
 - Never read, list, search, copy, launch or write about the simulator's install folder, its user

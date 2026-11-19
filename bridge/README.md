@@ -26,6 +26,8 @@ the spikes on it, and nothing here has run against an installed Rerun yet.
 - `kite_bridge/measure.py`: pure measurement functions (effective rate, latency statistics,
   empty and repeated readings, steps per second, real-time factor, the processing remainder and
   new-reading counts). Its docstring states the input domain.
+- `kite_bridge/rates.py`: parses `--rates` and decides which steps each sensor is polled on, with
+  exact rational arithmetic. Standard library only.
 - `kite_bridge/raw_data.py`: the one place that counts the bytes of a raw poll and fingerprints
   it, and that turns a raw reading into plain data for the dump. Standard library only.
 - `kite_bridge/common.py`: command-line parsing, the step-and-poll loop and the one shutdown path
@@ -45,7 +47,8 @@ All four take `--home <simulator folder>` (required unless `--fake`), `--headles
 `--seconds` (default 30), `--traffic` (default 8), `--out` (default `recordings/`, see below), `--model`,
 `--config`, `--list-models`, `--timeout` (default 300) and `--fake`. `--fake` runs against the
 fake simulator and needs no simulator. `spike_sensors.py` and `spike_multicar.py` also take
-`--dump-raw N` (default 0).
+`--rates` (polls per simulated second for each sensor, default `lidar=20,camera=20,radar=20,gps=10,imu=10`)
+and `--dump-raw N` (default 0).
 
 `--timeout` is the longest wait in seconds for any one simulator call, map loading included; it
 must be above 0. Every run ends BeamNG.tech through one shutdown path. After a normal run or an
@@ -87,9 +90,19 @@ Before the run every script prints one `sensor:` line per sensor with every sett
 passes, taken from `kite_bridge/sensor_settings.py`. `spike_sensors.py` writes the same table
 into `sensors.json` as `sensor_settings`. The camera renders colour only.
 
-The scripts poll each sensor once per step, 60 times per simulator second. `rate_hz` is the rate
-of distinct reading timestamps seen at poll time. It counts at most one new reading per poll, so
-it is limited to about 60 Hz, the poll rate, even for a sensor that runs faster. It does not try
+The two measuring scripts poll each sensor at its `--rates` rate, in polls per simulated second,
+at most 60 (the step rate). `--rates all=60` polls every sensor after every step; `all=RATE` sets
+every sensor and a named sensor overrides it wherever it is written. A rate that is not a number
+above 0 and at most 60 is a usage error (exit code 2). A sensor at rate `r` is polled after step 1
+and after each step `k` where `floor(k * r / 60)` rises, which gives `floor(N * r / 60) + 1` polls
+in `N` steps (`N` at 60); `kite_bridge/rates.py` has the rule and the parsing. Each row records its
+`configured_rate_hz` and `requested_update_hz` (1 divided by the `requested_update_time` in
+`sensor_settings.py`, `null` for GPS and IMU, which pass none), and a `possible_loss` note prints
+for a lidar, camera or radar read slower than every step that gave more than one reading fewer
+than its requested rate. GPS and IMU buffer readings and their capacity is not known, so for them
+the check is to compare `new` between two runs (`docs/SPIKE-0B.md`, "Compare two runs"). `rate_hz`
+is the rate of distinct reading timestamps seen at poll time. It counts at most one new reading
+per poll, so it is limited to about the sensor's poll rate, even for a sensor that runs faster. It does not try
 to recover the sensor's own rate. Instead, the `per_poll` column is the most readings one poll
 returned, and the JSON field `readings_per_poll_max` has the same value. When it is above 1, the table prints a line for that
 sensor saying so.

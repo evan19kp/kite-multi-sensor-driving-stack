@@ -258,10 +258,11 @@ class PrintedBreakdownTest(unittest.TestCase):
         self.assertRegex(text, r"(?m)^  waiting for steps\s+2\.820 s\s+31\.1%$")
         self.assertRegex(text, r"(?m)^  in sensor reads\s+6\.240 s\s+68\.9%$")
         self.assertRegex(text, r"(?m)^  our processing\s+0\.000 s\s+0\.0%$")
-        # lidar: 60 * 0.020 = 1.200 s of reads, 20.000 ms a poll, 11 new readings, 11.00 a second,
-        # 73320 bytes = 73.3 kB for the second
-        self.assertRegex(text, r"(?m)^kite1\s+lidar\s+1\.200\s+20\.00\s+11\s+11\.00\s+73320\s+73\.3$")
-        self.assertRegex(text, r"(?m)^kite1\s+imu\s+1\.260\s+21\.00\s+100\s+100\.00\s+3700\s+3\.7$")
+        # lidar: 60 * 0.020 = 1.200 s of reads, 20.000 ms a poll, polled 60 times a second, 11 new
+        # readings, 11.00 a second, 10 Hz requested (1 / 0.1), 73320 bytes = 73.3 kB for the second.
+        # The IMU has no requested rate.
+        self.assertRegex(text, r"(?m)^kite1\s+lidar\s+1\.200\s+20\.00\s+60\.00\s+11\s+11\.00\s+10\.00\s+73320\s+73\.3$")
+        self.assertRegex(text, r"(?m)^kite1\s+imu\s+1\.260\s+21\.00\s+60\.00\s+100\s+100\.00\s+n/a\s+3700\s+3\.7$")
 
 
 class RawDumpTest(unittest.TestCase):
