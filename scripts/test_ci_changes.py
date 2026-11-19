@@ -101,6 +101,29 @@ class ClassifyTest(unittest.TestCase):
         for path in ["docs/BASELINE.md", "eval/README.md"]:
             self.assertEqual(ci_changes.classify([path], cfg), {"app": True, "app-windows": True, "python": False}, path)
 
+    def test_repo_config_investigation_doc_alone_triggers_both_builds_only(self):
+        cfg = ci_changes.load()
+        self.assertEqual(
+            ci_changes.classify(["docs/INVESTIGATION-ASSOCIATION.md"], cfg),
+            {"app": True, "app-windows": True, "python": False},
+        )
+
+    def test_repo_config_other_docs_markdown_still_triggers_nothing(self):
+        cfg = ci_changes.load()
+        self.assertEqual(
+            ci_changes.classify(["docs/PROJECT.md"], cfg),
+            {"app": False, "app-windows": False, "python": False},
+        )
+
+    def test_repo_config_bridge_change_selects_the_python_job_only(self):
+        cfg = ci_changes.load()
+        for path in ["bridge/spike_connect.py", "bridge/kite_bridge/measure.py", "bridge/tests/test_measure.py"]:
+            self.assertEqual(
+                ci_changes.classify([path], cfg),
+                {"app": False, "app-windows": False, "python": True},
+                path,
+            )
+
     def test_repo_config_removed_folders_fall_back_to_every_job(self):
         cfg = ci_changes.load()
         everything = frozenset(cfg["jobs"])
@@ -116,6 +139,47 @@ class ClassifyTest(unittest.TestCase):
         self.assertFalse(ci_changes.needs_seed(["sim/a.cpp"], cfg))
 
 
+def job_text(workflow: str, job: str) -> str:
+    start = re.search(rf"(?m)^  {re.escape(job)}:$", workflow)
+    if start is None:
+        raise ValueError(f"no job named {job}")
+    rest = workflow[start.end():]
+    following = re.search(r"(?m)^  [a-z][a-z0-9-]*:$", rest)
+    return rest[: following.start()] if following else rest
+
+
+class JobTextTest(unittest.TestCase):
+    WORKFLOW = (
+        "jobs:\n"
+        "  first:\n"
+        "    steps:\n"
+        "      - run: pip install first-only\n"
+        "  python:\n"
+        "    steps:\n"
+        "      - run: python -m unittest discover -s scripts -v\n"
+        "  later:\n"
+        "    steps:\n"
+        "      - run: pip install later-only\n"
+        "      - run: python -m unittest discover -s bridge -v\n"
+    )
+
+    def test_job_ends_at_the_next_job_header(self):
+        text = job_text(self.WORKFLOW, "python")
+        self.assertIn("discover -s scripts", text)
+        self.assertNotIn("install", text)
+        self.assertNotIn("discover -s bridge", text)
+
+    def test_job_starts_at_its_own_header(self):
+        self.assertNotIn("first-only", job_text(self.WORKFLOW, "python"))
+
+    def test_last_job_runs_to_the_end_of_the_file(self):
+        self.assertIn("discover -s bridge", job_text(self.WORKFLOW, "later"))
+
+    def test_missing_job_is_an_error(self):
+        with self.assertRaises(ValueError):
+            job_text(self.WORKFLOW, "absent")
+
+
 @unittest.skipUnless(WORKFLOW.is_file(), "no ci.yml")
 class WorkflowShapeTest(unittest.TestCase):
     def test_every_gated_job_exists_and_uses_the_classifier(self):
@@ -129,6 +193,11 @@ class WorkflowShapeTest(unittest.TestCase):
         self.assertNotRegex(text, r"(?m)^  e2e:$")
         self.assertRegex(text, r"(?m)^  app-windows:$")
         self.assertIn("steps.classify.outputs.app-windows", text)
+
+    def test_python_job_runs_the_bridge_tests_without_installing_anything(self):
+        python_job = job_text(WORKFLOW.read_text(encoding="utf-8"), "python")
+        self.assertIn("python -m unittest discover -s bridge -v", python_job)
+        self.assertNotIn("install", python_job)
 
     def test_every_job_has_a_timeout(self):
         text = WORKFLOW.read_text(encoding="utf-8")
