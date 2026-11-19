@@ -51,7 +51,7 @@ All four scripts take these options. `--home` is required for a real run.
 | `--headless` | off | Run the simulator without a window. |
 | `--seconds` | 30 | Simulated seconds to run, not wall-clock seconds. |
 | `--traffic` | 8 | AI traffic cars to spawn. |
-| `--out` | `recordings/` | Folder for the output files. |
+| `--out` | `recordings/` | Folder for the output files. Inside the repo only `recordings/` and `scratch/` are allowed. See "Where output may go". |
 | `--model` | `vivace` | Our car's vehicle model. |
 | `--config` | `vehicles/vivace/tograc_qE.pc` | Our car's part configuration file. `--config=` (nothing after the equals sign) spawns the model's default configuration. |
 | `--list-models` | off | Print the simulator's vehicle model names, sorted, one per line, and exit without spawning anything. |
@@ -357,6 +357,14 @@ timed out after <s> s: BeamNG.tech may still be running
 
 A failure the script checks for prints `error: <message>` and no traceback. An unexpected failure prints a traceback, then `error: <type>: <message>`. A timeout prints no traceback. A run stopped with Ctrl+C exits with code 130 and ends with `interrupted: BeamNG.tech closed` or `interrupted: BeamNG.tech may still be running`. `may still be running` means the script could not end BeamNG.tech, so close it by hand. Send a timeout back like any other failure, with the command and the output before the last line. The output may contain a folder path from your machine. The repo is public, so do not paste such text into a pull request, issue or comment. Send it to the director only.
 
-## Recordings stay out of the repo
+## Where output may go
 
-Everything these scripts write is BeamNG-generated data: the JSON files and the `.rrd` recordings. The files go to `recordings/`, which Git ignores. Never commit them, never copy them into another folder in the repo, and never post them publicly.
+Everything these scripts write is BeamNG-generated data: the JSON files and the `.rrd` recordings. It must never reach the public repo. The scripts enforce three things:
+
+- Each JSON file starts with a top-level field `"provenance": "BeamNG.tech-generated data - never commit"`. A `.rrd` recording logs the same text once at the start, under `meta/provenance`. Anyone who opens a stray file can see where it came from.
+- `--out` may be `recordings/` (the default), `scratch/` or any folder outside the repo, for example on another drive. Both folders inside the repo are ignored by Git.
+- Any other `--out` inside the repo is refused. For example `--out docs/x` prints a usage error that names `--out` and exits with code 2. The script has not started the simulator or written a file at that point. Run the script again with an allowed folder. The check follows `..` and symlinks, so `--out recordings/../docs` is refused too.
+
+A relative `--out` is taken from the folder you run the script in, so run from the repo root as in the rest of this guide.
+
+Never commit these files, never copy them into another folder in the repo, and never post them publicly. A screenshot goes in the repo only under `docs/media/`, and only if you chose it. Simulator error output is for the director only; do not paste it into a pull request, issue or comment.

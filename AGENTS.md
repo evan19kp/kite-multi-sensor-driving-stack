@@ -340,6 +340,16 @@ Each item that introduces a lasting rule adds a "## Standing rules (R<n>)" secti
   where other errors are counted under `unexp` or skipped.
 - The bridge ends only the process BeamNGpy launched, through its own handle; never by name or PID.
 
+## Standing rules (R30)
+
+- Bridge output goes only under `recordings/`, `scratch/` or outside the repo. The scripts refuse
+  an `--out` that resolves inside the repo anywhere else (exit 2). Every JSON file carries the
+  top-level `"provenance"` field and every Rerun recording logs it once, both from
+  `PROVENANCE` in `bridge/kite_bridge/output_guard.py`; the text is defined nowhere else.
+- Images in the repo live only under `docs/media/`, chosen by Evan, and are never simulator asset
+  files.
+- Never paste simulator error output into a public PR or issue text.
+
 ## Simulator files (hard rule)
 
 - Never read, list, search, copy, launch or write about the simulator's install folder, its user

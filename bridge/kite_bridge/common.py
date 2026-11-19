@@ -10,6 +10,7 @@ from pathlib import Path
 
 from kite_bridge import measure
 from kite_bridge.fake_sim import FakeSim
+from kite_bridge.output_guard import PROVENANCE, out_refusal, repo_roots
 from kite_bridge.sensor_settings import settings_lines
 from kite_bridge.sim_api import POLL_TIME, SENSOR_KINDS, STEP_HZ, Reading
 
@@ -65,7 +66,9 @@ def parse_args(description, argv=None, extra=None):
                         help="simulated seconds to run (default 30)")
     parser.add_argument("--traffic", type=_count, default=8,
                         help="AI traffic cars to spawn (default 8)")
-    parser.add_argument("--out", default="recordings", help="output folder (default recordings/)")
+    parser.add_argument("--out", default="recordings",
+                        help="output folder (default recordings/); inside the repo only recordings/ "
+                             "or scratch/ is allowed, a folder outside the repo is too")
     parser.add_argument("--model", default=DEFAULT_MODEL,
                         help=f"our car's vehicle model (default {DEFAULT_MODEL})")
     parser.add_argument("--config", default=DEFAULT_CONFIG, metavar="PATH",
@@ -82,6 +85,9 @@ def parse_args(description, argv=None, extra=None):
     args = parser.parse_args(argv)
     if not args.fake and not args.home:
         parser.error("--home is required unless --fake is given")
+    refusal = out_refusal(args.out, repo_roots())
+    if refusal:
+        parser.error(f"--out {refusal}")
     args.config = args.config or None
     return args
 
@@ -327,5 +333,5 @@ def write_json(out, name, data):
     folder = Path(out)
     folder.mkdir(parents=True, exist_ok=True)
     path = folder / name
-    path.write_text(json.dumps(data, indent=2, allow_nan=False) + "\n", encoding="utf-8")
+    path.write_text(json.dumps({"provenance": PROVENANCE, **data}, indent=2, allow_nan=False) + "\n", encoding="utf-8")
     print(f"wrote {path}")
