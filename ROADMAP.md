@@ -206,7 +206,7 @@ Agents never run the real simulator; every test uses the fake.
   traffic, live viewer, `--save <file.rrd>` inside `--out`). Tests: with `--fake` and a fake Rerun
   logger: log calls per step, colours monotonic in distance, ground truth only under its own entity
   path, recording path inside `--out`; `rerun` never imported by tests.
-- [ ] **R20 How Evan runs the spike** (docs, Sonnet; needs R17, R19): `docs/SPIKE-0B.md` (setup
+- [x] **R20 How Evan runs the spike** (docs, Sonnet; needs R17, R19): `docs/SPIKE-0B.md` (setup
   with PowerShell commands, each script's exact command with the `--home` placeholder, expected
   output, run time, what to send back, a headless run, the Demo 1 run with and without `--save`,
   what to do when a BeamNGpy call fails, recordings stay out of the repo); one README.md line under

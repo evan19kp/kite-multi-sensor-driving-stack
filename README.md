@@ -31,6 +31,8 @@ ctest --test-dir build/dev --output-on-failure
 
 Pass `-DKITE_BUILD_TESTS=OFF` to skip the tests. To check the build scripts: `python -m unittest discover -s scripts -v`.
 
+To run the BeamNG.tech spike scripts in `bridge/`, see `docs/SPIKE-0B.md`.
+
 ## Simulation only
 
 Any results, once there are some, will come from simulation. This project makes no claims about real vehicles.
