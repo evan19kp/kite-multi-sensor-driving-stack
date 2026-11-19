@@ -23,10 +23,7 @@ TIMING_KEYS_FREE = {"simulated_s", "wall_s", "real_time_factor", "idle_s", "time
                     "processing_s"}
 
 
-class Clock(FakeClock):
-    """A FakeClock that fails the test, instead of letting a loop that never ends hang it, after
-    MAX_SLEEPS sleeps or MAX_READS readings."""
-
+class BoundedClock(FakeClock):
     def __init__(self):
         super().__init__()
         self.sleeps = 0
@@ -46,8 +43,6 @@ class Clock(FakeClock):
 
 
 class Recording(FakeSim):
-    """Records every simulator call the run makes, in order."""
-
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.events = []
@@ -85,12 +80,11 @@ class Recording(FakeSim):
         super().close()
 
 
-def free_run(poll_rates=DEFAULT, seconds=1.0, sim_class=FakeSim, stream=False, dump=None, before=0, **sim_args):
-    """One car in free mode on a fake clock. `before` steps the fake that many times first."""
-    clock = Clock()
+def free_run(poll_rates=DEFAULT, seconds=1.0, sim_class=FakeSim, stream=False, dump=None, steps_before=0, **sim_args):
+    clock = BoundedClock()
     sim = sim_class(clock=clock, **{"rates": SENSOR_RATES, **sim_args})
     cars = sim.load_scenario("fake_cherrier_tograc", 1)
-    sim.step(before)
+    sim.step(steps_before)
     result = common.measure_sensors(sim, cars, seconds, clock=clock.now, sleep=clock.sleep, poll_rates=poll_rates,
                                     stream=stream, dump=dump, mode=common.FREE)
     return result, {r["sensor"]: r for r in result["sensors"]}, clock
@@ -190,7 +184,7 @@ class FreeRunCountsTest(unittest.TestCase):
 
     def test_the_run_ends_after_seconds_of_timer_time_counted_from_its_first_reading(self):
         # 180 steps first: the Timer already reads 3.0 s when the run starts.
-        result, rows, clock = free_run(before=180)
+        result, rows, clock = free_run(steps_before=180)
         self.assertAlmostEqual(result["timing"]["simulated_s"], 1.0, places=5)
         self.assertAlmostEqual(clock.now(), 1.0, places=5)
         self.assertEqual(rows["lidar"]["polls"], 20)
@@ -327,7 +321,7 @@ class WallClockLimitTest(unittest.TestCase):
 
 class LockstepIsUnchangedTest(unittest.TestCase):
     def test_lockstep_never_runs_free_or_polls_the_timer(self):
-        sim = Recording(clock=Clock(), rates=SENSOR_RATES)
+        sim = Recording(clock=BoundedClock(), rates=SENSOR_RATES)
         cars = sim.load_scenario("fake_cherrier_tograc", 1)
         result = common.measure_sensors(sim, cars, 3 / 60, clock=FakeClock().now, poll_rates=DEFAULT)
         self.assertEqual(result["mode"], "lockstep")
@@ -338,7 +332,7 @@ class LockstepIsUnchangedTest(unittest.TestCase):
 
 class FakeTimerTest(unittest.TestCase):
     def test_the_fake_timer_advances_with_its_wall_clock_only_while_running(self):
-        clock = Clock()
+        clock = BoundedClock()
         sim = FakeSim(clock=clock, free_speed=0.5)
         car = sim.load_scenario("fake_cherrier_tograc", 1)[0]
         with self.assertRaises(KeyError):
@@ -366,8 +360,6 @@ class TimerValueTest(unittest.TestCase):
 
 
 class ScriptTest(unittest.TestCase):
-    """The scripts' `main`, in process, on the fake with a fake wall clock."""
-
     def setUp(self):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
@@ -375,7 +367,7 @@ class ScriptTest(unittest.TestCase):
 
     def run_main(self, *argv, sim_class=Recording, script="spike_sensors", clock=None, **sim_args):
         module = __import__(script)
-        clock = clock or Clock()
+        clock = clock or BoundedClock()
         made = []
 
         def make():
@@ -457,7 +449,7 @@ class ScriptTest(unittest.TestCase):
         self.assertFalse(sim.process_ended)
 
     def test_ctrl_c_while_waiting_between_polls_closes_cleanly_and_exits_130(self):
-        clock = Clock()
+        clock = BoundedClock()
 
         def interrupted(seconds):
             raise KeyboardInterrupt

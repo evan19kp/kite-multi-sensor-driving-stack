@@ -31,7 +31,7 @@ class BeamNGAdapter(Simulator):
         self._sensors = {}
         self._steps = 0
         self._timer_car = None
-        self._free = False
+        self._pause_owed = False
 
     def open(self):
         from beamngpy import BeamNGpy
@@ -133,17 +133,17 @@ class BeamNGAdapter(Simulator):
         # ASSUMPTION: these four calls are as the director read them in the installed 1.36 package; never run
         vehicle.sensors.attach("timer", Timer())
         self._timer_car = car
-        self._free = True  # set first: if either call below fails, shutdown still pauses
+        self._pause_owed = True
         self._bng.settings.set_nondeterministic()
         self._bng.control.resume()
 
     def pause(self):
         self._bng.control.pause()  # ASSUMPTION: read in the 1.36 package by the director; never run
-        self._free = False
+        self._pause_owed = False
 
     @property
     def free_running(self):
-        return self._free
+        return self._pause_owed
 
     def timer_seconds(self):
         vehicle = self._vehicles[self._timer_car]

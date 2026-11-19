@@ -31,8 +31,6 @@ EXIT_INTERRUPTED = 130
 LOCKSTEP = "lockstep"
 FREE = "free"
 WALL_LIMIT_FACTOR = 20
-# A due time such as 3/10 s has no exact float, so a clock can stop a hair short of it; the
-# shortest sleep makes sure the next pass is past it.
 MIN_SLEEP_S = 1e-6
 wall_clock = time.perf_counter
 wall_sleep = time.sleep
@@ -194,10 +192,9 @@ def session(args):
 
 def _shut_down(sim, in_step, close_wait):
     """Ends BeamNG.tech without waiting forever. Removes the sensors only while the connection is
-    `in_step`, pausing a free-running simulator first, then closes; if close raises or overruns
-    `close_wait`, or Ctrl+C comes during either, ends the process BeamNGpy launched. A pause that
-    fails skips the removal and counts as a removal failure. Returns whether BeamNG.tech ended,
-    and the close or Ctrl+C failure, else the removal failure, else None."""
+    `in_step`, then closes; if close raises or overruns `close_wait`, or Ctrl+C comes during
+    either, ends the process BeamNGpy launched. Returns whether BeamNG.tech ended, and the close
+    or Ctrl+C failure, else the removal failure, else None."""
     removal_failure = None
     try:
         if in_step:
@@ -321,10 +318,13 @@ def measure_sensors(sim, cars, seconds, clock=None, dump=None, poll_rates=None, 
     ones. Without them the run uses `wall_clock` and `wall_sleep`, real time. `dump`, a
     RawDump, collects the raw GPS and IMU readings.
 
-    `mode` FREE replaces the steps (see `_run_free`): the simulator runs on its own, the rates
-    are polls per wall second, and `simulated_s` is how far the Timer advanced. A reading
-    without its own time gets the latest Timer reading, with `time_source` TIMER_TIME. The
-    timing has `idle_s` (sleeping until the next poll is due) and `timer_reads_s` (inside the
+    `mode` FREE replaces the steps. The simulator runs on its own and each sensor is polled on
+    the wall-clock schedule in `rates`, so the rates are polls per wall second. The Timer, on
+    the first car, is polled in its own request at the higher of the GPS and IMU rates. The run
+    ends at the first Timer reading `seconds` past its first one, and raises SpikeError after
+    `seconds` x WALL_LIMIT_FACTOR wall seconds, or when the Timer goes back. `simulated_s` is
+    how far the Timer advanced. A reading without its own time gets the latest Timer reading,
+    with `time_source` TIMER_TIME. The timing has `idle_s` (sleeping until the next poll is due) and `timer_reads_s` (inside the
     Timer polls) in place of `step_wait_s`; `steps` and `steps_per_second` are None, a dump
     entry's step is None, and `timer` gives the Timer's poll count and rate. Every sensor
     counts as polled slower than every step for `possible_loss`. `mode` is in the result.
@@ -392,7 +392,7 @@ def measure_sensors(sim, cars, seconds, clock=None, dump=None, poll_rates=None, 
             "car": car, "sensor": kind,
             "configured_rate_hz": float(poll_rates[kind]),
             "requested_update_hz": requested,
-            "possible_loss": (_below_every_step(mode, poll_rates[kind]) and requested is not None
+            "possible_loss": (_can_miss_updates(mode, poll_rates[kind]) and requested is not None
                               and measure.possible_loss(new, simulated, requested)),
             **measure.summarise(series[car, kind], latencies[car, kind], points[car, kind],
                                 detections[car, kind]),
@@ -419,15 +419,11 @@ def measure_sensors(sim, cars, seconds, clock=None, dump=None, poll_rates=None, 
             "stream": stream, **run.extra, "timing": timing, "sensors": rows}
 
 
-def _below_every_step(mode, rate):
-    """Whether a sensor at `rate` can miss updates between polls: in lock-step mode when it is
-    polled slower than every step, in free mode always, since nothing holds the simulator still."""
+def _can_miss_updates(mode, rate):
     return mode == FREE or rate < STEP_HZ
 
 
 class _Run(typing.NamedTuple):
-    """What one loop returns. `waits` holds the wall time spent outside the reads, by timing
-    key; `extra` the result fields only that mode has."""
     steps: int | None
     steps_per_second: float | None
     simulated_s: float
@@ -453,13 +449,6 @@ def _run_lockstep(sim, tally, seconds, poll_rates, clock):
 
 
 def _run_free(sim, tally, timer_car, seconds, poll_rates, clock, sleep):
-    """Lets the simulator run on its own and polls on the wall-clock schedule in `rates`. The
-    Timer, on `timer_car`, is polled at the higher of the GPS and IMU rates, in its own request.
-    Each pass reads the clock once, polls the Timer if it is due, and ends the run when the
-    Timer has advanced `seconds` since its first reading. Past the wall-clock limit, `seconds`
-    x WALL_LIMIT_FACTOR, it raises SpikeError instead; a Timer that stands still reaches it too.
-    Otherwise the pass polls every sensor that is due, then sleeps until the next due time or
-    the limit, whichever is first. A Timer reading below the one before raises SpikeError."""
     timer_rate = max(poll_rates["gps"], poll_rates["imu"])
     limit = Fraction(seconds) * WALL_LIMIT_FACTOR
     sim.start_free_running(timer_car)
@@ -502,8 +491,6 @@ def _run_free(sim, tally, timer_car, seconds, poll_rates, clock, sleep):
 
 
 class _Tally:
-    """Everything one run measured, by (car, kind)."""
-
     def __init__(self, keys, streamed, dump):
         self.keys, self.streamed, self.dump = keys, streamed, dump
         self.suspect = {key: [] for key in keys}
@@ -520,9 +507,6 @@ class _Tally:
         self.reading_keys = {key: [] for key in keys}
 
     def read(self, sim, key, clock, loop_started, step, timer_s=None):
-        """Reads one sensor once and records the result. In free mode `timer_s` is the latest
-        Timer reading: a reading without its own time gets it, as TIMER_TIME, in place of the
-        poll time."""
         method = "stream" if key in self.streamed else "poll"
         started = clock()
         try:
@@ -608,7 +592,7 @@ def _loss_lines(result):
                          f"fewer than the {r['requested_update_hz']:g} Hz requested. "
                          f"Compare with a run at --rates all={STEP_HZ}.")
     buffered = sorted({r["sensor"] for r in result["sensors"]
-                       if r["sensor"] in BUFFERED_KINDS and _below_every_step(result["mode"], r["configured_rate_hz"])})
+                       if r["sensor"] in BUFFERED_KINDS and _can_miss_updates(result["mode"], r["configured_rate_hz"])})
     if buffered:
         lines.append(f"loss not checkable for {', '.join(buffered)}: a buffered sensor's capacity is not "
                      f"known, so compare its new readings with a run at --rates all={STEP_HZ}.")
@@ -645,9 +629,10 @@ def _free_lines(result):
     if result["mode"] != FREE:
         return []
     return ["mode free: the simulator ran on its own and was polled on a wall-clock schedule. poll_hz is "
-            "polls per wall second. simulated s, rate_hz, new_per_s and kB_per_s use Timer seconds. time "
-            "timer: the readings had no time of their own and got the latest Timer reading. The real-time "
-            "factor is what this run measured, not a target."]
+            "polls per wall second. simulated s, rate_hz, new_per_s and kB_per_s use Timer seconds. Where "
+            "time is timer, the readings had no time of their own and got the latest Timer reading, so "
+            "rate_hz and repeat there follow how often the Timer was polled; new_per_s does not. The "
+            "real-time factor is what this run measured, not a target."]
 
 
 def format_result(result):

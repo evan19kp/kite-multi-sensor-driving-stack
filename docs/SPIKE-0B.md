@@ -58,7 +58,7 @@ All four scripts take these options. `--home` is required for a real run.
 | `--timeout` | 300 | The longest wait, in seconds, for any one simulator call, including the map load. Must be above 0. See "Stopping a run". |
 | `--fake` | off | Use the fake simulator. Do not use it for the real run. |
 
-`spike_sensors.py` and `spike_multicar.py` also take `--rates` (how often each sensor is read, see "Reading each sensor at its own rate" under Run 2), `--dump-raw N` (default 0, which writes nothing; see "The raw GPS and IMU dump" under Run 2) and `--stream` (default off; see "Streaming the lidar and camera" under Run 2).
+`spike_sensors.py` and `spike_multicar.py` also take `--rates` (how often each sensor is read, see "Reading each sensor at its own rate" under Run 2), `--dump-raw N` (default 0, which writes nothing; see "The raw GPS and IMU dump" under Run 2), `--stream` (default off; see "Streaming the lidar and camera" under Run 2) and `--mode` (default `lockstep`; see "Letting the simulator run on its own" under Run 2).
 
 Each script starts BeamNG.tech itself and closes it when the run ends. Close any BeamNG.tech that is already running before you start a script. The bridge connects to the simulator on a fixed local port, so a second copy may block the connection.
 
@@ -82,8 +82,8 @@ Neither line comes with a traceback. The limit covers loading the map too, which
 
 The script ends BeamNG.tech the same way whether the run succeeded, failed, timed out or was stopped with Ctrl+C:
 
-1. After a normal run or an ordinary error, it removes the sensors, then closes BeamNG.tech.
-2. After Ctrl+C or a timeout, a call may have stopped halfway, so the script skips the sensors and closes BeamNG.tech straight away.
+1. After a normal run or an ordinary error, it removes the sensors, then closes BeamNG.tech. With `--mode free`, it pauses the simulator first. If the pause fails, the script skips the sensors, still closes BeamNG.tech, and reports the pause error.
+2. After Ctrl+C or a timeout, a call may have stopped halfway, so the script skips the pause and the sensors and closes BeamNG.tech straight away.
 3. If closing raises an error or takes longer than 20 seconds, the script ends the BeamNG.tech process that BeamNGpy launched and prints `BeamNG.tech not closed (<reason>); ended the process BeamNGpy launched`.
 
 If shutdown is slow, press Ctrl+C a second time. The script skips to step 3 at once.
@@ -398,6 +398,109 @@ Look at these numbers:
 
 Send back both printed outputs and both `sensors.json` files.
 
+#### Letting the simulator run on its own
+
+In your earlier runs one car reached about 0.1 times real time, and BeamNG.tech felt slow during the runs but smooth on its own. By default the scripts run the simulator in lock-step (`--mode lockstep`). The simulator waits after each step of 1/60 s until the script asks for the next one, and the script reads the sensors between steps. `--mode free` tests what happens when the simulator does not wait.
+
+With `--mode free`:
+
+- The bridge switches the simulator from lock-step to running on its own and resumes it. The script takes no steps.
+- It attaches a `Timer` sensor to our car (`kite1`). The Timer gives simulated seconds since the scenario started and does not advance while the simulator is paused. It is a clock only. Our car's position from the simulator is still ground truth and is still kept apart from sensor data.
+- It polls each sensor at its `--rates` rate per wall second, not per simulated second. The rule is below.
+- It polls the Timer in its own request, at the higher of the GPS and IMU rates. With the default rates that is 10 per wall second.
+- The run ends at the first Timer reading that is at least `--seconds` past the run's first Timer reading. `--seconds` therefore still counts simulated seconds.
+- If that has not happened after `--seconds` × 20 wall seconds, the run stops with an error. For the default of 30 seconds the limit is 600 wall seconds. A Timer that stands still, for example because the simulator is paused, reaches this limit. The run does not hang.
+
+Nobody has run free mode against the real simulator yet. Your run decides whether it works, and only your run can show a real-time factor. This mode claims no target.
+
+Run the script twice with the same rates, once in each mode:
+
+```powershell
+python bridge/spike_sensors.py --home "<your BeamNG.tech folder>" --out recordings/lockstep
+python bridge/spike_sensors.py --home "<your BeamNG.tech folder>" --mode free --out recordings/free
+```
+
+During the free run, watch the BeamNG.tech window. Say in your report whether it feels smooth, as it does when BeamNG.tech runs with traffic and no script, or slow, as in the lock-step runs.
+
+`--stream` and `--dump-raw N` work in free mode too. To see both changes together, add a third run with `--mode free --stream --out recordings/free-stream`.
+
+##### The wall-clock schedule
+
+A sensor at rate `r` is due at `k / r` wall seconds after the run starts, for k = 0, 1, 2 and so on. The script works in passes. Each pass reads the wall clock once. It polls the Timer if the Timer is due, then polls each sensor that is due, once, in the usual order. It then sleeps until the next due time. A polled sensor's next due time is the first `k / r` after the start of the pass.
+
+The polls themselves take time, about 21 ms each in your earlier runs. When a pass runs late, each sensor that is due is polled once, and the due times it missed are skipped. They are not made up later in a burst. For example, at 20 polls per second a sensor is due every 0.05 s. If a pass takes 0.2 s, the sensor is polled once at the next pass and is next due at the first multiple of 0.05 s after that pass started. So `polls` can be lower than the rate times the wall seconds. That gap shows that the polls cannot keep up.
+
+With polls that take no time, a run of W wall seconds gives each sensor `ceil(W × r)` polls. On the fake simulator, which runs at real time, a 2-second run at the default rates gives 40 polls of lidar, camera and radar and 20 of GPS and IMU. The rule and the exact arithmetic are in `bridge/kite_bridge/rates.py`.
+
+##### Which clock each number uses
+
+| Number | Clock in free mode |
+|---|---|
+| `poll_hz`, `--rates` | Polls per wall second. |
+| `simulated s`, `rate_hz`, `new_per_s`, `kB_per_s` | Timer seconds: the last Timer reading minus the first. |
+| `wall s`, `mean_ms` to `max_ms`, `read_s`, `per_poll_ms` | Wall seconds. |
+| `real-time factor` | Timer seconds divided by wall seconds. |
+
+The `time` column shows `timer` for a sensor whose readings carry no time of their own. Your earlier runs showed that the lidar, camera and radar readings have no time. Such a reading gets the latest Timer reading as its approximate time. The Timer is polled less often than the lidar, camera and radar, so several of their readings share one Timer value. For those sensors, `rate_hz` follows how often the Timer was polled, and `repeat` counts readings that share a Timer value. Use `new_per_s` for how often their content changed. GPS and IMU keep their own `time`.
+
+The `possible loss` note and the `loss not checkable for gps, imu` line work as under "Reading each sensor at its own rate". The difference is that every sensor counts as read slower than every step, because nothing holds the simulator still between polls. The note says `polls per wall second`.
+
+##### Where the time goes in free mode
+
+There are no steps, so `steps per second` is replaced by a line that gives the Timer's poll count and rate. The `timing:` block splits the wall time from just before the first Timer poll to the end of the last one. These parts add up to the wall time:
+
+- `waiting to poll`: time asleep until the next sensor or the Timer was due. A large share means the bridge kept up with its rates and had time to spare.
+- `in Timer polls`: time inside the Timer's poll requests.
+- `in sensor reads` (or `in sensor polls` and `in stream reads` with `--stream`): as in lock-step mode.
+- `our processing`: the remainder, as in lock-step mode.
+
+The `timing:` line says `simulated s (Timer)`. On the fake simulator the factor is about 1.000 because the fake runs at real time by construction. That number says nothing about BeamNG.tech.
+
+Look at these numbers:
+
+- The real-time factor in both runs. If free mode reads close to 1.0 while lock-step reads about 0.1, the stepping held the simulator back.
+- `polls` against the rate times the wall seconds. If `polls` is much lower, the sensor reads cannot keep up with the rates. `waiting to poll` is then near 0 and `in sensor reads` takes most of the wall time.
+- `new_per_s` in both runs, for every sensor. Fewer new readings in free mode can mean that the simulator made updates the polls did not collect.
+
+##### What free mode changes in the output and the JSON
+
+With `--seconds 2` on the fake simulator, default rates (the `sensor:` lines are left out, and the second table is cut):
+
+```
+cars: 1  mode: free, the Timer polled 21 times at 10 per wall second
+car    sensor   polls  rate_hz   time  per_poll  mean_ms  p50_ms  p95_ms  max_ms  empty  repeat  unexp  points  detect
+kite1  lidar       40    10.00 sensor         1     0.05    0.05    0.06    0.10      0      20      0    1017     n/a
+kite1  camera      40    20.00 sensor         1     0.01    0.01    0.01    0.01      0       0      0     n/a     n/a
+kite1  radar       40    20.00 sensor         1     0.01    0.01    0.01    0.01      0       0      0     n/a     n/a
+kite1  gps         20    10.00 sensor         1     0.00    0.00    0.01    0.01      0       0      0     n/a     n/a
+kite1  imu         20    10.00 sensor        10     0.01    0.01    0.01    0.01      0       0      0     n/a     n/a
+timing: 2.000 simulated s (Timer) in 2.001 wall s, real-time factor 1.000
+  waiting to poll       1.990 s   99.5%
+  in Timer polls        0.000 s    0.0%
+  in sensor reads       0.003 s    0.1%
+  our processing        0.008 s    0.4%
+...
+```
+
+The fake's polled lidar, camera and radar carry a time, so they show `sensor` here. The streamed ones do not, so with `--stream` they show `timer`.
+
+After the `rate_hz:` footer line, a `mode free:` line says which clock each number uses. The JSON has:
+
+- `"mode"`: `"free"`, or `"lockstep"` in a lock-step run.
+- `"steps"` and `"steps_per_second"`: `null`.
+- `"timer"`: `{"polls": ..., "rate_hz": ...}`.
+- Under `timing`: `idle_s` (waiting to poll) and `timer_reads_s` (in Timer polls) in place of `step_wait_s`.
+
+In `raw_gps_imu.json`, an entry's `step` is `null` in free mode, because no steps are taken. `wall_s` is measured from the start of the run.
+
+If the wall-clock limit is reached, the script pauses the simulator, removes the sensors, closes BeamNG.tech and exits with code 1. It writes no `sensors.json` and prints one line, for example:
+
+```
+error: free run: the Timer advanced 0.625 of 1 simulated s in the wall-clock limit of 20 s (--seconds x 20)
+```
+
+Send that line back. It means the simulator ran at less than 1/20 of real time, or that it was paused. Ctrl+C works as described under "Stopping a run".
+
 #### Footer lines
 
 The `rate_hz:` explanation line always prints. The other footer lines appear only when they apply:
@@ -405,7 +508,8 @@ The `rate_hz:` explanation line always prints. The other footer lines appear onl
 - `possible loss: <car> <sensor> ...` appears for each lidar, camera or radar row that meets the rule under "Reading each sensor at its own rate".
 - `loss not checkable for ...` appears when GPS or IMU is polled slower than every step.
 - `<car> <sensor>: polls returned up to N readings...` appears when `per_poll` is above 1.
-- `no sensor time for <car> <sensor>, <car> <sensor>: rate_hz there is the polling rate, not the sensor's` is one line that lists every affected sensor, separated by commas. It appears when at least one sensor has `time` of `poll` or `mixed`.
+- `no sensor time for <car> <sensor>, <car> <sensor>: rate_hz there is the polling rate, not the sensor's` is one line that lists every affected sensor, separated by commas. It appears when at least one sensor has `time` of `poll`, `timer` or `mixed`.
+- With `--mode free` only: the `mode free:` line, which says which clock each number uses. See "Letting the simulator run on its own".
 - `unexpected format: <car> <sensor> N readings, first: ...` appears when `unexp` is above 0. It prints the first message for each sensor, so send those lines back in full. A poll that raised an error reads `first: poll raised <type>: <message>`.
 - With `--stream` only: the `stream:` line always, and `suspect: <car> <sensor> dropped N readings and cut M all-zero rows` for each streamed sensor where either count is above 0, with `, first reason: ...` when a reading was dropped. See "Streaming the lidar and camera".
 
@@ -423,6 +527,7 @@ A missing reading is never filled in. An empty poll counts under `empty`, and an
 - `recordings/every-step/sensors.json` and `recordings/default-rates/sensors.json`.
 - `recordings/raw_gps_imu.json`, from a run with `--dump-raw 50` (see "The raw GPS and IMU dump").
 - The printed output and `sensors.json` of both runs under "Streaming the lidar and camera" (`recordings/poll` and `recordings/stream`).
+- The printed output and `sensors.json` of both runs under "Letting the simulator run on its own" (`recordings/lockstep` and `recordings/free`), and whether the BeamNG.tech window felt smooth during the free run.
 - The BeamNGpy version lines (from Run 1 and the `pip show` output).
 - Any error, in full.
 
@@ -448,7 +553,7 @@ python bridge/spike_multicar.py --home "<your BeamNG.tech folder>"
 
 The five `sensor:` lines once, then three blocks, one for each case. Each block starts with a `spawned` line that lists the cars of that case, then a blank line and the same summary line, table and footer lines as Run 2, then `wrote ...multicar.json`. The summary lines read `cars: 1`, `cars: 2` and `cars: 4`, and the table has one row per sensor per car (`kite1` to `kite4`). Each case also prints the `timing:` block and the second table (see "Where the time goes" and "New readings and bytes" under Run 2). Compare the `steps per second` figure and the real-time factor across the three cases to see whether more cars slow the simulator, and compare `waiting for steps` with `in sensor reads` to see which part grows. With `--stream`, the timing block prints `in sensor polls` and `in stream reads` in place of `in sensor reads`, so compare `waiting for steps` with both. `--dump-raw N` writes `raw_gps_imu.json` with one case per car count and N GPS and N IMU readings per car.
 
-`--rates` applies to every case, with the same default as Run 2. Each case prints `poll_hz` and `req_hz` and the loss notes. To compare with the old behaviour, run it once more with `--rates all=60`. `--stream` also applies to every case, with the same extra columns and lines as Run 2.
+`--rates` applies to every case, with the same default as Run 2. Each case prints `poll_hz` and `req_hz` and the loss notes. To compare with the old behaviour, run it once more with `--rates all=60`. `--stream` also applies to every case, with the same extra columns and lines as Run 2. So does `--mode free`: each case runs free, prints the Timer line and the free-mode timing block, and stops at the wall-clock limit if its Timer falls behind. With more cars, compare the real-time factor across the cases in both modes.
 
 The script rewrites `multicar.json` after each case, so a run that fails in case 2 still leaves the result of case 1.
 
