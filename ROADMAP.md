@@ -255,6 +255,45 @@ clean shutdown and output that stays out of the repo. No speed work (that is Spr
   ../<repo>/docs` refused; `recordings/a`, `scratch/b` and a temporary folder outside the repo
   accepted.
 
+## Sprint 0B.2
+
+Measure how fast the bridge gets sensor data out of BeamNG.tech, then read less and wait less
+(per-sensor rates, streaming, free-running). This sprint measures; it claims no target is met
+unless Evan's run prints it. Agents never run the real simulator; every test uses the fake.
+
+- [ ] **R31 Describe the provenance marker without spelling it** (docs, Sonnet): `bridge/README.md`
+  and `docs/SPIKE-0B.md` describe the `provenance` field and point to the constant in
+  `bridge/kite_bridge/output_guard.py` without the full text. Tests: the full marker text (built
+  from the constant) appears in no file under `bridge/` or `docs/` except
+  `bridge/kite_bridge/output_guard.py` and `bridge/tests/test_output_guard.py`.
+- [ ] **R32 Timing breakdown, real-time factor, fresh-data counts and a raw GPS/IMU dump** (feat,
+  Sonnet; needs R31): every measuring script prints and writes to JSON wall time waiting for steps,
+  in each sensor's reads (total and per poll) and in our own processing, simulated and wall seconds
+  and the real-time factor; per sensor new readings and bytes per simulated second; `--dump-raw N`
+  writes the first N raw GPS and IMU readings per car to `raw_gps_imu.json` under `--out` with poll
+  wall time and step count; `docs/SPIKE-0B.md` explains each number. Tests (fake only): known
+  per-request, step costs and update rates give the hand-computed breakdown, real-time factor and
+  new-reading counts; identical readings are not new; the dump has N entries per car and nothing
+  else.
+- [ ] **R33 Read each sensor at its own rate** (perf, Sonnet; needs R32): `--rates` in polls per
+  simulated second per sensor (default `lidar=20,camera=20,radar=20,gps=10,imu=10`; `all=60` is
+  today's behaviour) in every measuring script; the summary prints new readings per simulated second
+  beside the configured rate and a `possible loss` note; `docs/SPIKE-0B.md` updated. Tests (fake
+  only): default rates lose no new readings against `all=60` with fewer polls (hand-computed); a
+  rate above 60 or <= 0 is a usage error.
+- [ ] **R34 Streaming reads for lidar and camera** (perf, Opus builder; needs R32): `--stream`
+  (default off) creates lidar and camera with `is_streaming=True` and reads them with `stream()`;
+  untrustworthy streamed lidar rows and wrong-size camera images are counted under `suspect` and
+  dropped; streamed reads timed separately; `docs/SPIKE-0B.md` updated. Tests (fake only): valid
+  scan followed by stale or zero rows, unchanged memory not new, wrong-size image, `--stream` off
+  unchanged.
+- [ ] **R35 Free-running mode** (feat, Opus builder; needs R32, R33): `--mode lockstep|free`
+  (default `lockstep`); `free` runs the simulator on its own, polls sensors on a wall-clock schedule
+  at their rates, reads simulated time from a `Timer` sensor, ends at `--seconds` of Timer time or
+  errors after `--seconds` x 20 of wall time; real-time factor from the Timer; shutdown pauses
+  before removing sensors; `docs/SPIKE-0B.md` updated. Tests (fake only): self-advancing fake clock,
+  hand-computed poll counts, stop at `--seconds`, wall-clock limit, clean Ctrl+C.
+
 ## Later
 
 Planned, not scheduled. Do not pick these up as roadmap items.
