@@ -191,16 +191,25 @@ def session(args):
 
 
 def _shut_down(sim, in_step, close_wait):
-    """Ends BeamNG.tech without waiting forever. Removes the sensors only while the connection is
-    `in_step`, then closes; if close raises or overruns `close_wait`, or Ctrl+C comes during
-    either, ends the process BeamNGpy launched. Returns whether BeamNG.tech ended, and the close
-    or Ctrl+C failure, else the removal failure, else None."""
+    """Ends BeamNG.tech without waiting forever. Only while the connection is `in_step`, pauses a
+    free-running simulator and then removes the sensors; then closes. If close raises or overruns
+    `close_wait`, or Ctrl+C comes during either, ends the process BeamNGpy launched.
+
+    A pause that raises, a timeout included, is printed as one `warning: could not pause` line
+    whatever the run's outcome, skips the removal and counts like a removal failure. Returns
+    whether BeamNG.tech ended, and the close or Ctrl+C failure, else the pause or removal
+    failure, else None."""
     removal_failure = None
     try:
         if in_step:
             try:
                 if sim.free_running:
-                    sim.pause()
+                    try:
+                        sim.pause()
+                    except Exception as error:
+                        print(f"warning: could not pause: {type(error).__name__}: {error}; sensors not removed",
+                              file=sys.stderr)
+                        raise
                 sim.remove_sensors()
             except Exception as error:
                 removal_failure = error
@@ -322,7 +331,10 @@ def measure_sensors(sim, cars, seconds, clock=None, dump=None, poll_rates=None, 
     the wall-clock schedule in `rates`, so the rates are polls per wall second. The Timer, on
     the first car, is polled in its own request at the higher of the GPS and IMU rates. The run
     ends at the first Timer reading `seconds` past its first one, and raises SpikeError after
-    `seconds` x WALL_LIMIT_FACTOR wall seconds, or when the Timer goes back. `simulated_s` is
+    `seconds` x WALL_LIMIT_FACTOR wall seconds, when the Timer goes back, or when a Timer
+    reading is not finite seconds >= 0. Unlike a sensor reading outside its input domain, which
+    counts under `unexp`, a bad Timer reading stops the run, because the Timer decides when it
+    ends. `simulated_s` is
     how far the Timer advanced. A reading without its own time gets the latest Timer reading,
     with `time_source` TIMER_TIME. The timing has `idle_s` (sleeping until the next poll is due) and `timer_reads_s` (inside the
     Timer polls) in place of `step_wait_s`; `steps` and `steps_per_second` are None, a dump
@@ -462,7 +474,10 @@ def _run_free(sim, tally, timer_car, seconds, poll_rates, clock, sleep):
         now = clock() - loop_started
         if now >= timer_due:
             started = clock()
-            timer = sim.timer_seconds()
+            try:
+                timer = sim.timer_seconds()
+            except ValueError as error:
+                raise SpikeError(f"free run: unusable Timer reading: {error}") from error
             timer_time += clock() - started
             timer_polls += 1
             if first is None:

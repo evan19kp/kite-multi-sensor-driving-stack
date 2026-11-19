@@ -488,8 +488,46 @@ class ScriptTest(unittest.TestCase):
 
         code, _, stderr, (sim,) = self.run_main("--mode", "free", sim_class=FailingPause)
         self.assertEqual(code, 1)
+        self.assertIn("warning: could not pause: RuntimeError: pause failed; sensors not removed", stderr)
         self.assertEqual(stderr[-1], "error: RuntimeError: pause failed")
         self.assertEqual(sim.events[-2:], ["pause", "close"])
+
+    def test_a_failed_run_whose_pause_also_fails_reports_both_and_still_closes(self):
+        class FailingPause(Recording):
+            def pause(self):
+                self.events.append("pause")
+                raise RuntimeError("pause failed")
+
+        # At 1/32 of real time the run hits the wall-clock limit (see WallClockLimitTest).
+        code, _, stderr, (sim,) = self.run_main("--mode", "free", sim_class=FailingPause, free_speed=1 / 32)
+        self.assertEqual(code, 1)
+        self.assertEqual(stderr, ["warning: could not pause: RuntimeError: pause failed; sensors not removed",
+                                  "error: free run: the Timer advanced 0.625 of 1 simulated s in the wall-clock "
+                                  "limit of 20 s (--seconds x 20)"])
+        self.assertEqual(sim.events[sim.events.index("pause"):], ["pause", "close"])
+
+    def test_a_pause_that_times_out_is_reported_and_ends_the_run_as_a_timeout(self):
+        class TimedOutPause(Recording):
+            def pause(self):
+                self.events.append("pause")
+                raise socket.timeout("timed out")
+
+        code, _, stderr, (sim,) = self.run_main("--mode", "free", sim_class=TimedOutPause)
+        self.assertEqual((code, stderr), (1, ["warning: could not pause: TimeoutError: timed out; sensors not removed",
+                                              "timed out after 300 s: BeamNG.tech closed"]))
+        self.assertEqual(sim.events[sim.events.index("pause"):], ["pause", "close"])
+
+    def test_a_timer_reading_that_is_not_a_number_is_one_clean_error_line(self):
+        class TextTimer(Recording):
+            def timer_seconds(self):
+                self.events.append("timer")
+                return timer_value("1.0")
+
+        code, _, stderr, (sim,) = self.run_main("--mode", "free", sim_class=TextTimer)
+        self.assertEqual((code, stderr), (1, ["error: free run: unusable Timer reading: Timer time is not a number: "
+                                              "got str"]))
+        self.assertEqual(sim.events[-3:], ["pause", "remove sensors", "close"])
+        self.assertFalse((self.out / "sensors.json").exists())
 
     def test_an_unknown_mode_is_a_usage_error(self):
         code, stdout, stderr = run_script("spike_sensors", "--fake", "--mode", "fast", "--out", str(self.out))

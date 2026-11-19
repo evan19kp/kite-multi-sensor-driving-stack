@@ -136,7 +136,7 @@ class Simulator(ABC):
     def timer_seconds(self) -> float:
         """Poll the Timer that `start_free_running` attached: simulated seconds since the
         scenario started, finite and >= 0. It does not advance while the simulator is paused.
-        A clock, not ground truth of anything else."""
+        A clock, not ground truth of anything else. Raises ValueError for any other reading."""
 
     @abstractmethod
     def lidar_points(self, car: str) -> list[tuple[float, float, float]] | None:
