@@ -12,9 +12,10 @@ the spikes on it, and nothing here has run against an installed Rerun yet.
 - `kite_bridge/beamng_adapter.py`: the real simulator. The only module that imports `beamngpy`,
   and only inside methods. None of its BeamNGpy calls has run against BeamNGpy 1.36 yet. Calls
   whose name, arguments or result format are guesses carry an `# ASSUMPTION:` comment.
-- `kite_bridge/readings.py`: turns a BeamNGpy poll result into a reading. It does not import
-  `beamngpy`, so tests drive it with plain dicts and lists. Its format guesses are marked
-  ASSUMPTION too.
+- `kite_bridge/readings.py`: turns a BeamNGpy poll result into plain data: a reading for any
+  sensor, the lidar points or the camera image. An empty poll, including a lidar scan with no
+  points, is no reading. It does not import `beamngpy`, so tests drive it with plain dicts and
+  lists. Its format guesses are marked ASSUMPTION too.
 - `kite_bridge/fake_sim.py`: a seeded synthetic simulator with configurable sensor rates,
   dropouts, repeated readings and latency. All tests use it.
 - `kite_bridge/measure.py`: pure measurement functions (effective rate, latency statistics,
@@ -67,9 +68,9 @@ step, logs on one `sim_time` timeline: lidar points coloured by distance from ou
 red at 50 m and beyond) under `world/ego/lidar` and the camera image under `camera/image`. Our
 position and the traffic cars' positions come from simulator state, so they are ground truth,
 shown for display only under `ground_truth/ego/position` and `ground_truth/other_cars`; hide the
-`ground_truth/` root in the viewer to see sensor data alone. When the lidar gives no reading on a
-step, nothing is logged for it and the script prints how many steps that was. It takes the common
-options above plus `--save NAME.rrd`.
+`ground_truth/` root in the viewer to see sensor data alone. When the lidar or the camera gives no
+reading on a step, nothing is logged for that sensor and the script prints how many steps that
+was. It takes the common options above plus `--save NAME.rrd`.
 
 - Without `--save` it spawns a Rerun viewer.
 - With `--save` it writes `<--out>/NAME.rrd` and opens no viewer; open the file later with

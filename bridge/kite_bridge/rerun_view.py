@@ -29,15 +29,17 @@ def distance_colour(distance_m):
 def log_step(recorder, sim_time, ego, lidar_points, image, others=None):
     """Logs one simulator step: the time, the lidar points coloured by distance from `ego`, `ego`
     itself under EGO_PATH and the camera `image`. `lidar_points` is None when the lidar gave no
-    reading, and then no lidar is logged; a list, even an empty one, is a scan. `others` is the
-    traffic's ground truth, or None when it is unavailable; a list, even an empty one, is
-    logged under GROUND_TRUTH_PATH."""
+    reading, and then no lidar is logged; a list, even an empty one, is a scan. `image` is None
+    when the camera gave no reading, and then no image is logged. `others` is the traffic's
+    ground truth, or None when it is unavailable; a list, even an empty one, is logged under
+    GROUND_TRUTH_PATH."""
     recorder.set_time(sim_time)
     if lidar_points is not None:
         recorder.log_points(LIDAR_PATH, lidar_points,
                             [distance_colour(math.dist(point, ego)) for point in lidar_points])
     recorder.log_points(EGO_PATH, [ego], [EGO_COLOUR])
-    recorder.log_image(CAMERA_PATH, image)
+    if image is not None:
+        recorder.log_image(CAMERA_PATH, image)
     if others is not None:
         recorder.log_points(GROUND_TRUTH_PATH, others, [GROUND_TRUTH_COLOUR] * len(others))
 

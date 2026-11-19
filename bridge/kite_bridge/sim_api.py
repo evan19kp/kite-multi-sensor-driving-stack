@@ -83,13 +83,12 @@ class Simulator(ABC):
     @abstractmethod
     def lidar_points(self, car: str) -> list[tuple[float, float, float]] | None:
         """The car's latest lidar scan as (x, y, z) points in world metres. Needs the sensors
-        attached. None means the lidar gave no reading; an empty list means a scan with no
-        points."""
+        attached. None means the lidar gave no reading, which includes a scan with no points."""
 
     @abstractmethod
-    def camera_image(self, car: str) -> list[list[tuple[int, int, int]]]:
+    def camera_image(self, car: str) -> list[list[tuple[int, int, int]]] | None:
         """The car's latest camera image as rows of (red, green, blue) pixels, 0 to 255.
-        Needs the sensors attached."""
+        Needs the sensors attached. None means the camera gave no reading."""
 
     @abstractmethod
     def other_positions(self) -> list[tuple[float, float, float]]:

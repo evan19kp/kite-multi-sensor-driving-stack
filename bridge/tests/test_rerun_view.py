@@ -5,6 +5,7 @@ import re
 import subprocess
 import sys
 import tempfile
+import types
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -12,7 +13,7 @@ from unittest import mock
 from tests import BRIDGE_DIR
 from kite_bridge import common, rerun_view
 from kite_bridge.fake_sim import FakeSim
-from kite_bridge.readings import image_from_raw, points_from_raw
+from kite_bridge.readings import image_from_raw, points_from_raw, reading_from_raw
 from kite_bridge.rerun_view import (CAMERA_PATH, EGO_PATH, GROUND_TRUTH_PATH, LIDAR_PATH,
                                     distance_colour, log_step)
 
@@ -120,6 +121,11 @@ class LogStepTest(unittest.TestCase):
         self.assertEqual(missing.paths(), [EGO_PATH, CAMERA_PATH])
         self.assertEqual(empty.points_at(LIDAR_PATH), [("points", LIDAR_PATH, [], [])])
 
+    def test_a_missing_camera_reading_logs_no_image(self):
+        rec = RecordingRecorder()
+        log_step(rec, 0.0, (0.0, 0.0, 0.0), [(5.0, 0.0, 0.0)], None)
+        self.assertEqual(rec.paths(), [LIDAR_PATH, EGO_PATH])
+
     def test_no_traffic_information_logs_no_ground_truth(self):
         rec = RecordingRecorder()
         log_step(rec, 0.0, (0.0, 0.0, 0.0), [(5.0, 0.0, 0.0)], IMAGE, None)
@@ -203,24 +209,30 @@ class ReadingsTest(unittest.TestCase):
         raw = {"pointCloud": [[1, 2, 3, 99], [4.5, 5, 6, 99]], "colours": []}
         self.assertEqual(points_from_raw(raw), [(1.0, 2.0, 3.0), (4.5, 5.0, 6.0)])
 
-    def test_an_empty_poll_is_no_reading_not_an_empty_scan(self):
-        self.assertIsNone(points_from_raw({}))
-        self.assertIsNone(points_from_raw(None))
-        self.assertEqual(points_from_raw({"pointCloud": []}), [])
+    def test_an_empty_poll_or_a_scan_with_no_points_is_no_reading_for_both_converters(self):
+        for raw in ({}, None, [], {"time": 4.0, "pointCloud": []}):
+            self.assertIsNone(points_from_raw(raw), raw)
+            reading = reading_from_raw("lidar", raw, 7.5)
+            self.assertIsNone(reading.timestamp, raw)
+            self.assertIsNone(reading.unexpected, raw)
 
     def test_an_unexpected_format_is_an_error(self):
-        with self.assertRaisesRegex(ValueError, "no 'pointCloud' in \\['other'\\]"):
+        with self.assertRaisesRegex(ValueError, "no 'pointCloud'; got \\['other'\\]"):
             points_from_raw({"other": 1})
 
     def test_the_camera_image_becomes_rows_of_pixels(self):
         self.assertEqual(image_from_raw({"colour": Image()}),
                          [[(1, 2, 3), (4, 5, 6)], [(7, 8, 9), (10, 11, 12)]])
 
+    def test_an_empty_camera_poll_is_no_reading(self):
+        for raw in ({}, None, []):
+            self.assertIsNone(image_from_raw(raw), raw)
+
     def test_a_camera_reading_without_colour_is_an_error(self):
         with self.assertRaisesRegex(ValueError, "no 'colour'"):
             image_from_raw({"depth": 1})
         with self.assertRaisesRegex(ValueError, "no 'colour' in list"):
-            image_from_raw([])
+            image_from_raw([{"depth": 1}])
 
 
 class ScriptTest(unittest.TestCase):
@@ -288,7 +300,19 @@ class ScriptTest(unittest.TestCase):
         self.assertEqual(len(self.recorder.points_at(EGO_PATH)), 60)
         self.assertEqual(stdout.count("lidar gave no reading on 15 of 60 steps"), 1)
 
-    def test_a_run_with_every_lidar_reading_prints_no_lidar_warning(self):
+    def test_steps_without_a_camera_reading_log_no_image_and_the_run_says_how_many(self):
+        class FlakyCamera(FakeSim):
+            def camera_image(self, car):
+                image = super().camera_image(car)
+                return None if self._steps % 3 == 0 else image
+
+        code, stdout, _ = self.run_main("--seconds", "1", "--traffic", "0", sim_class=FlakyCamera)
+        self.assertEqual(code, 0)
+        self.assertEqual(len([c for c in self.recorder.calls if c[0] == "image"]), 40)
+        self.assertEqual(len(self.recorder.points_at(LIDAR_PATH)), 60)
+        self.assertEqual(stdout.count("camera gave no reading on 20 of 60 steps"), 1)
+
+    def test_a_run_with_every_reading_prints_no_missing_reading_warning(self):
         _, stdout, _ = self.run_main("--seconds", "1", "--traffic", "0")
         self.assertNotIn("no reading", stdout)
 
@@ -369,6 +393,66 @@ class CommandLineTest(unittest.TestCase):
             self.assertIn("logged 60 steps", stdout)
             self.assertIn(str(out / "demo.rrd"), stdout)
             self.assertFalse(out.exists())
+
+
+NEW_RERUN = ("init", "save", "set_time", "log", "Points3D", "Image", "disconnect")
+OLD_RERUN = ("init", "save", "set_time_seconds", "log", "Points3D", "Image", "disconnect")
+
+
+class RerunRecorderTest(unittest.TestCase):
+    def recorder(self, save_path=None, api=NEW_RERUN):
+        fake = types.ModuleType("rerun")
+        for name in api:
+            setattr(fake, name, mock.Mock(name=name))
+        with mock.patch.dict(sys.modules, {"rerun": fake}):
+            recorder = rerun_view.RerunRecorder(save_path)
+        self.assertNotIn("rerun", sys.modules)
+        return recorder, fake
+
+    def test_without_save_it_spawns_a_viewer_and_writes_no_file(self):
+        _, fake = self.recorder()
+        fake.init.assert_called_once_with("kite_lidar", spawn=True)
+        fake.save.assert_not_called()
+
+    def test_with_save_it_records_to_the_file_and_spawns_no_viewer(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "out" / "day1" / "demo.rrd"
+            _, fake = self.recorder(path)
+            self.assertTrue(path.parent.is_dir())
+            self.assertFalse(path.exists())
+        fake.init.assert_called_once_with("kite_lidar")
+        fake.save.assert_called_once_with(str(path))
+
+    def test_time_uses_set_time_when_rerun_has_it_else_set_time_seconds(self):
+        new, new_fake = self.recorder()
+        new.set_time(1.5)
+        new_fake.set_time.assert_called_once_with("sim_time", duration=1.5)
+        old, old_fake = self.recorder(api=OLD_RERUN)
+        old.set_time(1.5)
+        old_fake.set_time_seconds.assert_called_once_with("sim_time", 1.5)
+
+    def test_a_step_reaches_rerun_as_plain_lists_on_the_entity_paths(self):
+        recorder, fake = self.recorder()
+        ego, lidar, others = (0.0, 0.0, 0.0), [(5.0, 0.0, 0.0)], [(40.0, 3.5, 0.0)]
+        log_step(recorder, 1.5, ego, lidar, IMAGE, others)
+        self.assertEqual(fake.Points3D.call_args_list, [
+            mock.call(lidar, colors=[distance_colour(5.0)]),
+            mock.call([ego], colors=[rerun_view.EGO_COLOUR]),
+            mock.call(others, colors=[rerun_view.GROUND_TRUTH_COLOUR])])
+        for call in fake.Points3D.call_args_list:
+            self.assertIs(type(call.args[0]), list)
+            self.assertIs(type(call.kwargs["colors"]), list)
+        fake.Image.assert_called_once_with(IMAGE)
+        self.assertEqual([call.args for call in fake.log.call_args_list], [
+            (LIDAR_PATH, fake.Points3D.return_value),
+            (EGO_PATH, fake.Points3D.return_value),
+            (CAMERA_PATH, fake.Image.return_value),
+            (GROUND_TRUTH_PATH, fake.Points3D.return_value)])
+
+    def test_close_disconnects(self):
+        recorder, fake = self.recorder()
+        recorder.close()
+        fake.disconnect.assert_called_once_with()
 
 
 class NoRerunTest(unittest.TestCase):
