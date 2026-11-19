@@ -9,7 +9,7 @@ checks them.
 
 import importlib.metadata
 
-from kite_bridge.readings import reading_from_raw
+from kite_bridge.readings import image_from_raw, points_from_raw, reading_from_raw
 from kite_bridge.sim_api import STEP_HZ, Simulator, release
 
 PORT = 25252
@@ -94,6 +94,24 @@ class BeamNGAdapter(Simulator):
 
     def poll(self, car, kind):
         return reading_from_raw(kind, self._sensors[(car, kind)].poll(), self.sim_time)
+
+    def lidar_points(self, car):
+        return points_from_raw(self._sensors[(car, "lidar")].poll())
+
+    def camera_image(self, car):
+        return image_from_raw(self._sensors[(car, "camera")].poll())
+
+    def other_positions(self):
+        positions = []
+        for name, vehicle in self._bng.vehicles.get_current().items():  # ASSUMPTION: a dict of every vehicle by name in 1.36
+            if name in self._vehicles:
+                continue
+            if not vehicle.is_connected():  # ASSUMPTION: traffic cars need connecting before their state can be polled
+                vehicle.connect(self._bng)
+            vehicle.sensors.poll()  # ASSUMPTION: refreshes vehicle.state in 1.36
+            x, y, z = vehicle.state["pos"]
+            positions.append((float(x), float(y), float(z)))
+        return positions
 
     def step(self, n=1):
         self._bng.control.step(n)  # ASSUMPTION: the 1.36 call, and it returns once the n steps are done

@@ -7,12 +7,19 @@ from kite_bridge.sim_api import POLL_TIME, SENSOR_KINDS, STEP_HZ, Reading, Simul
 DEFAULT_RATES = {"lidar": 10.0, "camera": 20.0, "radar": 20.0, "gps": 10.0, "imu": 100.0}
 DEFAULT_MODELS = ("fake_sedan", "fake_cherrier_tograc", "fake_van")
 FAKE_SPEED_M_S = 10.0
+FAKE_LIDAR_POINTS = 200
+FAKE_LIDAR_RANGE_M = 60.0
+FAKE_IMAGE_WIDTH = 8
+FAKE_IMAGE_HEIGHT = 4
+FAKE_TRAFFIC_GAP_M = 15.0
+FAKE_LANE_M = 3.5
 
 
 class FakeSim(Simulator):
     def __init__(self, seed=0, rates=None, dropout=0.0, repeat=0.0, latency=0.0,
                  models=DEFAULT_MODELS, sensor_time=True):
         self._sensor_time = sensor_time
+        self._seed = seed
         self._rng = random.Random(seed)
         self._rates = dict(DEFAULT_RATES if rates is None else rates)
         self._dropout = dropout
@@ -57,8 +64,7 @@ class FakeSim(Simulator):
             self.injected[(car, kind)] = {"empty": 0, "repeated": 0}
 
     def poll(self, car, kind):
-        if (car, kind) not in self._attached:
-            raise KeyError(f"sensor {kind!r} is not attached to {car!r}")
+        self._require_attached(car, kind)
         if self._latency:
             time.sleep(self._latency)
         key = (car, kind)
@@ -86,6 +92,32 @@ class FakeSim(Simulator):
             if mode == "traffic":
                 x, y, z = self._positions[car]
                 self._positions[car] = (x + FAKE_SPEED_M_S * n / STEP_HZ, y, z)
+
+    def lidar_points(self, car):
+        self._require_attached(car, "lidar")
+        rng = random.Random(f"{self._seed}:{self._steps}")
+        x, y, z = self._positions[car]
+        points = []
+        for _ in range(FAKE_LIDAR_POINTS):
+            angle = rng.uniform(0.0, 2.0 * math.pi)
+            radius = rng.uniform(1.0, FAKE_LIDAR_RANGE_M)
+            points.append((x + radius * math.cos(angle), y + radius * math.sin(angle), z + rng.uniform(0.0, 3.0)))
+        return points
+
+    def camera_image(self, car):
+        self._require_attached(car, "camera")
+        shift = self._steps % FAKE_IMAGE_WIDTH
+        return [[(255 * ((column + shift) % FAKE_IMAGE_WIDTH) // (FAKE_IMAGE_WIDTH - 1), 60 * row, 128)
+                 for column in range(FAKE_IMAGE_WIDTH)] for row in range(FAKE_IMAGE_HEIGHT)]
+
+    def other_positions(self):
+        travelled = FAKE_SPEED_M_S * self.sim_time
+        return [(FAKE_TRAFFIC_GAP_M * (i + 1) + travelled, FAKE_LANE_M * (-1) ** i, 0.0)
+                for i in range(self.traffic_requested or 0)]
+
+    def _require_attached(self, car, kind):
+        if (car, kind) not in self._attached:
+            raise KeyError(f"sensor {kind!r} is not attached to {car!r}")
 
     def set_ai_mode(self, car, mode):
         self._modes[car] = mode

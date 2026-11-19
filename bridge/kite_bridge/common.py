@@ -33,7 +33,7 @@ def _count(text):
     return value
 
 
-def parse_args(description, argv=None):
+def parse_args(description, argv=None, extra=None):
     parser = argparse.ArgumentParser(description=description)
     parser.add_argument("--home", help="the simulator's folder (required unless --fake)")
     parser.add_argument("--headless", action="store_true", help="run the simulator without a window")
@@ -44,6 +44,8 @@ def parse_args(description, argv=None):
     parser.add_argument("--out", default="recordings", help="output folder (default recordings/)")
     parser.add_argument("--model", help="our car's vehicle model (default: the single match found)")
     parser.add_argument("--fake", action="store_true", help="use the fake simulator")
+    if extra:
+        extra(parser)
     args = parser.parse_args(argv)
     if not args.fake and not args.home:
         parser.error("--home is required unless --fake is given")
