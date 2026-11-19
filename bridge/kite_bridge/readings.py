@@ -52,7 +52,7 @@ def image_from_raw(raw):
 
 def _reading(kind, raw, poll_time):
     if kind == "radar" and hasattr(raw, "__len__") and not isinstance(raw, (dict, list, bytes)):
-        return Reading(poll_time, time_source=POLL_TIME, detections=len(raw))
+        return Reading(poll_time, time_source=POLL_TIME, detections=len(raw), raw=raw)
     if _is_empty(raw):
         return Reading(None)
     points = None
@@ -61,12 +61,12 @@ def _reading(kind, raw, poll_time):
         if cloud is None:
             return Reading(None)
         points = len(cloud)
-    readings = _readings(raw)
+    readings = readings_in(raw)
     latest = readings[-1]
     # ASSUMPTION: readings carry "time" in simulator seconds, and the last one is the latest
     if isinstance(latest, dict) and "time" in latest:
-        return Reading(float(latest["time"]), points, count=len(readings))
-    return Reading(poll_time, points, POLL_TIME, count=len(readings))
+        return Reading(float(latest["time"]), points, count=len(readings), raw=raw)
+    return Reading(poll_time, points, POLL_TIME, count=len(readings), raw=raw)
 
 
 def _is_empty(raw):
@@ -92,7 +92,9 @@ def _describe(raw):
     return sorted(map(str, raw)) if isinstance(raw, dict) else type(raw).__name__
 
 
-def _readings(raw):
+def readings_in(raw):
+    """The individual readings of a non-empty poll: a list is its readings, a dict of dicts is
+    its readings, any other object is one reading."""
     if isinstance(raw, list):
         return raw
     if isinstance(raw, dict) and all(isinstance(v, dict) for v in raw.values()):

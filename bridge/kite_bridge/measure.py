@@ -2,7 +2,9 @@
 
 Input domain, and nothing beyond it:
 
-- Timestamps and latencies are finite floats in seconds, >= 0.
+- Timestamps, latencies, wall, step-wait and read times and simulated seconds are finite floats
+  in seconds, >= 0. Counts are finite numbers >= 0.
+- A fingerprint is any hashable value; None marks an empty poll.
 - A series of readings is a list of timestamps in which None marks an empty poll. The
   non-empty timestamps are non-decreasing. A timestamp equal to the previous non-empty
   one is a repeated reading.
@@ -12,6 +14,8 @@ statistic is undefined (no data, or a zero time span) the result is None.
 """
 
 import math
+
+ROUNDING_S = 1e-9
 
 
 def _check(values, name, *, non_decreasing=False):
@@ -86,6 +90,52 @@ def steps_per_second(steps, seconds):
     """Simulator steps per wall-clock second. None when seconds is 0."""
     _check([steps, seconds], "steps_per_second")
     return steps / seconds if seconds > 0 else None
+
+
+def real_time_factor(simulated_s, wall_s):
+    """Simulated seconds per wall-clock second. 1.0 is real time, 0.1 is ten times slower. None
+    when wall_s is 0: nothing was timed, so the ratio is undefined."""
+    _check([simulated_s, wall_s], "real_time_factor")
+    return simulated_s / wall_s if wall_s > 0 else None
+
+
+def per_simulated_second(count, simulated_s):
+    """count / simulated_s. None when simulated_s is 0."""
+    _check([count, simulated_s], "per_simulated_second")
+    return count / simulated_s if simulated_s > 0 else None
+
+
+def processing_time(wall_s, step_wait_s, reads_s):
+    """Our own processing: the wall time that was neither waiting for steps nor in sensor reads.
+    It is the remainder, so it also holds anything else that happened between the timed calls.
+    The two parts cannot add up to more than the wall time; a total above it by up to 1e-9 s is
+    rounding and gives 0.0, and anything more raises ValueError."""
+    _check([wall_s, step_wait_s, reads_s], "processing_time")
+    remainder = wall_s - step_wait_s - reads_s
+    if remainder < -ROUNDING_S:
+        raise ValueError(f"processing_time: parts add up to {step_wait_s + reads_s!r} s, "
+                         f"more than the wall time {wall_s!r} s")
+    return max(0.0, remainder)
+
+
+def count_new(keys):
+    """Number of polls whose key differs from the previous non-empty poll's. `keys` has one
+    fingerprint per poll, in order, and None for an empty poll. The first non-empty poll is new.
+    A key that comes back after a different one counts again."""
+    previous = None
+    new = 0
+    for key in keys:
+        if key is None:
+            continue
+        new += key != previous
+        previous = key
+    return new
+
+
+def count_distinct(keys):
+    """Number of different fingerprints among every reading a sensor returned, wherever in the
+    run it came back."""
+    return len(set(keys))
 
 
 def summarise(series, latencies, points=(), detections=()):

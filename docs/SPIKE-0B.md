@@ -58,6 +58,8 @@ All four scripts take these options. `--home` is required for a real run.
 | `--timeout` | 300 | The longest wait, in seconds, for any one simulator call, including the map load. Must be above 0. See "Stopping a run". |
 | `--fake` | off | Use the fake simulator. Do not use it for the real run. |
 
+`spike_sensors.py` and `spike_multicar.py` also take `--dump-raw N` (default 0, which writes nothing). See "The raw GPS and IMU dump" under Run 2.
+
 Each script starts BeamNG.tech itself and closes it when the run ends. Close any BeamNG.tech that is already running before you start a script. The bridge connects to the simulator on a fixed local port, so a second copy may block the connection.
 
 Without `--home` and without `--fake`, a script prints a usage error and exits with code 2. If `--home` is not a folder, it prints `error: --home is not a folder` and exits with code 1. Any other failure exits with code 1 too. A failure the script checks for prints `error: <message>`. An unexpected failure prints a traceback, then `error: <type>: <message>`.
@@ -176,7 +178,7 @@ The run covers 30 simulated seconds, plus the time the simulator needs to start.
 
 ## Run 2: sensors (`spike_sensors.py`)
 
-This script attaches a lidar, a camera, a radar, GPS and an IMU to our car. It polls every sensor once per simulator step, 60 times per simulated second, and reports the rates and delays.
+This script attaches a lidar, a camera, a radar, GPS and an IMU to our car. It polls every sensor once per simulator step, 60 times per simulated second, and reports the rates and delays, where the wall time goes, how many new readings each sensor gave and how many bytes it read. It also takes `--dump-raw N` (see "The raw GPS and IMU dump"); so does `spike_multicar.py`. `spike_connect.py` polls no sensors, and the Rerun demo (`spike_lidar_rerun.py`) draws sensor data and does not measure it, so neither prints timing.
 
 ```powershell
 python bridge/spike_sensors.py --home "<your BeamNG.tech folder>"
@@ -184,7 +186,7 @@ python bridge/spike_sensors.py --home "<your BeamNG.tech folder>"
 
 ### What it prints
 
-The five `sensor:` lines, a `spawned` line, a summary line, a table with one row per sensor, and footer lines. With `--seconds 2` on the fake simulator (the `sensor:` lines are shortened here):
+The five `sensor:` lines, a `spawned` line, a summary line, a table with one row per sensor, a timing block with a second table, and footer lines. With `--seconds 2` on the fake simulator (the `sensor:` lines are shortened here):
 
 ```
 sensor: lidar requested_update_time=0.1 ...
@@ -195,11 +197,21 @@ sensor: imu pos=(0, 0, 0.5) ...
 spawned kite1 (model: vivace, config: vehicles/vivace/tograc_qE.pc)
 cars: 1  steps per second: 3069039.5
 car    sensor   polls  rate_hz   time  per_poll  mean_ms  p50_ms  p95_ms  max_ms  empty  repeat  unexp  points  detect
-kite1  lidar      120    10.00 sensor         1     0.00    0.00    0.00    0.01      0      99      0    1000     n/a
-kite1  camera     120    20.00 sensor         1     0.00    0.00    0.00    0.01      0      79      0     n/a     n/a
-kite1  radar      120    20.00 sensor         1     0.00    0.00    0.00    0.00      0      79      0     n/a     n/a
+kite1  lidar      120    10.00 sensor         1     0.01    0.01    0.02    0.09      0      99      0    1017     n/a
+kite1  camera     120    20.00 sensor         1     0.00    0.00    0.00    0.11      0      79      0     n/a     n/a
+kite1  radar      120    20.00 sensor         1     0.00    0.00    0.00    0.01      0      79      0     n/a     n/a
 kite1  gps        120    10.00 sensor         1     0.00    0.00    0.00    0.00      0      99      0     n/a     n/a
-kite1  imu        120    59.80 sensor         2     0.00    0.00    0.00    0.00      0       0      0     n/a     n/a
+kite1  imu        120    59.80 sensor         2     0.00    0.00    0.00    0.01      0       0      0     n/a     n/a
+timing: 2.000 simulated s in 0.007 wall s, real-time factor 271.710
+  waiting for steps     0.000 s    1.4%
+  in sensor reads       0.003 s   38.5%
+  our processing        0.004 s   60.1%
+car    sensor     read_s  per_poll_ms    new  new_per_s       bytes  kB_per_s
+kite1  lidar       0.001         0.01     21      10.50     1466784     733.4
+kite1  camera       0.000         0.00     41      20.50       48240      24.1
+kite1  radar       0.000         0.00     41      20.50       69480      34.7
+kite1  gps         0.000         0.00     21      10.50        4440       2.2
+kite1  imu         0.000         0.00    200     100.00        7400       3.7
 rate_hz: distinct reading timestamps per simulator second. It counts at most one new reading per poll, so it is limited to about the poll rate of 60 Hz. per_poll shows when a sensor delivered more.
 kite1 imu: polls returned up to 2 readings. rate_hz counts at most one per poll, so it undercounts this sensor.
 wrote scratch\R27\out\sensors.json
@@ -215,11 +227,53 @@ The columns:
 - `mean_ms`, `p50_ms`, `p95_ms`, `max_ms`: how long a poll took, in milliseconds.
 - `empty`: polls that returned no reading.
 - `repeat`: readings with the same timestamp as the previous reading.
-- `unexp`: polls that the bridge could not read. This counts a poll that raised an error, a poll that returned a type outside None, a dict, a list, bytes or an array-like object (anything with a length), and a lidar poll without a `pointCloud`.
+- `unexp`: polls that the bridge could not read. This counts a poll that raised an error, a poll that returned a type outside None, a dict, a list, bytes or an array-like object (anything with a length), a lidar poll without a `pointCloud`, and a poll holding a value the bridge cannot size or fingerprint (`first: raw data not measurable: ...`).
 - `points`: mean lidar points per scan. Other sensors show `n/a`.
 - `detect`: mean radar detections over the polls that returned an array. A radar poll that returns an array counts as one reading, and its detections are the array's rows. The bridge does not read the array's columns. Other sensors, and a radar that returned no array, show `n/a`.
 
 A lidar scan with no points counts under `empty`, like any poll that returned None or an empty dict, list or bytes. A radar array with zero rows does not count under `empty`. It is one reading that records 0 detections.
+
+#### Where the time goes
+
+The `timing:` line and the three lines under it split the wall-clock time of the stepping-and-polling loop. The loop does not include starting the simulator, loading the map or attaching the sensors.
+
+- `simulated s`: simulated seconds, the number of steps divided by 60.
+- `wall s`: wall-clock seconds from just before the first step to just after the last poll.
+- `real-time factor`: simulated seconds divided by wall seconds. 1.0 is real time and 0.1 is ten times slower than real time. It prints `n/a`, and is `null` in the JSON, when the wall time is 0, because there is nothing to divide by. The factor says how fast this run went. It does not say whether any target is met.
+- `waiting for steps`: time spent inside the step call. The bridge calls `step` with `wait=True`, which is expected to return once the simulator has finished the step. That has not run against the real simulator yet.
+- `in sensor reads`: time spent inside the poll calls of all sensors. A poll call is one request to the simulator and its reply. The second table shows it per sensor: `read_s` is the total over the run and `per_poll_ms` is `read_s` divided by the number of poll calls, in milliseconds, failed polls included.
+- `our processing`: wall time minus the two above. It is a remainder, so it also holds anything else that happened between the timed calls. This run's own measuring work is part of it: sizing and fingerprinting each poll's raw data for the second table. When this share is large, some of it is the measurement and not the bridge.
+
+The three parts add up to the wall time by construction. The percentage after each is its share of the wall time. The JSON holds the same numbers under `timing` (`simulated_s`, `wall_s`, `real_time_factor`, `step_wait_s`, `sensor_reads_s`, `processing_s`) and, per sensor row, `read_total_s` and `read_per_poll_s`.
+
+#### New readings and bytes
+
+- `new`: how many readings had content that was new. For lidar, camera and radar, a poll counts when its raw data differs from the previous non-empty poll's, compared by a hash of the raw bytes and values. A poll that is identical to the one before is not new. For GPS and IMU, every different reading a poll returned counts once, where "different" means a different `time` or different values; a reading returned again in a later poll is not counted again. A run of S simulated seconds on a sensor that makes R new readings per second shows about R times S, and one more when the first reading counts, so a short run overstates the rate by up to 1 reading per run.
+- `new_per_s`: `new` divided by the simulated seconds. Unlike `rate_hz`, it does not depend on timestamps. For lidar, camera and radar, which carry no timestamp, `rate_hz` is the polling rate (the table says so), and `new_per_s` shows how often their content changed. For GPS and IMU, `rate_hz` counts at most one reading per poll, and `new_per_s` counts all of them. A sensor that returns identical data while it is running, for example a lidar in a scene where nothing changes, shows fewer new readings than it produced.
+- `bytes`: the raw payload size of all the polls that returned data, counted as `bridge/kite_bridge/raw_data.py` documents: an array or image counts its buffer, a number 8 bytes, a name its UTF-8 length. It is what the bridge received, not what crossed the wire. Empty polls and unexpected polls count 0.
+- `kB_per_s`: `bytes` divided by the simulated seconds, in kilobytes of 1000 bytes. The JSON has `bytes_read` and `bytes_per_simulated_s` in bytes.
+
+The JSON rows also have `new_readings` and `new_per_simulated_s`.
+
+#### The raw GPS and IMU dump
+
+`--dump-raw N` writes `raw_gps_imu.json` to `--out`: the first N GPS readings and the first N IMU readings of each car, as the simulator returned them. It exists so that the director can work out how a reading's `time` field relates to simulated time and to wall time. With N missing or 0, no file is written. If the run returns fewer than N readings of a sensor, the file has fewer.
+
+```powershell
+python bridge/spike_sensors.py --home "<your BeamNG.tech folder>" --dump-raw 50
+```
+
+The file has the top-level `provenance` field, `readings_per_car_and_sensor` (N) and `cases`, a list with one entry per run case: `cars` and `entries`. `spike_sensors.py` has one case. `spike_multicar.py` has one for each car count (1, 2 and 4). An entry has:
+
+- `car` and `sensor` (`gps` or `imu`).
+- `step`: the number of steps taken when the poll was made. The simulated time of the poll is `step` divided by 60.
+- `wall_s`: wall seconds from the first step to the end of the poll.
+- `poll_wall_s`: how long the poll call took, in wall seconds. When one poll returned several readings, they share `step`, `wall_s` and `poll_wall_s`.
+- `reading`: every field of one raw reading, numbers and names only. A number that is not finite is written as the text `nan`, `inf` or `-inf`. Anything that is not a number, a name, a list or a dict is written as `<unsupported TypeName>`, never copied.
+
+Readings are in the order the polls returned them, and a reading that a later poll returns again is dumped again. Count entries with the same `time` and the same values to see how often that happens.
+
+#### Footer lines
 
 The `rate_hz:` explanation line always prints. The other footer lines appear only when they apply:
 
@@ -237,8 +291,9 @@ A missing reading is never filled in. An empty poll counts under `empty`, and an
 
 ### What to send back
 
-- The full printed output, including the table and every footer line.
+- The full printed output, including the table, the `timing:` block and every footer line.
 - `recordings/sensors.json`.
+- `recordings/raw_gps_imu.json`, from a run with `--dump-raw 50` (see "The raw GPS and IMU dump").
 - The BeamNGpy version lines (from Run 1 and the `pip show` output).
 - Any error, in full.
 
@@ -262,7 +317,7 @@ python bridge/spike_multicar.py --home "<your BeamNG.tech folder>"
 
 ### What it prints
 
-The five `sensor:` lines once, then three blocks, one for each case. Each block starts with a `spawned` line that lists the cars of that case, then a blank line and the same summary line, table and footer lines as Run 2, then `wrote ...multicar.json`. The summary lines read `cars: 1`, `cars: 2` and `cars: 4`, and the table has one row per sensor per car (`kite1` to `kite4`). Compare the `steps per second` figure across the three summary lines to see whether more cars slow the simulator.
+The five `sensor:` lines once, then three blocks, one for each case. Each block starts with a `spawned` line that lists the cars of that case, then a blank line and the same summary line, table and footer lines as Run 2, then `wrote ...multicar.json`. The summary lines read `cars: 1`, `cars: 2` and `cars: 4`, and the table has one row per sensor per car (`kite1` to `kite4`). Each case also prints the `timing:` block and the second table (see "Where the time goes" and "New readings and bytes" under Run 2). Compare the `steps per second` figure and the real-time factor across the three cases to see whether more cars slow the simulator, and compare `waiting for steps` with `in sensor reads` to see which part grows. `--dump-raw N` writes `raw_gps_imu.json` with one case per car count and N GPS and N IMU readings per car.
 
 The script rewrites `multicar.json` after each case, so a run that fails in case 2 still leaves the result of case 1.
 
@@ -274,6 +329,7 @@ The simulator starts three times, and each case runs 30 simulated seconds. Expec
 
 - The full printed output of all three cases.
 - `recordings/multicar.json`.
+- `recordings/raw_gps_imu.json` if you ran with `--dump-raw`.
 - Any error, in full, with the case it happened in.
 
 ## Demo 1: live lidar in Rerun (`spike_lidar_rerun.py`)

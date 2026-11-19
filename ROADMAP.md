@@ -266,7 +266,7 @@ unless Evan's run prints it. Agents never run the real simulator; every test use
   `bridge/kite_bridge/output_guard.py` without the full text. Tests: the full marker text (built
   from the constant) appears in no file under `bridge/` or `docs/` except
   `bridge/kite_bridge/output_guard.py` and `bridge/tests/test_output_guard.py`.
-- [ ] **R32 Timing breakdown, real-time factor, fresh-data counts and a raw GPS/IMU dump** (feat,
+- [x] **R32 Timing breakdown, real-time factor, fresh-data counts and a raw GPS/IMU dump** (feat,
   Sonnet; needs R31): every measuring script prints and writes to JSON wall time waiting for steps,
   in each sensor's reads (total and per poll) and in our own processing, simulated and wall seconds
   and the real-time factor; per sensor new readings and bytes per simulated second; `--dump-raw N`

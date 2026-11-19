@@ -8,12 +8,14 @@ import time
 import traceback
 from pathlib import Path
 
-from kite_bridge import measure
+from kite_bridge import measure, raw_data
 from kite_bridge.fake_sim import FakeSim
 from kite_bridge.output_guard import PROVENANCE, out_refusal, repo_roots
+from kite_bridge.readings import readings_in
 from kite_bridge.sensor_settings import settings_lines
-from kite_bridge.sim_api import POLL_TIME, SENSOR_KINDS, STEP_HZ, Reading
+from kite_bridge.sim_api import BUFFERED_KINDS, POLL_TIME, SENSOR_KINDS, STEP_HZ, Reading
 
+RAW_DUMP_FILE = "raw_gps_imu.json"
 DEFAULT_MODEL = "vivace"
 DEFAULT_CONFIG = "vehicles/vivace/tograc_qE.pc"
 TECH_VERSION_TEXT = "not reported by BeamNGpy 1.36"
@@ -56,6 +58,13 @@ def _count(text):
     if value < 0:
         raise argparse.ArgumentTypeError(f"must be >= 0, got {text}")
     return value
+
+
+def add_measure_options(parser):
+    parser.add_argument("--dump-raw", type=_count, default=0, metavar="N",
+                        help=f"write the first N raw GPS and the first N raw IMU readings of each car, "
+                             f"with each poll's wall time and step count, to {RAW_DUMP_FILE} in --out "
+                             "(default 0: write nothing)")
 
 
 def parse_args(description, argv=None, extra=None):
@@ -234,17 +243,56 @@ def _time_source(sources):
     return MIXED_TIME if len(sources) > 1 else next(iter(sources), None)
 
 
-def measure_sensors(sim, cars, seconds):
+class RawDump:
+    """The first `per_sensor` raw GPS readings and the first `per_sensor` raw IMU readings of
+    every car, each with its poll's wall time and step count. Written by `write_raw_dump`."""
+
+    def __init__(self, per_sensor):
+        self.per_sensor = per_sensor
+        self.entries = []
+        self._counts = {}
+
+    def add(self, car, kind, step, wall_s, poll_wall_s, readings):
+        """One entry per reading of the poll, until this car's sensor has `per_sensor` entries.
+        `step` is the steps taken when the poll was made, `wall_s` the wall seconds since the run's
+        first step when the poll returned and `poll_wall_s` how long the poll call took."""
+        for reading in readings:
+            if self._counts.get((car, kind), 0) >= self.per_sensor:
+                return
+            self._counts[car, kind] = self._counts.get((car, kind), 0) + 1
+            self.entries.append({"car": car, "sensor": kind, "step": step, "wall_s": wall_s,
+                                 "poll_wall_s": poll_wall_s, "reading": raw_data.to_plain(reading)})
+
+
+def write_raw_dump(out, per_sensor, cases):
+    """`cases` is a list of (car count, RawDump). Written as raw_gps_imu.json."""
+    write_json(out, RAW_DUMP_FILE, {
+        "readings_per_car_and_sensor": per_sensor,
+        "cases": [{"cars": cars, "entries": dump.entries} for cars, dump in cases]})
+
+
+def measure_sensors(sim, cars, seconds, clock=time.perf_counter, dump=None):
     """Steps the simulator for `seconds` of simulator time and polls every sensor once after
-    each step, so the poll rate is STEP_HZ per simulator second.
+    each step, so the poll rate is STEP_HZ per simulator second. `clock` returns wall seconds; a
+    test passes a fake one. `dump`, a RawDump, collects the raw GPS and IMU readings.
+
+    The wall time is the stepping and polling loop only, not the scenario load or the sensor
+    set-up. `timing` splits it into `step_wait_s` (inside `sim.step`), `sensor_reads_s` (inside
+    `sim.poll`, the request and its reply) and `processing_s`, the rest: our own work between
+    those calls, which includes sizing and fingerprinting each poll's raw data. `real_time_factor`
+    is simulated seconds over wall seconds.
 
     A row's `rate_hz` is the rate of distinct reading timestamps seen at poll time. It counts
     at most one new reading per poll, so it is limited to about the poll rate.
     `readings_per_poll_max` is the most readings one poll returned; above 1, the sensor
-    produced readings faster than it was polled. A poll that raises counts as an unexpected
-    reading, with the error as its message, and the run goes on, except for a timeout, which
-    stops the run. Unexpected readings are left out of `polls`, `empty`, `rate_hz` and
-    `readings_per_poll_max`; the latency figures include their polls."""
+    produced readings faster than it was polled. `new_readings` counts readings whose content
+    is new: a lidar, camera or radar poll that differs from the previous non-empty poll, and
+    for GPS and IMU every distinct reading returned, by its time and values. `bytes_read` is
+    the raw payload size of the polls (see `raw_data`). A poll that raises counts as an
+    unexpected reading, with the error as its message, and the run goes on, except for a
+    timeout, which stops the run. Unexpected readings are left out of `polls`, `empty`,
+    `rate_hz`, `readings_per_poll_max`, `new_readings` and `bytes_read`; the latency and read
+    time figures include their polls."""
     for car in cars:
         sim.attach_sensors(car)
     keys = [(car, kind) for car in cars for kind in SENSOR_KINDS]
@@ -255,46 +303,104 @@ def measure_sensors(sim, cars, seconds):
     sources = {key: set() for key in keys}
     unexpected = {key: [] for key in keys}
     per_poll = {key: [] for key in keys}
+    sizes = {key: 0 for key in keys}
+    poll_keys = {key: [] for key in keys}
+    reading_keys = {key: [] for key in keys}
     steps = steps_for(seconds)
     step_time = 0.0
-    for _ in range(steps):
-        started = time.perf_counter()
+    loop_started = clock()
+    for step_number in range(1, steps + 1):
+        started = clock()
         sim.step(1)
-        step_time += time.perf_counter() - started
+        step_time += clock() - started
         for key in keys:
-            started = time.perf_counter()
+            started = clock()
             try:
                 reading = sim.poll(*key)
             except TimeoutError:
                 raise
             except Exception as error:
                 reading = Reading(None, unexpected=f"poll raised {type(error).__name__}: {error}")
-            latencies[key].append(time.perf_counter() - started)
+            finished = clock()
+            latencies[key].append(finished - started)
+            stats = raw_data.EMPTY
+            if reading.timestamp is not None and not reading.unexpected:
+                try:
+                    stats = raw_data.poll_stats(key[1], reading.raw)
+                except ValueError as error:
+                    reading = Reading(None, unexpected=f"raw data not measurable: {error}")
             if reading.unexpected:
                 unexpected[key].append(reading.unexpected)
                 continue
             series[key].append(reading.timestamp)
+            sizes[key] += stats.nbytes
+            if key[1] in BUFFERED_KINDS:
+                reading_keys[key].extend(stats.keys)
+            else:
+                poll_keys[key].append(stats.keys[0] if stats.keys else None)
             if reading.timestamp is not None:
                 sources[key].add(reading.time_source)
                 per_poll[key].append(reading.count)
+                if dump is not None and key[1] in BUFFERED_KINDS:
+                    dump.add(key[0], key[1], step_number, finished - loop_started,
+                             finished - started, readings_in(reading.raw))
             if reading.points is not None:
                 points[key].append(reading.points)
             if reading.detections is not None:
                 detections[key].append(reading.detections)
-    rows = [{"car": car, "sensor": kind,
-             **measure.summarise(series[car, kind], latencies[car, kind], points[car, kind],
-                                 detections[car, kind]),
-             "time_source": _time_source(sources[car, kind]),
-             "readings_per_poll_max": max(per_poll[car, kind], default=None),
-             "unexpected": {"count": len(unexpected[car, kind]),
-                            "first": unexpected[car, kind][0] if unexpected[car, kind] else None}}
-            for car, kind in keys]
+    wall = clock() - loop_started
+    simulated = steps / STEP_HZ
+    reads = math.fsum(math.fsum(latencies[key]) for key in keys)
+    rows = []
+    for car, kind in keys:
+        new = (measure.count_distinct(reading_keys[car, kind]) if kind in BUFFERED_KINDS
+               else measure.count_new(poll_keys[car, kind]))
+        read_total = math.fsum(latencies[car, kind])
+        rows.append({
+            "car": car, "sensor": kind,
+            **measure.summarise(series[car, kind], latencies[car, kind], points[car, kind],
+                                detections[car, kind]),
+            "time_source": _time_source(sources[car, kind]),
+            "readings_per_poll_max": max(per_poll[car, kind], default=None),
+            "unexpected": {"count": len(unexpected[car, kind]),
+                           "first": unexpected[car, kind][0] if unexpected[car, kind] else None},
+            "read_total_s": read_total,
+            "read_per_poll_s": read_total / len(latencies[car, kind]),
+            "new_readings": new,
+            "new_per_simulated_s": measure.per_simulated_second(new, simulated),
+            "bytes_read": sizes[car, kind],
+            "bytes_per_simulated_s": measure.per_simulated_second(sizes[car, kind], simulated)})
+    timing = {"simulated_s": simulated, "wall_s": wall, "real_time_factor": measure.real_time_factor(simulated, wall),
+              "step_wait_s": step_time, "sensor_reads_s": reads,
+              "processing_s": measure.processing_time(wall, step_time, reads)}
     return {"cars": len(cars), "steps": steps, "steps_per_second": measure.steps_per_second(steps, step_time),
-            "sensors": rows}
+            "timing": timing, "sensors": rows}
 
 
 def _fmt(value, scale=1.0, digits=2):
     return "n/a" if value is None else f"{value * scale:.{digits}f}"
+
+
+def _timing_lines(result):
+    t = result["timing"]
+    wall = t["wall_s"]
+
+    def part(label, seconds):
+        share = _fmt(seconds / wall * 100, digits=1) if wall > 0 else "n/a"
+        return f"  {label:<18}{seconds:>9.3f} s{share:>7}%"
+
+    lines = [f"timing: {_fmt(t['simulated_s'], digits=3)} simulated s in {_fmt(wall, digits=3)} wall s, "
+             f"real-time factor {_fmt(t['real_time_factor'], digits=3)}",
+             part("waiting for steps", t["step_wait_s"]), part("in sensor reads", t["sensor_reads_s"]),
+             part("our processing", t["processing_s"]),
+             f"{'car':<7}{'sensor':<8}{'read_s':>9}{'per_poll_ms':>13}{'new':>7}{'new_per_s':>11}"
+             f"{'bytes':>12}{'kB_per_s':>10}"]
+    for r in result["sensors"]:
+        lines.append(f"{r['car']:<7}{r['sensor']:<8}{r['read_total_s']:>9.3f}"
+                     f"{_fmt(r['read_per_poll_s'], 1000):>13}{r['new_readings']:>7}"
+                     f"{_fmt(r['new_per_simulated_s']):>11}{r['bytes_read']:>12}"
+                     f"{_fmt(r['bytes_per_simulated_s'], 0.001, 1):>10}")
+    return lines
 
 
 def format_result(result):
@@ -310,6 +416,7 @@ def format_result(result):
                      f"{_fmt(lat['max'], 1000):>8}{r['empty']:>7}{r['repeated']:>8}"
                      f"{r['unexpected']['count']:>7}{_fmt(r['points_mean'], digits=0):>8}"
                      f"{_fmt(r['detections_mean'], digits=0):>8}")
+    lines += _timing_lines(result)
     lines.append(f"rate_hz: distinct reading timestamps per simulator second. It counts at most one "
                  f"new reading per poll, so it is limited to about the poll rate of {STEP_HZ} Hz. "
                  "per_poll shows when a sensor delivered more.")
