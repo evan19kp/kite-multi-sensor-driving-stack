@@ -58,6 +58,12 @@ class ParseRatesTest(unittest.TestCase):
             with self.assertRaises(ValueError, msg=text):
                 rates.parse_rates(text)
 
+    def test_a_rate_that_is_above_60_only_in_exact_arithmetic_is_refused(self):
+        # float("60.00000000000000001") is exactly 60.0, but the decimal text is above 60.
+        for text in ("lidar=60.00000000000000001", "all=60.000000000000000000001"):
+            with self.assertRaises(ValueError, msg=text):
+                rates.parse_rates(text)
+
     def test_the_message_names_the_sensor_and_the_value(self):
         with self.assertRaisesRegex(ValueError, "lidar.*61"):
             rates.parse_rates("lidar=61")
@@ -280,8 +286,8 @@ class RatesOptionTest(unittest.TestCase):
         return stdout
 
     def test_a_rate_outside_the_domain_is_a_usage_error_before_anything_runs(self):
-        for bad in ("lidar=61", "lidar=60.5", "gps=0", "imu=-3", "all=nan", "all=inf", "lidar=x", "fast=10",
-                    "lidar", ""):
+        for bad in ("lidar=61", "lidar=60.5", "lidar=60.00000000000000001", "gps=0", "imu=-3", "all=nan",
+                    "all=inf", "lidar=x", "fast=10", "lidar", ""):
             code, stdout, stderr = run_script("spike_sensors", "--fake", "--out", str(self.out), "--rates", bad)
             self.assertEqual(code, 2, bad)
             self.assertIn("usage", stderr)

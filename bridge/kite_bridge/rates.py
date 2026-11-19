@@ -27,12 +27,16 @@ ALL = "all"
 
 def _rate(name, text):
     try:
-        value = float(text)
+        approx = float(text)
     except ValueError:
         raise ValueError(f"{name}: not a number: {text!r}") from None
-    if not math.isfinite(value) or value <= 0 or value > STEP_HZ:
-        raise ValueError(f"{name}: must be a number above 0 and at most {STEP_HZ}, got {text!r}")
-    return Fraction(text.strip())
+    out_of_domain = ValueError(f"{name}: must be a number above 0 and at most {STEP_HZ}, got {text!r}")
+    if not math.isfinite(approx) or approx <= 0:
+        raise out_of_domain
+    exact = Fraction(text.strip())
+    if exact > STEP_HZ:
+        raise out_of_domain
+    return exact
 
 
 def parse_rates(text):
@@ -66,7 +70,3 @@ def polled(step, rate):
 
 def _slot(step, rate):
     return step * rate.numerator // (STEP_HZ * rate.denominator)
-
-
-def as_floats(rates):
-    return {kind: float(rate) for kind, rate in rates.items()}
