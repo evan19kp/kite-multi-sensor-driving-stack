@@ -97,6 +97,16 @@ class PollStatsTest(unittest.TestCase):
     def test_a_dict_of_dicts_is_split_into_its_readings(self):
         stats = raw_data.poll_stats("gps", {"gps_0": {"time": 0.1}, "gps_1": {"time": 0.2}})
         self.assertEqual(len(stats.keys), 2)
+        # The poll counts as the one dict it is: outer keys "gps_0" and "gps_1" (5 + 5) and, in
+        # each reading, the key "time" (4) and a float (8): 10 + 2 * (4 + 8) = 34
+        self.assertEqual(stats.nbytes, 34)
+
+    def test_the_size_of_a_buffered_poll_is_the_size_of_the_whole_poll(self):
+        first, second = {"time": 0.1, "v": 1.0}, {"time": 0.2, "v": 2.0}
+        # each reading: "time" (4) + float (8) + "v" (1) + float (8) = 21; a list adds nothing
+        self.assertEqual(raw_data.poll_stats("imu", [first, second]).nbytes, 42)
+        for raw in ([first, second], {"imu_0": first, "imu_1": second}, first):
+            self.assertEqual(raw_data.poll_stats("imu", raw).nbytes, raw_data.describe(raw)[0])
 
     def test_one_dict_is_one_reading(self):
         self.assertEqual(len(raw_data.poll_stats("gps", {"time": 0.1, "lat": 1.0}).keys), 1)

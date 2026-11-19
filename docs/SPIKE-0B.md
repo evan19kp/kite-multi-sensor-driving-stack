@@ -195,20 +195,20 @@ sensor: radar requested_update_time=0.1 ...
 sensor: gps pos=(0, 1.5, 2.0) ...
 sensor: imu pos=(0, 0, 0.5) ...
 spawned kite1 (model: vivace, config: vehicles/vivace/tograc_qE.pc)
-cars: 1  steps per second: 3069039.5
+cars: 1  steps per second: 1230767.2
 car    sensor   polls  rate_hz   time  per_poll  mean_ms  p50_ms  p95_ms  max_ms  empty  repeat  unexp  points  detect
-kite1  lidar      120    10.00 sensor         1     0.01    0.01    0.02    0.09      0      99      0    1017     n/a
-kite1  camera     120    20.00 sensor         1     0.00    0.00    0.00    0.11      0      79      0     n/a     n/a
-kite1  radar      120    20.00 sensor         1     0.00    0.00    0.00    0.01      0      79      0     n/a     n/a
-kite1  gps        120    10.00 sensor         1     0.00    0.00    0.00    0.00      0      99      0     n/a     n/a
-kite1  imu        120    59.80 sensor         2     0.00    0.00    0.00    0.01      0       0      0     n/a     n/a
-timing: 2.000 simulated s in 0.007 wall s, real-time factor 271.710
-  waiting for steps     0.000 s    1.4%
-  in sensor reads       0.003 s   38.5%
-  our processing        0.004 s   60.1%
+kite1  lidar      120    10.00 sensor         1     0.01    0.01    0.02    0.11      0      99      0    1017     n/a
+kite1  camera     120    20.00 sensor         1     0.00    0.00    0.01    0.06      0      79      0     n/a     n/a
+kite1  radar      120    20.00 sensor         1     0.00    0.00    0.01    0.01      0      79      0     n/a     n/a
+kite1  gps        120    10.00 sensor         1     0.00    0.00    0.00    0.01      0      99      0     n/a     n/a
+kite1  imu        120    59.80 sensor         2     0.00    0.00    0.00    0.04      0       0      0     n/a     n/a
+timing: 2.000 simulated s in 0.009 wall s, real-time factor 215.592
+  waiting for steps     0.000 s    1.1%
+  in sensor reads       0.003 s   34.4%
+  our processing        0.006 s   64.5%
 car    sensor     read_s  per_poll_ms    new  new_per_s       bytes  kB_per_s
-kite1  lidar       0.001         0.01     21      10.50     1466784     733.4
-kite1  camera       0.000         0.00     41      20.50       48240      24.1
+kite1  lidar       0.002         0.01     21      10.50     1466784     733.4
+kite1  camera      0.001         0.00     41      20.50       48240      24.1
 kite1  radar       0.000         0.00     41      20.50       69480      34.7
 kite1  gps         0.000         0.00     21      10.50        4440       2.2
 kite1  imu         0.000         0.00    200     100.00        7400       3.7
@@ -241,7 +241,7 @@ The `timing:` line and the three lines under it split the wall-clock time of the
 - `wall s`: wall-clock seconds from just before the first step to just after the last poll.
 - `real-time factor`: simulated seconds divided by wall seconds. 1.0 is real time and 0.1 is ten times slower than real time. It prints `n/a`, and is `null` in the JSON, when the wall time is 0, because there is nothing to divide by. The factor says how fast this run went. It does not say whether any target is met.
 - `waiting for steps`: time spent inside the step call. The bridge calls `step` with `wait=True`, which is expected to return once the simulator has finished the step. That has not run against the real simulator yet.
-- `in sensor reads`: time spent inside the poll calls of all sensors. A poll call is one request to the simulator and its reply. The second table shows it per sensor: `read_s` is the total over the run and `per_poll_ms` is `read_s` divided by the number of poll calls, in milliseconds, failed polls included.
+- `in sensor reads`: time spent inside the poll calls of all sensors. Each poll call covers everything inside the adapter's poll: BeamNGpy's poll, however it fetches and decodes the data, plus the bridge's parse of the result in `readings.py`. It is more than the round trip to the simulator. The second table shows it per sensor: `read_s` is the total over the run and `per_poll_ms` is `read_s` divided by the number of poll calls, in milliseconds, failed polls included.
 - `our processing`: wall time minus the two above. It is a remainder, so it also holds anything else that happened between the timed calls. This run's own measuring work is part of it: sizing and fingerprinting each poll's raw data for the second table. When this share is large, some of it is the measurement and not the bridge.
 
 The three parts add up to the wall time by construction. The percentage after each is its share of the wall time. The JSON holds the same numbers under `timing` (`simulated_s`, `wall_s`, `real_time_factor`, `step_wait_s`, `sensor_reads_s`, `processing_s`) and, per sensor row, `read_total_s` and `read_per_poll_s`.
@@ -250,7 +250,7 @@ The three parts add up to the wall time by construction. The percentage after ea
 
 - `new`: how many readings had content that was new. For lidar, camera and radar, a poll counts when its raw data differs from the previous non-empty poll's, compared by a hash of the raw bytes and values. A poll that is identical to the one before is not new. For GPS and IMU, every different reading a poll returned counts once, where "different" means a different `time` or different values; a reading returned again in a later poll is not counted again. A run of S simulated seconds on a sensor that makes R new readings per second shows about R times S, and one more when the first reading counts, so a short run overstates the rate by up to 1 reading per run.
 - `new_per_s`: `new` divided by the simulated seconds. Unlike `rate_hz`, it does not depend on timestamps. For lidar, camera and radar, which carry no timestamp, `rate_hz` is the polling rate (the table says so), and `new_per_s` shows how often their content changed. For GPS and IMU, `rate_hz` counts at most one reading per poll, and `new_per_s` counts all of them. A sensor that returns identical data while it is running, for example a lidar in a scene where nothing changes, shows fewer new readings than it produced.
-- `bytes`: the raw payload size of all the polls that returned data, counted as `bridge/kite_bridge/raw_data.py` documents: an array or image counts its buffer, a number 8 bytes, a name its UTF-8 length. It is what the bridge received, not what crossed the wire. Empty polls and unexpected polls count 0.
+- `bytes`: the raw payload size of all the polls that returned data, counted as `bridge/kite_bridge/raw_data.py` documents: an array or image counts its buffer, a number 8 bytes, a name its UTF-8 length. The whole poll is counted by that one rule, so a GPS or IMU poll that holds a dict of readings also counts the dict's keys. It is what the bridge received, not what crossed the wire. Empty polls and unexpected polls count 0.
 - `kB_per_s`: `bytes` divided by the simulated seconds, in kilobytes of 1000 bytes. The JSON has `bytes_read` and `bytes_per_simulated_s` in bytes.
 
 The JSON rows also have `new_readings` and `new_per_simulated_s`.

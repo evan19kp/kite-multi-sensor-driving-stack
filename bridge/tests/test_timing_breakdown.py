@@ -105,6 +105,22 @@ class TimingBreakdownTest(unittest.TestCase):
         self.assertIn("real-time factor n/a", common.format_result(result))
 
 
+class FakeSimCostNeedsClockTest(unittest.TestCase):
+    def test_a_nonzero_cost_without_a_clock_is_refused(self):
+        for args in ({"step_cost": 0.01}, {"request_cost": 0.01}, {"request_cost": {"lidar": 0.01}},
+                     {"request_cost": {"lidar": 0.0, "imu": 0.02}}):
+            with self.assertRaisesRegex(ValueError, "needs a clock", msg=str(args)):
+                FakeSim(**args)
+
+    def test_costs_that_are_all_zero_need_no_clock(self):
+        FakeSim()
+        FakeSim(request_cost=0.0, step_cost=0.0)
+        FakeSim(request_cost={"lidar": 0.0, "camera": 0.0})
+
+    def test_a_nonzero_cost_with_a_clock_is_accepted(self):
+        FakeSim(clock=FakeClock(), request_cost={"lidar": 0.01}, step_cost=0.02)
+
+
 class FreshReadingTest(unittest.TestCase):
     def test_new_readings_and_bytes_per_simulated_second_match_the_hand_count(self):
         _, rows, _ = costed()

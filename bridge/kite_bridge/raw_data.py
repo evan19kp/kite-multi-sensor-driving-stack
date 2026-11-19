@@ -111,14 +111,15 @@ def describe(raw):
 
 
 def poll_stats(kind, raw):
-    """Size and fingerprints of a non-empty poll. A sensor that buffers readings (GPS, IMU) gets
-    one fingerprint per reading in the poll, split as `readings.readings_in` does; any other
-    sensor gets one for the whole poll. Raises ValueError outside the domain above."""
+    """Size and fingerprints of a non-empty poll. The size is always that of the whole poll, by
+    the rule above, so a dict of readings counts its outer keys too. A sensor that buffers
+    readings (GPS, IMU) gets one fingerprint per reading in the poll, split as
+    `readings.readings_in` does; any other sensor gets one for the whole poll. Raises ValueError
+    outside the domain above."""
+    nbytes, key = describe(raw)
     if kind not in BUFFERED_KINDS:
-        nbytes, key = describe(raw)
         return PollStats(nbytes, (key,))
-    described = [describe(reading) for reading in readings_in(raw)]
-    return PollStats(sum(nbytes for nbytes, _ in described), tuple(key for _, key in described))
+    return PollStats(nbytes, tuple(describe(reading)[1] for reading in readings_in(raw)))
 
 
 def to_plain(value):

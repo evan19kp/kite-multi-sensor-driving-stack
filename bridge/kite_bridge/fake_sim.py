@@ -60,11 +60,11 @@ class FakeSim(Simulator):
     def __init__(self, seed=0, rates=None, dropout=0.0, repeat=0.0, latency=0.0,
                  models=DEFAULT_MODELS, sensor_time=True, clock=None, request_cost=0.0,
                  step_cost=0.0, lidar_rows=None):
-        if clock is None and (request_cost or step_cost):
-            raise ValueError("a request or step cost needs a clock")
-        self._clock = clock
         self._request_cost = (dict(request_cost) if isinstance(request_cost, dict)
                               else dict.fromkeys(SENSOR_KINDS, request_cost))
+        if clock is None and any((step_cost, *self._request_cost.values())):
+            raise ValueError("a request or step cost needs a clock")
+        self._clock = clock
         self._step_cost = step_cost
         self._lidar_rows = lidar_rows
         self._sensor_time = sensor_time

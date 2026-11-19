@@ -277,8 +277,10 @@ def measure_sensors(sim, cars, seconds, clock=time.perf_counter, dump=None):
     test passes a fake one. `dump`, a RawDump, collects the raw GPS and IMU readings.
 
     The wall time is the stepping and polling loop only, not the scenario load or the sensor
-    set-up. `timing` splits it into `step_wait_s` (inside `sim.step`), `sensor_reads_s` (inside
-    `sim.poll`, the request and its reply) and `processing_s`, the rest: our own work between
+    set-up. `timing` splits it into `step_wait_s` (inside `sim.step`), `sensor_reads_s` and
+    `processing_s`. `sensor_reads_s` is everything inside the adapter's poll call: BeamNGpy's
+    poll, however it fetches and decodes the data, plus the parse in `readings.py`. It is more
+    than the round trip to the simulator. `processing_s` is the rest: our own work between
     those calls, which includes sizing and fingerprinting each poll's raw data. `real_time_factor`
     is simulated seconds over wall seconds.
 
