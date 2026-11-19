@@ -213,6 +213,48 @@ Agents never run the real simulator; every test uses the fake.
   "Build and test". Tests: forbidden-files check passes; every command matches the scripts' real
   `--help`.
 
+## Sprint 0B.1
+
+Bridge correctness after the first real run: our car, safe sensor reads, explicit sensor settings,
+clean shutdown and output that stays out of the repo. No speed work (that is Sprint 0B.2).
+
+- [ ] **R27 Our car and honest version lines** (feat, Sonnet): defaults `--model vivace --config
+  vehicles/vivace/tograc_qE.pc` (Tograc qE); `--config <path>` passes `part_config` (`--config ""`
+  spawns the model's default configuration); the "tograc/cherrier" name search removed;
+  `--list-models` prints the available model names sorted, one per line, and exits 0 without
+  spawning; the `spawned` line prints model and configuration; version lines for the BeamNGpy
+  package, the BeamNGpy protocol and "BeamNG.tech version: not reported by BeamNGpy 1.36" (no
+  `get_tech_version` call); the fake records `config` and supports `--list-models`;
+  `docs/SPIKE-0B.md` updated. Tests: default model and config reach the fake spawn; `--config ""`
+  gives no config; `--list-models` sorted and nothing spawned; the version lines; no test imports
+  `beamngpy`.
+- [ ] **R28 Sensor reads that never crash, and every sensor setting explicit and printed** (fix,
+  Sonnet; needs R27): `readings.py` never truth-tests a raw poll (`is None`, `len()`) and handles
+  `None`, dicts, lists, bytes and array-like objects; radar arrays count one reading with N
+  detections (rows only); a poll that raises or returns anything else counts under `unexp` with the
+  first message kept, and the run continues; lidar, radar and camera settings passed explicitly
+  from one table (camera colour only), printed as one `sensor:` line per sensor before the run and
+  written into `spike_sensors.py`'s JSON; `docs/SPIKE-0B.md` updated. Tests (fake only): numpy-like
+  arrays whose truth value raises, radar N×7 and lidar N×3 including N = 0; a raising sensor gives
+  `unexp`, other rows printed, exit 0; settings lines printed and in the JSON; camera colour only.
+- [ ] **R29 Clean shutdown on Ctrl+C, errors and timeouts** (fix, Opus builder; needs R27):
+  `--timeout <seconds>` (default 300, > 0) passed as `socket_timeout`; shutdown never waits forever
+  and always ends BeamNG.tech (healthy: remove sensors then `bng.close()`; interrupted or timed out:
+  straight to `bng.close()`; if that raises or overruns, end `bng.process`; a second Ctrl+C skips
+  to the process end); one clean line per outcome, no traceback for Ctrl+C or timeout, exit codes
+  0 / 1 / 130; `--save` recordings flushed after Ctrl+C; `docs/SPIKE-0B.md` updated. Tests (fake
+  only, each under 5 s): `KeyboardInterrupt` in `step`, sensor removal raising `socket.timeout`,
+  `close()` raising; path taken, close or process end called, printed line, exit code; recording
+  flushed.
+- [ ] **R30 Simulator output can't end up in the repo** (fix, Sonnet; needs R27): one constant
+  `BeamNG.tech-generated data - never commit` as a top-level `"provenance"` field in every JSON
+  written and a text entry logged once at the start of `.rrd` recordings; `--out` inside the repo
+  is a usage error (exit 2) unless under `recordings/` or `scratch/`, outside the repo allowed,
+  symlinks and `..` resolved; AGENTS.md "Standing rules (R30)"; `docs/SPIKE-0B.md` updated. Tests
+  (fake only): marker in every JSON and the fake recording; `--out docs/x` and `--out
+  ../<repo>/docs` refused; `recordings/a`, `scratch/b` and a temporary folder outside the repo
+  accepted.
+
 ## Later
 
 Planned, not scheduled. Do not pick these up as roadmap items.
