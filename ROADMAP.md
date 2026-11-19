@@ -228,7 +228,7 @@ clean shutdown and output that stays out of the repo. No speed work (that is Spr
   `docs/SPIKE-0B.md` updated. Tests: default model and config reach the fake spawn; `--config ""`
   gives no config; `--list-models` sorted and nothing spawned; the version lines; no test imports
   `beamngpy`.
-- [ ] **R28 Sensor reads that never crash, and every sensor setting explicit and printed** (fix,
+- [x] **R28 Sensor reads that never crash, and every sensor setting explicit and printed** (fix,
   Sonnet; needs R27): `readings.py` never truth-tests a raw poll (`is None`, `len()`) and handles
   `None`, dicts, lists, bytes and array-like objects; radar arrays count one reading with N
   detections (rows only); a poll that raises or returns anything else counts under `unexp` with the

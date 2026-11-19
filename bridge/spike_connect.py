@@ -16,6 +16,7 @@ def run(args):
         versions = common.version_report(sim)
         for label, version in versions.items():
             print(f"{label}: {version}")
+        common.print_sensor_settings()
         car = common.spawn(sim, args, 1)[0]
         traffic = common.start_traffic(sim, args.traffic)
         sim.set_ai_mode(car, "traffic")

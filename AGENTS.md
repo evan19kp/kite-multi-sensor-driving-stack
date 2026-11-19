@@ -324,6 +324,14 @@ Each item that introduces a lasting rule adds a "## Standing rules (R<n>)" secti
 - `.rrd` recordings are written only under `--out` (`--save` takes a name inside it) and are
   never committed.
 
+## Standing rules (R28)
+
+- Every sensor setting the adapter passes lives in `bridge/kite_bridge/sensor_settings.py` and
+  nowhere else; scripts print it as `sensor:` lines, so never print or document a setting the
+  adapter does not pass.
+- `readings.py` never truth-tests a raw poll (use `is None` and `len()`); a poll that raises or is
+  outside its stated input domain counts under `unexp` and never stops the run.
+
 ## Simulator files (hard rule)
 
 - Never read, list, search, copy, launch or write about the simulator's install folder, its user
