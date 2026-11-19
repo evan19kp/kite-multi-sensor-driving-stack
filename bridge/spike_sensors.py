@@ -1,10 +1,12 @@
-"""Spike 2: attach lidar, camera, radar, GPS and IMU, poll each every step, and report.
+"""Spike 2: attach lidar, camera, radar, GPS and IMU, poll each at its --rates rate, and report.
 
 Per sensor: effective update rate, poll latency (mean, p50, p95, max), empty and repeated
 readings, lidar points per scan and radar detections per poll. Also the wall time split into
 waiting for steps, sensor reads and our own processing, the real-time factor, and per sensor the
-new readings and the bytes read per simulated second. Prints one `sensor:` line per sensor with
-the settings the bridge passes, before the run. Writes the same numbers and the settings to
+configured poll rate, the new readings and the bytes read per simulated second, with a `possible
+loss` note when a sensor read slower than every step gave fewer new readings than it was asked
+for. `--rates all=60` polls every sensor after every step. Prints one `sensor:` line per sensor
+with the settings the bridge passes, before the run. Writes the same numbers and the settings to
 sensors.json in --out. A sensor whose poll raises or returns an unexpected format is counted
 under `unexp`; the run goes on with the other sensors. --dump-raw N also writes the first N raw
 GPS and IMU readings to raw_gps_imu.json.
@@ -23,7 +25,7 @@ def run(args):
         common.start_traffic(sim, args.traffic)
         sim.set_ai_mode(cars[0], "traffic")
         dump = common.RawDump(args.dump_raw)
-        result = common.measure_sensors(sim, cars, args.seconds, dump=dump)
+        result = common.measure_sensors(sim, cars, args.seconds, dump=dump, poll_rates=args.rates)
         sim.set_ai_mode(cars[0], "disabled")
         print(common.format_result(result))
         common.write_json(args.out, "sensors.json", {"model": args.model, "config": args.config,

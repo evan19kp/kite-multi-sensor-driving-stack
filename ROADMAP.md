@@ -275,7 +275,7 @@ unless Evan's run prints it. Agents never run the real simulator; every test use
   per-request, step costs and update rates give the hand-computed breakdown, real-time factor and
   new-reading counts; identical readings are not new; the dump has N entries per car and nothing
   else.
-- [ ] **R33 Read each sensor at its own rate** (perf, Sonnet; needs R32): `--rates` in polls per
+- [x] **R33 Read each sensor at its own rate** (perf, Sonnet; needs R32): `--rates` in polls per
   simulated second per sensor (default `lidar=20,camera=20,radar=20,gps=10,imu=10`; `all=60` is
   today's behaviour) in every measuring script; the summary prints new readings per simulated second
   beside the configured rate and a `possible loss` note; `docs/SPIKE-0B.md` updated. Tests (fake

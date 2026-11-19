@@ -1,7 +1,8 @@
 """Spike 3: run 1, 2 and 4 cars, each with all five sensors, one case after another.
 
 Each case starts a fresh simulator session. Prints steps per second, the wall time split, the
-real-time factor and every sensor's rate and fresh-data counts per case. Writes multicar.json to
+real-time factor and every sensor's rate and fresh-data counts per case. Every sensor is polled
+at its --rates rate. Writes multicar.json to
 --out. --dump-raw N also writes the first N raw GPS and IMU readings per car, for every case, to
 raw_gps_imu.json.
 """
@@ -24,7 +25,7 @@ def run(args):
             for car in cars:
                 sim.set_ai_mode(car, "traffic")
             dump = common.RawDump(args.dump_raw)
-            result = common.measure_sensors(sim, cars, args.seconds, dump=dump)
+            result = common.measure_sensors(sim, cars, args.seconds, dump=dump, poll_rates=args.rates)
             for car in cars:
                 sim.set_ai_mode(car, "disabled")
             print(f"\n{common.format_result(result)}")

@@ -58,7 +58,7 @@ All four scripts take these options. `--home` is required for a real run.
 | `--timeout` | 300 | The longest wait, in seconds, for any one simulator call, including the map load. Must be above 0. See "Stopping a run". |
 | `--fake` | off | Use the fake simulator. Do not use it for the real run. |
 
-`spike_sensors.py` and `spike_multicar.py` also take `--dump-raw N` (default 0, which writes nothing). See "The raw GPS and IMU dump" under Run 2.
+`spike_sensors.py` and `spike_multicar.py` also take `--rates` (how often each sensor is read, see "Reading each sensor at its own rate" under Run 2) and `--dump-raw N` (default 0, which writes nothing; see "The raw GPS and IMU dump" under Run 2).
 
 Each script starts BeamNG.tech itself and closes it when the run ends. Close any BeamNG.tech that is already running before you start a script. The bridge connects to the simulator on a fixed local port, so a second copy may block the connection.
 
@@ -178,15 +178,32 @@ The run covers 30 simulated seconds, plus the time the simulator needs to start.
 
 ## Run 2: sensors (`spike_sensors.py`)
 
-This script attaches a lidar, a camera, a radar, GPS and an IMU to our car. It polls every sensor once per simulator step, 60 times per simulated second, and reports the rates and delays, where the wall time goes, how many new readings each sensor gave and how many bytes it read. It also takes `--dump-raw N` (see "The raw GPS and IMU dump"); so does `spike_multicar.py`. `spike_connect.py` polls no sensors, and the Rerun demo (`spike_lidar_rerun.py`) draws sensor data and does not measure it, so neither prints timing.
+This script attaches a lidar, a camera, a radar, GPS and an IMU to our car. It polls each sensor at its own rate (see "Reading each sensor at its own rate"; `--rates all=60` polls every sensor once per simulator step, 60 times per simulated second) and reports the rates and delays, where the wall time goes, how many new readings each sensor gave and how many bytes it read. It also takes `--rates` and `--dump-raw N` (see "The raw GPS and IMU dump"); so does `spike_multicar.py`. `spike_connect.py` polls no sensors, and the Rerun demo (`spike_lidar_rerun.py`) draws sensor data and does not measure it, so neither prints timing or takes these options.
 
 ```powershell
 python bridge/spike_sensors.py --home "<your BeamNG.tech folder>"
 ```
 
+### Compare two runs
+
+To see whether reading less loses any readings, run the script twice into different folders and compare the `new` and `new_per_s` columns. The first run polls every sensor after every step, as before. The second uses the default rates.
+
+```powershell
+python bridge/spike_sensors.py --home "<your BeamNG.tech folder>" --rates all=60 --out recordings/every-step
+python bridge/spike_sensors.py --home "<your BeamNG.tech folder>" --out recordings/default-rates
+```
+
+Look at three things:
+
+- `new` and `new_per_s` for each sensor. If a sensor's count is the same in both runs, reading less lost nothing for that sensor. A lower count in the second run means that sensor missed readings.
+- GPS and IMU above all. The tool cannot tell from one run whether their buffers overflowed, so this comparison is the check for them. The two runs are separate drives in traffic, so their counts can differ a little for reasons that have nothing to do with polling. Judge a gap by its size: a few readings in thousands is probably that, and a large share of the readings is probably loss.
+- The `polls`, `in sensor reads` and `real-time factor` numbers. Fewer polls should mean less read time and a higher real-time factor. If the factor barely changes, something other than polling limits it, so look at `waiting for steps`.
+
+Send back both printed outputs and both `sensors.json` files.
+
 ### What it prints
 
-The five `sensor:` lines, a `spawned` line, a summary line, a table with one row per sensor, a timing block with a second table, and footer lines. With `--seconds 2` on the fake simulator (the `sensor:` lines are shortened here):
+The five `sensor:` lines, a `spawned` line, a summary line, a table with one row per sensor, a timing block with a second table, and footer lines. With `--seconds 2` on the fake simulator, default rates (the `sensor:` lines are shortened here):
 
 ```
 sensor: lidar requested_update_time=0.1 ...
@@ -195,27 +212,30 @@ sensor: radar requested_update_time=0.1 ...
 sensor: gps pos=(0, 1.5, 2.0) ...
 sensor: imu pos=(0, 0, 0.5) ...
 spawned kite1 (model: vivace, config: vehicles/vivace/tograc_qE.pc)
-cars: 1  steps per second: 1363638.6
+cars: 1  steps per second: 2061868.8
 car    sensor   polls  rate_hz   time  per_poll  mean_ms  p50_ms  p95_ms  max_ms  empty  repeat  unexp  points  detect
-kite1  lidar      120    10.00 sensor         1     0.01    0.01    0.02    0.10      0      99      0    1017     n/a
-kite1  camera     120    20.00 sensor         1     0.00    0.00    0.00    0.01      0      79      0     n/a     n/a
-kite1  radar      120    20.00 sensor         1     0.00    0.00    0.01    0.12      0      79      0     n/a     n/a
-kite1  gps        120    10.00 sensor         1     0.00    0.00    0.00    0.01      0      99      0     n/a     n/a
-kite1  imu        120    59.80 sensor         2     0.00    0.00    0.00    0.01      0       0      0     n/a     n/a
-timing: 2.000 simulated s in 0.011 wall s, real-time factor 175.236
-  waiting for steps     0.000 s    0.8%
-  in sensor reads       0.003 s   27.1%
-  our processing        0.008 s   72.1%
-car    sensor     read_s  per_poll_ms    new  new_per_s       bytes  kB_per_s
-kite1  lidar       0.002         0.01     21      10.50     1466784     733.4
-kite1  camera      0.000         0.00     41      20.50       48240      24.1
-kite1  radar       0.001         0.00     41      20.50       69480      34.7
-kite1  gps         0.000         0.00     21      10.50        4440       2.2
-kite1  imu         0.000         0.00    200     100.00        7400       3.7
-rate_hz: distinct reading timestamps per simulator second. It counts at most one new reading per poll, so it is limited to about the poll rate of 60 Hz. per_poll shows when a sensor delivered more.
-kite1 imu: polls returned up to 2 readings. rate_hz counts at most one per poll, so it undercounts this sensor.
-wrote .worktrees\R32\scratch\R32\sample\sensors.json
+kite1  lidar       41    10.00 sensor         1     0.02    0.01    0.03    0.10      0      20      0    1017     n/a
+kite1  camera      41    20.00 sensor         1     0.01    0.00    0.01    0.15      0       0      0     n/a     n/a
+kite1  radar       41    20.00 sensor         1     0.00    0.00    0.01    0.01      0       0      0     n/a     n/a
+kite1  gps         21    10.00 sensor         1     0.00    0.00    0.00    0.00      0       0      0     n/a     n/a
+kite1  imu         21    10.05 sensor        10     0.00    0.00    0.01    0.01      0       0      0     n/a     n/a
+timing: 2.000 simulated s in 0.006 wall s, real-time factor 345.471
+  waiting for steps     0.000 s    1.0%
+  in sensor reads       0.001 s   21.8%
+  our processing        0.004 s   77.2%
+car    sensor     read_s  per_poll_ms  poll_hz    new  new_per_s  req_hz       bytes  kB_per_s
+kite1  lidar       0.001         0.02    20.00     21      10.50   10.00      501206     250.6
+kite1  camera      0.000         0.01    20.00     41      20.50   20.00       16482       8.2
+kite1  radar       0.000         0.00    20.00     41      20.50   10.00       23739      11.9
+kite1  gps         0.000         0.00    10.00     21      10.50     n/a         777       0.4
+kite1  imu         0.000         0.00    10.00    200     100.00     n/a        7400       3.7
+rate_hz: distinct reading timestamps per simulator second. It counts at most one new reading per poll, so it is limited to about the sensor's poll rate (poll_hz, at most 60). per_poll shows when a sensor delivered more.
+loss not checkable for gps, imu: a buffered sensor's capacity is not known, so compare its new readings with a run at --rates all=60.
+kite1 imu: polls returned up to 10 readings. rate_hz counts at most one per poll, so it undercounts this sensor.
+wrote scratch\example\sensors.json
 ```
+
+With `--rates all=60` the `polls` column reads 120 for every sensor and `poll_hz` reads 60.00. The `new` counts are the same as above: 21, 41, 41, 21 and 200.
 
 The last line shows the `--out` folder of that run. Without `--out`, it is `recordings`.
 
@@ -223,7 +243,7 @@ The columns:
 
 - `steps per second`: how many simulator steps run per wall-clock second. The fake's figure means nothing. The real figure is one of the things this spike measures.
 - `polls`: how many polls returned a reading in the expected format, or an empty poll. A poll with an unexpected format is not counted here, so the total number of polls is `polls` plus `unexp`.
-- `rate_hz`: distinct reading timestamps per simulated second. It counts at most one new reading per poll, so it cannot exceed about 60 Hz.
+- `rate_hz`: distinct reading timestamps per simulated second. It counts at most one new reading per poll, so it cannot exceed about the sensor's poll rate (`poll_hz` in the second table, at most 60).
 - `time`: where the timestamps came from. `sensor` means the readings carried their own time. `poll` means they had none and the poll time was used. `mixed` means both. `n/a` means no reading had a timestamp.
 - `per_poll`: the most readings that one poll returned.
 - `mean_ms`, `p50_ms`, `p95_ms`, `max_ms`: how long a poll took, in milliseconds.
@@ -246,7 +266,42 @@ The `timing:` line and the three lines under it split the wall-clock time of the
 - `in sensor reads`: time spent inside the poll calls of all sensors. Each poll call covers everything inside the adapter's poll: BeamNGpy's poll, however it fetches and decodes the data, plus the bridge's parse of the result in `readings.py`. It is more than the round trip to the simulator. The second table shows it per sensor: `read_s` is the total over the run and `per_poll_ms` is `read_s` divided by the number of poll calls, in milliseconds, failed polls included.
 - `our processing`: wall time minus the two above. It is a remainder, so it also holds anything else that happened between the timed calls. This run's own measuring work is part of it: sizing and fingerprinting each poll's raw data for the second table. When this share is large, some of it is the measurement and not the bridge.
 
-The three parts add up to the wall time by construction. The percentage after each is its share of the wall time. The JSON holds the same numbers under `timing` (`simulated_s`, `wall_s`, `real_time_factor`, `step_wait_s`, `sensor_reads_s`, `processing_s`) and, per sensor row, `read_total_s` and `read_per_poll_s`.
+The three parts add up to the wall time by construction. The percentage after each is its share of the wall time. The JSON holds the same numbers under `timing` (`simulated_s`, `wall_s`, `real_time_factor`, `step_wait_s`, `sensor_reads_s`, `processing_s`) and, per sensor row, `read_total_s` and `read_per_poll_s`. A sensor read at a lower rate is polled fewer times, so its `read_s` is smaller while `per_poll_ms` stays about the same. The saving shows in `in sensor reads` and in the real-time factor, not in the cost of one poll.
+
+#### Reading each sensor at its own rate
+
+`--rates` sets how many polls per simulated second each sensor gets. The value is a comma-separated list of `sensor=rate` pairs. The sensors are `lidar`, `camera`, `radar`, `gps` and `imu`; `all` sets every sensor. A rate is a number above 0 and at most 60, because the simulator steps 60 times per simulated second and a sensor is polled at most once per step. Anything else, including an unknown sensor name, a pair without `=`, `nan`, `inf`, a rate of 0 or below, a rate above 60 and a sensor named twice, is a usage error. The script prints it and exits with code 2 before it starts anything.
+
+| Command | Meaning |
+|---|---|
+| (no `--rates`) | The default: `lidar=20,camera=20,radar=20,gps=10,imu=10`. |
+| `--rates all=60` | Every sensor after every step, the way the scripts read before `--rates` existed. |
+| `--rates all=30` | Every sensor 30 times per simulated second. |
+| `--rates all=60,gps=10` | `all` is the base, and a named sensor overrides it wherever it is written: GPS at 10, the rest at 60. `gps=10,all=60` means the same. |
+| `--rates gps=60` | Sensors that are not named keep their default: GPS at 60, the rest at the default rates. |
+
+The defaults are at least twice the update rate asked of the sensor, so that a new reading is picked up within half its interval. The lidar and the radar ask for 10 updates per second (`requested_update_time=0.1`) and the camera for 20 (`requested_update_time=0.05`). GPS and IMU buffer their readings between polls, so a poll returns everything made since the last one.
+
+Which steps a sensor is polled on is exact and the same every run. A sensor at rate `r` is polled after step 1 and after every step `k` where `floor(k * r / 60)` is greater than `floor((k - 1) * r / 60)`. The rate is an exact fraction, so a decimal such as `2.5` carries no rounding error. After `N` steps the sensor has had `floor(N * r / 60) + 1` polls for any `r` below 60, and `N` polls at 60. For example, at `r = 20` the polled steps are 1, 3, 6, 9 and so on, and 60 steps give 21 polls. At `r = 7` they are 1, 9, 18, 26, 35, 43, 52 and 60: 8 polls. Step 1 is always polled so that the first reading is not missed and a buffered sensor's first poll collects everything made so far.
+
+How the table and the JSON show it:
+
+- `poll_hz`: the configured poll rate. The JSON row has `configured_rate_hz`.
+- `polls`: the polls made, so at the default rates it is about a third of the polls at `all=60` for lidar, camera and radar, and about a sixth for GPS and IMU.
+- `new` and `new_per_s`, as before. Compare them with `req_hz`.
+- `req_hz`: the update rate the adapter asks of the sensor, `1 / requested_update_time` from `bridge/kite_bridge/sensor_settings.py`. GPS and IMU show `n/a` because the adapter passes no `requested_update_time` for them. The JSON row has `requested_update_hz`, `null` for those two.
+
+The `possible loss` note decides like this, for each lidar, camera or radar row. It prints only when the sensor is polled slower than every step (`poll_hz` below 60) and `new` is below `req_hz` times the simulated seconds, less one reading. The one reading is slack for the first and last interval of the run, which are partial. For a 30-second run of a sensor that asks for 10 Hz, that is a note when `new` is below 299. The JSON row has `possible_loss` as `true` or `false`. A line reads:
+
+```
+possible loss: kite1 lidar gave 6.00 new readings per simulated second at 5 polls per second, fewer than the 10 Hz requested. Compare with a run at --rates all=60.
+```
+
+The note means the sensor, at this poll rate, delivered fewer new readings than it was asked to make, so some updates were probably missed between polls. It can also mean the simulator made fewer updates than asked (for example, because the run is slow), which is why it says "possible". Run again with `--rates all=60` and compare.
+
+The note is never printed for GPS and IMU. Their buffer size is not known, so one run cannot say whether a poll returned as many readings as the buffer could hold. When one of them is polled slower than every step, the script prints `loss not checkable for ...` instead. Compare their `new` counts between a run at `--rates all=60` and a run at the rate you want; see "Compare two runs".
+
+`--rates` does not change `--seconds`, which stays in simulated seconds, and it does not change how fast the simulator steps. It changes how many times a sensor is read in each simulated second.
 
 #### New readings and bytes
 
@@ -279,6 +334,8 @@ Readings are in the order the polls returned them, and a reading that a later po
 
 The `rate_hz:` explanation line always prints. The other footer lines appear only when they apply:
 
+- `possible loss: <car> <sensor> ...` appears for each lidar, camera or radar row that meets the rule under "Reading each sensor at its own rate".
+- `loss not checkable for ...` appears when GPS or IMU is polled slower than every step.
 - `<car> <sensor>: polls returned up to N readings...` appears when `per_poll` is above 1.
 - `no sensor time for <car> <sensor>, <car> <sensor>: rate_hz there is the polling rate, not the sensor's` is one line that lists every affected sensor, separated by commas. It appears when at least one sensor has `time` of `poll` or `mixed`.
 - `unexpected format: <car> <sensor> N readings, first: ...` appears when `unexp` is above 0. It prints the first message for each sensor, so send those lines back in full. A poll that raised an error reads `first: poll raised <type>: <message>`.
@@ -293,8 +350,8 @@ A missing reading is never filled in. An empty poll counts under `empty`, and an
 
 ### What to send back
 
-- The full printed output, including the table, the `timing:` block and every footer line.
-- `recordings/sensors.json`.
+- The full printed output, including the table, the `timing:` block and every footer line, from both runs under "Compare two runs".
+- `recordings/every-step/sensors.json` and `recordings/default-rates/sensors.json`.
 - `recordings/raw_gps_imu.json`, from a run with `--dump-raw 50` (see "The raw GPS and IMU dump").
 - The BeamNGpy version lines (from Run 1 and the `pip show` output).
 - Any error, in full.
@@ -320,6 +377,8 @@ python bridge/spike_multicar.py --home "<your BeamNG.tech folder>"
 ### What it prints
 
 The five `sensor:` lines once, then three blocks, one for each case. Each block starts with a `spawned` line that lists the cars of that case, then a blank line and the same summary line, table and footer lines as Run 2, then `wrote ...multicar.json`. The summary lines read `cars: 1`, `cars: 2` and `cars: 4`, and the table has one row per sensor per car (`kite1` to `kite4`). Each case also prints the `timing:` block and the second table (see "Where the time goes" and "New readings and bytes" under Run 2). Compare the `steps per second` figure and the real-time factor across the three cases to see whether more cars slow the simulator, and compare `waiting for steps` with `in sensor reads` to see which part grows. `--dump-raw N` writes `raw_gps_imu.json` with one case per car count and N GPS and N IMU readings per car.
+
+`--rates` applies to every case, with the same default as Run 2. Each case prints `poll_hz` and `req_hz` and the loss notes. To compare with the old behaviour, run it once more with `--rates all=60`.
 
 The script rewrites `multicar.json` after each case, so a run that fails in case 2 still leaves the result of case 1.
 
