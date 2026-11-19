@@ -54,6 +54,13 @@ SENSOR_SETTINGS = {
 }
 
 
+def requested_update_hz(kind):
+    """The update rate the adapter asks for, 1 / requested_update_time. None for a sensor with no
+    such setting (GPS and IMU): no requested rate is known for it."""
+    interval = SENSOR_SETTINGS[kind].get("requested_update_time")
+    return None if interval is None else 1 / interval
+
+
 def settings_lines():
     return [f"sensor: {kind} " + " ".join(f"{name}={value}" for name, value in settings.items())
             for kind, settings in SENSOR_SETTINGS.items()]

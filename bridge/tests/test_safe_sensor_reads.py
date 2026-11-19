@@ -87,7 +87,7 @@ class BadSensorTest(unittest.TestCase):
 
             with (mock.patch.object(common, "FakeSim", sim_class), contextlib.redirect_stdout(out),
                   contextlib.redirect_stderr(err)):
-                code = spike_sensors.main(["--fake", "--seconds", "1", "--out", tmp])
+                code = spike_sensors.main(["--fake", "--seconds", "1", "--rates", "all=60", "--out", tmp])
             saved = json.loads((Path(tmp) / "sensors.json").read_text(encoding="utf-8"))
         return code, out.getvalue(), err.getvalue(), {r["sensor"]: r for r in saved["sensors"]}
 

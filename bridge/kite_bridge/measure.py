@@ -138,6 +138,15 @@ def count_distinct(keys):
     return len(set(keys))
 
 
+def possible_loss(new_readings, simulated_s, requested_hz):
+    """Whether a sensor asked to update `requested_hz` times per simulated second gave fewer new
+    readings than that over `simulated_s`, by more than one. A run that polls every update sees
+    between floor(requested_hz * simulated_s) and one more, so one reading of slack covers the
+    partial first and last interval; a shortfall beyond it means updates were missed."""
+    _check([new_readings, simulated_s, requested_hz], "possible_loss")
+    return new_readings < requested_hz * simulated_s - 1
+
+
 def summarise(series, latencies, points=(), detections=()):
     return {
         "polls": len(series),
