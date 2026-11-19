@@ -18,16 +18,25 @@ from kite_bridge.readings import timer_value
 SENSOR_RATES = {"lidar": 10.0, "camera": 20.0, "radar": 10.0, "gps": 100.0, "imu": 100.0}
 DEFAULT = rates.parse_rates(rates.DEFAULT_RATES_TEXT)
 MAX_SLEEPS = 100_000
+MAX_READS = 1_000_000
 TIMING_KEYS_FREE = {"simulated_s", "wall_s", "real_time_factor", "idle_s", "timer_reads_s", "sensor_reads_s",
                     "processing_s"}
 
 
 class Clock(FakeClock):
-    """A FakeClock whose sleep fails the test instead of letting a loop that never ends hang it."""
+    """A FakeClock that fails the test, instead of letting a loop that never ends hang it, after
+    MAX_SLEEPS sleeps or MAX_READS readings."""
 
     def __init__(self):
         super().__init__()
         self.sleeps = 0
+        self.reads = 0
+
+    def now(self):
+        self.reads += 1
+        if self.reads > MAX_READS:
+            raise AssertionError(f"read the clock more than {MAX_READS} times")
+        return super().now()
 
     def sleep(self, seconds):
         self.sleeps += 1
@@ -153,6 +162,25 @@ class FreeRunCountsTest(unittest.TestCase):
         self.assertAlmostEqual(t["sensor_reads_s"], 15 * 0.07)
         self.assertAlmostEqual(t["wall_s"], 1.05)
         self.assertEqual(t["idle_s"], 0.0)
+
+    def test_after_one_slow_poll_the_missed_due_times_are_skipped_not_made_up(self):
+        class SlowFirstLidar(FakeSim):
+            slow = True
+
+            def poll(self, car, kind):
+                if kind == "lidar" and self.slow:
+                    self.slow = False
+                    self._clock.advance(0.2)
+                return super().poll(car, kind)
+
+        result, rows, _ = free_run(rates.parse_rates("all=20"), sim_class=SlowFirstLidar)
+        # Every sensor and the Timer are at 20 per wall second. The pass at 0 s takes 0.2 s, so
+        # the due times 0.05, 0.10 and 0.15 pass with no pass. The next pass, at 0.2 s, polls each
+        # sensor once and moves it to 0.25; then the passes at 0.25, 0.30, ..., 0.95 run on time
+        # and the Timer reading 1.0 ends the run. Polls: 1 + 1 + 15 = 17 each. Making the missed
+        # times up would add 3 more polls at 0.2 s, 20 in all.
+        self.assertEqual(polls(rows), dict.fromkeys(rows, 17))
+        self.assertEqual(result["timer"]["polls"], 18)
 
     def test_the_timer_follows_the_higher_of_the_gps_and_imu_rates(self):
         result, rows, _ = free_run(rates.parse_rates("gps=5,imu=25"))
@@ -376,7 +404,8 @@ class ScriptTest(unittest.TestCase):
         self.assertEqual(self.saved(), before)
         self.assertEqual(sim_l.events, sim.events)
         self.assertEqual(before["mode"], "lockstep")
-        self.assertEqual(sim.events[-2:], ["remove sensors", "close"])
+        shutdown = [e for e in sim.events if e in ("pause", "remove sensors", "close")]
+        self.assertEqual(shutdown, ["remove sensors", "close"])
 
     def test_a_free_run_pauses_before_it_removes_the_sensors(self):
         code, _, stderr, (sim,) = self.run_main("--mode", "free")
