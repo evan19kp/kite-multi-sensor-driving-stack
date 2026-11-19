@@ -352,10 +352,10 @@ Each item that introduces a lasting rule adds a "## Standing rules (R<n>)" secti
 
 ## Standing rules (R31)
 
-- The provenance marker text is spelled only in `bridge/kite_bridge/output_guard.py` and
-  `bridge/tests/test_output_guard.py`. Docs describe the `provenance` field and point to the
-  `PROVENANCE` constant; `bridge/tests/test_marker_spelling.py` fails if another file under
-  `bridge/` or `docs/` spells it.
+- Under `bridge/` and `docs/`, the provenance marker text is spelled only in
+  `bridge/kite_bridge/output_guard.py` and `bridge/tests/test_output_guard.py`. Docs describe
+  the `provenance` field and point to the `PROVENANCE` constant;
+  `bridge/tests/test_marker_spelling.py` fails if any other file there spells it.
 
 ## Simulator files (hard rule)
 

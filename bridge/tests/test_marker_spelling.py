@@ -2,16 +2,11 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from kite_bridge.output_guard import PROVENANCE, ROOT_MARKER
+from kite_bridge.output_guard import PROVENANCE, repo_roots
 
 SCANNED_FOLDERS = ("bridge", "docs")
 MAY_SPELL_IT = ("bridge/kite_bridge/output_guard.py", "bridge/tests/test_output_guard.py")
 SKIPPED_FOLDERS = ("__pycache__",)
-
-
-def repo_root():
-    here = Path(__file__).resolve()
-    return next(p for p in here.parents if (p / ROOT_MARKER).is_file())
 
 
 def fold_case_and_whitespace(data):
@@ -34,7 +29,7 @@ def files_spelling_the_marker(root):
 
 class MarkerSpellingTest(unittest.TestCase):
     def test_only_the_guard_and_its_test_spell_the_marker(self):
-        scanned, spelling = files_spelling_the_marker(repo_root())
+        scanned, spelling = files_spelling_the_marker(repo_roots(__file__)[0])
         self.assertIn("bridge/README.md", scanned)
         self.assertIn("docs/SPIKE-0B.md", scanned)
         self.assertEqual(sorted(set(spelling) - set(MAY_SPELL_IT)), [])
