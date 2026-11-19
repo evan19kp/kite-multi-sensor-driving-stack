@@ -15,6 +15,7 @@ from tests.test_scripts import run_script
 from kite_bridge import common
 from kite_bridge.fake_sim import FakeSim
 from kite_bridge.readings import reading_from_raw
+from kite_bridge.sensor_settings import SENSOR_SETTINGS, settings_for
 from kite_bridge.sim_api import SENSOR_KINDS, STEP_HZ
 
 SIMULATED_SECONDS = 1.0
@@ -196,7 +197,31 @@ class SettingsLinesTest(unittest.TestCase):
         self.assertTrue(keywords)
         for keyword in keywords:
             self.assertIsNone(keyword.arg, "a sensor setting is passed by name in the adapter")
-            self.assertEqual(ast.unparse(keyword.value), "SENSOR_SETTINGS[kind]")
+            self.assertEqual(ast.unparse(keyword.value), "settings_for(kind, stream)")
+
+    def test_without_stream_the_adapter_passes_the_table_itself(self):
+        for kind in SENSOR_KINDS:
+            self.assertIs(settings_for(kind), SENSOR_SETTINGS[kind], kind)
+            self.assertIs(settings_for(kind, stream=False), SENSOR_SETTINGS[kind], kind)
+
+    def test_with_stream_only_lidar_and_camera_gain_is_streaming_true(self):
+        for kind in SENSOR_KINDS:
+            added = {k: v for k, v in settings_for(kind, stream=True).items() if k not in SENSOR_SETTINGS[kind]}
+            self.assertEqual(added, {"is_streaming": True} if kind in ("lidar", "camera") else {}, kind)
+            for name, value in SENSOR_SETTINGS[kind].items():
+                self.assertEqual(settings_for(kind, stream=True)[name], value, kind)
+
+    def test_with_stream_the_lines_and_the_json_show_is_streaming(self):
+        by_kind, _ = self.sensor_lines("spike_sensors", "--stream")
+        saved = json.loads((self.out / "sensors.json").read_text(encoding="utf-8"))["sensor_settings"]
+        for kind in SENSOR_KINDS:
+            streamed = kind in ("lidar", "camera")
+            self.assertEqual(by_kind[kind].endswith(" is_streaming=True"), streamed, kind)
+            self.assertEqual(saved[kind].get("is_streaming"), True if streamed else None, kind)
+
+    def test_without_stream_no_line_mentions_streaming(self):
+        _, lines = self.sensor_lines("spike_sensors")
+        self.assertFalse([line for line in lines if "is_streaming" in line])
 
 
 if __name__ == "__main__":

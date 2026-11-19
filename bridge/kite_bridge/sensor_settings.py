@@ -4,6 +4,8 @@ ASSUMPTION: the setting names, and the values of the lidar and radar settings th
 BeamNGpy 1.36's own defaults, were read from BeamNGpy 1.36; the first real run checks them.
 """
 
+from kite_bridge.sim_api import STREAMED_KINDS
+
 FORWARD = (0, -1, 0)
 UP = (0, 0, 1)
 
@@ -54,6 +56,22 @@ SENSOR_SETTINGS = {
 }
 
 
+STREAM_SETTINGS = {"is_streaming": True}
+
+
+def settings_for(kind, stream=False):
+    """What the adapter passes to a `kind` sensor: SENSOR_SETTINGS[kind], and with `stream` also
+    STREAM_SETTINGS for the streamed sensors (lidar and camera). Without `stream` it is
+    SENSOR_SETTINGS[kind] itself."""
+    if stream and kind in STREAMED_KINDS:
+        return {**SENSOR_SETTINGS[kind], **STREAM_SETTINGS}
+    return SENSOR_SETTINGS[kind]
+
+
+def settings_table(stream=False):
+    return {kind: settings_for(kind, stream) for kind in SENSOR_SETTINGS}
+
+
 def requested_update_hz(kind):
     """The update rate the adapter asks for, 1 / requested_update_time. None for a sensor with no
     such setting (GPS and IMU): no requested rate is known for it."""
@@ -61,6 +79,6 @@ def requested_update_hz(kind):
     return None if interval is None else 1 / interval
 
 
-def settings_lines():
+def settings_lines(stream=False):
     return [f"sensor: {kind} " + " ".join(f"{name}={value}" for name, value in settings.items())
-            for kind, settings in SENSOR_SETTINGS.items()]
+            for kind, settings in settings_table(stream).items()]

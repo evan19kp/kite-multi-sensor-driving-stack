@@ -373,6 +373,16 @@ Each item that introduces a lasting rule adds a "## Standing rules (R<n>)" secti
 - A `possible loss` note is decided only from a requested update rate that `sensor_settings.py`
   passes; GPS and IMU have none, so their loss is checked by comparing `new` between two runs.
 
+## Standing rules (R34)
+
+- Every streamed reading goes through `bridge/kite_bridge/stream_check.py` before anything uses
+  it; no script or module keeps a second check. What the check drops is counted (`suspect`
+  readings, `sus_rows` rows) in the printed summary and the JSON, never dropped or passed on
+  silently.
+- Streamed reads are timed apart from polls (`stream_reads_s`, `in stream reads`). Without
+  `--stream` the scripts poll every sensor and print what they printed before.
+- No doc or PR claims streaming works on the real simulator until Evan's run shows it.
+
 ## Simulator files (hard rule)
 
 - Never read, list, search, copy, launch or write about the simulator's install folder, its user

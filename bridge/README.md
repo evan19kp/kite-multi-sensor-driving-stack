@@ -19,10 +19,14 @@ the spikes on it, and nothing here has run against an installed Rerun yet.
   It does not import `beamngpy` or numpy, so tests drive it with plain dicts, lists and small
   array-like classes. Its format guesses are marked ASSUMPTION too.
 - `kite_bridge/sensor_settings.py`: the one table of every setting the adapter passes to a
-  sensor, and the `sensor:` lines the scripts print from it. It imports nothing.
+  sensor, including `is_streaming=True` for lidar and camera with `--stream`, and the `sensor:`
+  lines the scripts print from it. It imports only `sim_api`.
+- `kite_bridge/stream_check.py`: the one place that checks a streamed lidar or camera reading
+  and decides what is dropped and counted under `suspect`. Standard library only.
 - `kite_bridge/fake_sim.py`: a seeded synthetic simulator with configurable sensor rates,
-  dropouts, repeated readings, latency, buffered GPS and IMU readings and, with a `FakeClock`, a
-  fake cost per request and per step (no real waiting). All tests use it.
+  dropouts, repeated readings, latency, buffered GPS and IMU readings, a streamed lidar memory
+  block that keeps stale and zero rows after a shorter scan and, with a `FakeClock`, a fake cost
+  per request and per step (no real waiting; streamed reads cost nothing). All tests use it.
 - `kite_bridge/measure.py`: pure measurement functions (effective rate, latency statistics,
   empty and repeated readings, steps per second, real-time factor, the processing remainder and
   new-reading counts). Its docstring states the input domain.
@@ -47,8 +51,8 @@ All four take `--home <simulator folder>` (required unless `--fake`), `--headles
 `--seconds` (default 30), `--traffic` (default 8), `--out` (default `recordings/`, see below), `--model`,
 `--config`, `--list-models`, `--timeout` (default 300) and `--fake`. `--fake` runs against the
 fake simulator and needs no simulator. `spike_sensors.py` and `spike_multicar.py` also take
-`--rates` (polls per simulated second for each sensor, default `lidar=20,camera=20,radar=20,gps=10,imu=10`)
-and `--dump-raw N` (default 0).
+`--rates` (polls per simulated second for each sensor, default `lidar=20,camera=20,radar=20,gps=10,imu=10`),
+`--dump-raw N` (default 0) and `--stream` (default off).
 
 `--timeout` is the longest wait in seconds for any one simulator call, map loading included; it
 must be above 0. Every run ends BeamNG.tech through one shutdown path. After a normal run or an
@@ -115,6 +119,20 @@ raw bytes per simulated second. `spike_connect.py` polls no sensor and `spike_li
 a viewer demo, so neither prints them. `--dump-raw N` on the two measuring scripts writes the first
 N raw GPS and the first N raw IMU readings of each car to `raw_gps_imu.json` in `--out`, each with
 its poll's wall time and step count. `docs/SPIKE-0B.md` explains each number.
+
+`--stream` on the two measuring scripts creates the lidar and camera with `is_streaming=True` and
+reads them from shared memory with `stream()`, which sends no request; radar, GPS and IMU are
+still polled, at the same `--rates`. Every streamed reading goes through `stream_check.py` first.
+All-zero rows after the last non-zero row of a lidar scan are cut and counted under `sus_rows`.
+A lidar reading of the wrong shape or with a value that is not finite, and a camera reading with
+an image that is not the configured resolution, are dropped whole and counted under `suspect`,
+with the first reason printed. A camera `stream()` result that is not None and not a dict counts
+under `unexp`. Rows left from an earlier, longer scan cannot be told from points and are kept.
+Streamed reads are timed as `in stream reads`, apart from `in sensor polls`. That time includes
+the bridge's check, which reads every byte of a lidar scan; the bridge does not time it alone. The
+JSON records `"stream"`, `timing.stream_reads_s` and each row's `read` and `suspect`. Without
+`--stream` the output is as before. Streaming has not run against the real simulator.
+`spike_lidar_rerun.py` does not take `--stream`; it is a viewer demo, not a measuring script.
 
 Output goes only to `--out`, `recordings/` by default, which is gitignored. Every JSON file has a
 top-level `"provenance"` field that marks the file as simulator output not to commit. The text is

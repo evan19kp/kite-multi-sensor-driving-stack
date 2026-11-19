@@ -4,7 +4,8 @@ Each case starts a fresh simulator session. Prints steps per second, the wall ti
 real-time factor and every sensor's rate and fresh-data counts per case. Every sensor is polled
 at its --rates rate. Writes multicar.json to
 --out. --dump-raw N also writes the first N raw GPS and IMU readings per car, for every case, to
-raw_gps_imu.json.
+raw_gps_imu.json. --stream reads the lidar and camera from shared memory with stream() and counts
+what it drops under `suspect`.
 """
 
 import sys
@@ -15,7 +16,7 @@ CAR_COUNTS = (1, 2, 4)
 
 
 def run(args):
-    common.print_sensor_settings()
+    common.print_sensor_settings(args.stream)
     cases = []
     dumps = []
     for n_cars in CAR_COUNTS:
@@ -25,7 +26,8 @@ def run(args):
             for car in cars:
                 sim.set_ai_mode(car, "traffic")
             dump = common.RawDump(args.dump_raw)
-            result = common.measure_sensors(sim, cars, args.seconds, dump=dump, poll_rates=args.rates)
+            result = common.measure_sensors(sim, cars, args.seconds, dump=dump, poll_rates=args.rates,
+                                            stream=args.stream)
             for car in cars:
                 sim.set_ai_mode(car, "disabled")
             print(f"\n{common.format_result(result)}")
