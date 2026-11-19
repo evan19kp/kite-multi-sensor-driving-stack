@@ -199,7 +199,7 @@ Agents never run the real simulator; every test uses the fake.
   `python`; `scripts/ci_paths.json` maps `docs/INVESTIGATION-ASSOCIATION.md` to `app` and
   `app-windows` in `md_read_by_tests`, with a test. Tests: CI's `python` job log shows the bridge
   tests running and passing.
-- [ ] **R19 Live lidar into Rerun for Demo 1** (feat, Sonnet; needs R17):
+- [x] **R19 Live lidar into Rerun for Demo 1** (feat, Sonnet; needs R17):
   `bridge/kite_bridge/rerun_view.py` (the only module that imports `rerun`, lazily; one simulator
   timeline; lidar coloured by distance near blue to far red, our car's position, the camera image,
   other cars as a separate ground-truth layer); `bridge/spike_lidar_rerun.py` (traffic mode with AI

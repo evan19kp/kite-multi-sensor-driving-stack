@@ -81,6 +81,21 @@ class Simulator(ABC):
         """Advance the simulator by n steps of 1 / STEP_HZ seconds."""
 
     @abstractmethod
+    def lidar_points(self, car: str) -> list[tuple[float, float, float]]:
+        """The car's latest lidar scan as (x, y, z) points in world metres. Needs the sensors
+        attached. An empty list means the scan had no points."""
+
+    @abstractmethod
+    def camera_image(self, car: str) -> list[list[tuple[int, int, int]]]:
+        """The car's latest camera image as rows of (red, green, blue) pixels, 0 to 255.
+        Needs the sensors attached."""
+
+    @abstractmethod
+    def other_positions(self) -> list[tuple[float, float, float]]:
+        """Ground-truth positions of every car that is not ours (the traffic). For display
+        only, never for driving. Raises if the simulator cannot say."""
+
+    @abstractmethod
     def set_ai_mode(self, car: str, mode: str) -> None:
         """Set the car's AI mode, for example "traffic" or "disabled"."""
 

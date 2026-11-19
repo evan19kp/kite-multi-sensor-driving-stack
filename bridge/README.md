@@ -1,10 +1,10 @@
 # bridge
 
 Python code that talks to the BeamNG.tech simulator through BeamNGpy. Built so far: a simulator
-interface, a real adapter, a fake simulator and three spike scripts that measure the simulator's
-connection, sensors and multi-car behaviour. Planned, not built yet: the Rerun viewer and the
-local link to the core. No result from the real simulator is recorded here; Evan runs the spikes
-on it.
+interface, a real adapter, a fake simulator, three spike scripts that measure the simulator's
+connection, sensors and multi-car behaviour, and a Rerun lidar demo script. Planned, not built
+yet: the local link to the core. No result from the real simulator is recorded here; Evan runs
+the spikes on it, and nothing here has run against an installed Rerun yet.
 
 ## Layout
 
@@ -20,7 +20,11 @@ on it.
 - `kite_bridge/measure.py`: pure measurement functions (effective rate, latency statistics,
   empty and repeated readings, steps per second). Its docstring states the input domain.
 - `kite_bridge/common.py`: command-line parsing and the step-and-poll loop shared by the scripts.
+- `kite_bridge/rerun_view.py`: the only module that imports `rerun`, and only inside a method.
+  It holds the entity paths, the pure distance-to-colour function, `log_step` and the recorders.
+  Its Rerun calls are guesses until the first real run and carry `# ASSUMPTION:` comments.
 - `spike_connect.py`, `spike_sensors.py`, `spike_multicar.py`: the spike scripts.
+- `spike_lidar_rerun.py`: Demo 1, the Rerun lidar demo.
 - `requirements.txt`: `beamngpy==1.36` and `rerun-sdk`. Tests need neither.
 
 ## Scripts
@@ -55,6 +59,28 @@ sensor saying so.
 Output goes only to `--out`, which is gitignored as `recordings/`. Ground truth (the car's true
 position) is written in its own file, `connect.json`, apart from sensor data, and scores results
 but never drives anything.
+
+## Rerun lidar demo
+
+`spike_lidar_rerun.py` drives our car in traffic mode with AI traffic and, once per simulator
+step, logs on one `sim_time` timeline: lidar points coloured by distance from our car (blue near,
+red at 50 m and beyond) under `world/ego/lidar`, our position under `world/ego/position` and the
+camera image under `camera/image`. The traffic cars' positions are simulator ground truth, shown
+for display only under `ground_truth/other_cars`; hide that layer in the viewer to see sensor
+data alone. It takes the common options above plus `--save NAME.rrd`.
+
+- Without `--save` it spawns a Rerun viewer.
+- With `--save` it writes `<--out>/NAME.rrd` and opens no viewer; open the file later with
+  `rerun <file>`. The name must end in `.rrd` and stay inside `--out` (no absolute path, drive or
+  `..`), else the script exits with a usage error.
+- With `--fake` it uses the fake simulator and a recorder that keeps nothing: no viewer, no
+  Rerun import and no file, even with `--save`.
+
+```
+python bridge/spike_lidar_rerun.py --fake --seconds 2 --out scratch/example
+```
+
+`.rrd` files are recordings: they go only under `--out` and are never committed.
 
 ## Tests
 
