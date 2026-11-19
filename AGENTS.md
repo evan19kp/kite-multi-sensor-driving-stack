@@ -313,6 +313,17 @@ Each item that introduces a lasting rule adds a "## Standing rules (R<n>)" secti
 - A Markdown file that a CTest test reads is listed in `md_read_by_tests` in
   `scripts/ci_paths.json`, so changing it runs the C++ jobs.
 
+## Standing rules (R19)
+
+- Only `bridge/kite_bridge/rerun_view.py` imports `rerun`, and only lazily inside a method. Its
+  Rerun calls are unverified until a real run and carry `# ASSUMPTION:` comments.
+- Ground truth (our car's and the other cars' positions, anything from simulator state) is logged
+  only under `ground_truth/`, never under a sensor path (`world/`, `camera/`), and is never fed
+  to anything that drives. Inside a Rerun recording, the separate `ground_truth/` entity root is
+  the separation between ground truth and sensor data.
+- `.rrd` recordings are written only under `--out` (`--save` takes a name inside it) and are
+  never committed.
+
 ## Simulator files (hard rule)
 
 - Never read, list, search, copy, launch or write about the simulator's install folder, its user
