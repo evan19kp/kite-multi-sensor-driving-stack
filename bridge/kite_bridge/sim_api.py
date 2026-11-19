@@ -1,3 +1,4 @@
+import sys
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 
@@ -23,6 +24,22 @@ class Reading:
     time_source: str = SENSOR_TIME
     unexpected: str | None = None
     count: int = 1
+
+
+def release(sensors, close):
+    """Calls `remove()` on every sensor in `sensors`, a dict keyed by (car, kind), and prints
+    each failure to stderr. Then calls `close`, even after a failure. Raises the error from
+    `close` if it raised, else the first removal error."""
+    failure = None
+    for (car, kind), sensor in sensors.items():
+        try:
+            sensor.remove()
+        except Exception as error:
+            print(f"warning: could not remove {car} {kind}: {type(error).__name__}: {error}", file=sys.stderr)
+            failure = failure or error
+    close()
+    if failure is not None:
+        raise failure
 
 
 class Simulator(ABC):

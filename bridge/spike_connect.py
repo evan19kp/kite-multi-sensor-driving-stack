@@ -27,9 +27,9 @@ def run(args):
             ground_truth.append({"t": second, "pos": [x, y, z]})
             print(f"t={second}s position=({x:.2f}, {y:.2f}, {z:.2f})")
         sim.set_ai_mode(car, "disabled")
-    common.write_json(args.out, "connect.json", {
-        "versions": versions, "model": model, "traffic_spawned": traffic,
-        "ground_truth": ground_truth})
+        common.write_json(args.out, "connect.json", {
+            "versions": versions, "model": model, "traffic_spawned": traffic,
+            "ground_truth": ground_truth})
 
 
 def main(argv=None):

@@ -10,7 +10,7 @@ checks them.
 import importlib.metadata
 
 from kite_bridge.readings import reading_from_raw
-from kite_bridge.sim_api import STEP_HZ, Simulator
+from kite_bridge.sim_api import STEP_HZ, Simulator, release
 
 PORT = 25252
 SCENARIO_LEVEL = "west_coast_usa"
@@ -38,18 +38,9 @@ class BeamNGAdapter(Simulator):
         self._bng.open(launch=True)
 
     def close(self):
-        failures = []
-        for sensor in self._sensors.values():
-            try:
-                sensor.remove()
-            except Exception as error:
-                failures.append(error)
-        self._sensors.clear()
-        if self._bng is not None:
-            bng, self._bng = self._bng, None
-            bng.close()
-        if failures:
-            raise failures[0]
+        sensors, self._sensors = self._sensors, {}
+        bng, self._bng = self._bng, None
+        release(sensors, bng.close if bng is not None else lambda: None)
 
     def versions(self):
         try:

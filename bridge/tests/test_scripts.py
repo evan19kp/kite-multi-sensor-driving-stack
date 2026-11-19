@@ -8,8 +8,11 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from tests import BRIDGE_DIR
+from kite_bridge import common
+from kite_bridge.fake_sim import FakeSim
 
 SCRIPTS = ("spike_connect", "spike_sensors", "spike_multicar")
 OUTPUT_FILE = {"spike_connect": "connect.json", "spike_sensors": "sensors.json",
@@ -104,6 +107,47 @@ class CommandLineTest(unittest.TestCase):
             self.assertEqual(code, 0)
             for option in ("--home", "--headless", "--seconds", "--traffic", "--out", "--fake", "--model"):
                 self.assertIn(option, stdout)
+
+
+class SimulatorFailureTest(unittest.TestCase):
+    def run_main(self, module, sim_class, out):
+        stdout, stderr = io.StringIO(), io.StringIO()
+        with (mock.patch.object(common, "FakeSim", sim_class), contextlib.redirect_stdout(stdout),
+              contextlib.redirect_stderr(stderr)):
+            code = module.main(["--fake", "--seconds", "1", "--out", out])
+        return code, stdout.getvalue(), stderr.getvalue()
+
+    def test_an_unexpected_simulator_error_prints_its_type_and_message_and_returns_1(self):
+        import spike_sensors
+
+        class BrokenStep(FakeSim):
+            def step(self, n=1):
+                raise RuntimeError("boom")
+
+        with tempfile.TemporaryDirectory() as tmp:
+            code, _, stderr = self.run_main(spike_sensors, BrokenStep, tmp)
+        self.assertEqual(code, 1)
+        self.assertIn("Traceback", stderr)
+        self.assertEqual(stderr.splitlines()[-1], "error: RuntimeError: boom")
+
+    def test_a_failed_close_keeps_the_finished_results(self):
+        import spike_connect
+        import spike_multicar
+        import spike_sensors
+
+        class BrokenClose(FakeSim):
+            def close(self):
+                raise RuntimeError("close failed")
+
+        for module in (spike_connect, spike_sensors, spike_multicar):
+            name = module.__name__
+            with tempfile.TemporaryDirectory() as tmp:
+                code, _, stderr = self.run_main(module, BrokenClose, tmp)
+                saved = json.loads((Path(tmp) / OUTPUT_FILE[name]).read_text(encoding="utf-8"))
+            self.assertEqual(code, 1, name)
+            self.assertEqual(stderr.splitlines()[-1], "error: RuntimeError: close failed", name)
+            self.assertEqual(saved["model"], "fake_cherrier_tograc", name)
+        self.assertEqual([c["cars"] for c in saved["cases"]], [1])
 
 
 class NoRealSimulatorTest(unittest.TestCase):

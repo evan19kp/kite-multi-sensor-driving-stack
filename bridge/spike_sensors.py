@@ -17,8 +17,8 @@ def run(args):
         sim.set_ai_mode(cars[0], "traffic")
         result = common.measure_sensors(sim, cars, args.seconds)
         sim.set_ai_mode(cars[0], "disabled")
-    print(common.format_result(result))
-    common.write_json(args.out, "sensors.json", {"model": model, **result})
+        print(common.format_result(result))
+        common.write_json(args.out, "sensors.json", {"model": model, **result})
 
 
 def main(argv=None):

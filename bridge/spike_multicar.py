@@ -24,9 +24,9 @@ def run(args):
             result = common.measure_sensors(sim, cars, args.seconds)
             for car in cars:
                 sim.set_ai_mode(car, "disabled")
-        print(f"\n{common.format_result(result)}")
-        cases.append(result)
-    common.write_json(args.out, "multicar.json", {"model": model, "cases": cases})
+            print(f"\n{common.format_result(result)}")
+            cases.append(result)
+            common.write_json(args.out, "multicar.json", {"model": model, "cases": cases})
 
 
 def main(argv=None):
