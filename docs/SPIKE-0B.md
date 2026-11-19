@@ -57,7 +57,7 @@ All four scripts take these options. `--home` is required for a real run.
 
 Each script starts BeamNG.tech itself and closes it when the run ends. Close any BeamNG.tech that is already running before you start a script. The bridge connects to the simulator on a fixed local port, so a second copy may block the connection.
 
-Without `--home` and without `--fake`, a script prints a usage error and exits with code 2. If `--home` is not a folder, it prints `error: --home is not a folder` and exits with code 1. Any other failure prints an error and exits with code 1.
+Without `--home` and without `--fake`, a script prints a usage error and exits with code 2. If `--home` is not a folder, it prints `error: --home is not a folder` and exits with code 1. Any other failure exits with code 1 too. A failure the script checks for prints `error: <message>`. An unexpected failure prints a traceback, then `error: <type>: <message>`.
 
 ### Choosing the car model
 
@@ -99,7 +99,7 @@ wrote scratch\R20\out\connect.json
 
 On the real run, expect 30 `t=` lines and `wrote recordings\connect.json`. The two version lines show what the simulator reports. If AI traffic cannot start, the script prints `traffic not spawned (...)` with the error and continues with our car alone.
 
-The positions are ground truth from the simulator. They go only into `connect.json`, apart from any sensor data.
+The positions are ground truth from the simulator. The script prints them and writes them to `connect.json`, apart from any sensor data.
 
 ### How long it takes
 
@@ -141,9 +141,9 @@ wrote scratch\R20\out\sensors.json
 The columns:
 
 - `steps per second`: how many simulator steps run per wall-clock second. The fake's figure means nothing. The real figure is one of the things this spike measures.
-- `polls`: how many times the script polled the sensor.
+- `polls`: how many polls returned a reading in the expected format, or an empty poll. A poll with an unexpected format is not counted here, so the total number of polls is `polls` plus `unexp`.
 - `rate_hz`: distinct reading timestamps per simulated second. It counts at most one new reading per poll, so it cannot exceed about 60 Hz.
-- `time`: where the timestamps came from. `sensor` means the readings carried their own time. `poll` means they had none and the poll time was used. `mixed` means both.
+- `time`: where the timestamps came from. `sensor` means the readings carried their own time. `poll` means they had none and the poll time was used. `mixed` means both. `n/a` means no reading had a timestamp.
 - `per_poll`: the most readings that one poll returned.
 - `mean_ms`, `p50_ms`, `p95_ms`, `max_ms`: how long a poll took, in milliseconds.
 - `empty`: polls that returned no reading.
@@ -151,10 +151,10 @@ The columns:
 - `unexp`: readings in a format the bridge did not expect.
 - `points`: mean lidar points per scan. Other sensors show `n/a`.
 
-Footer lines appear only when they apply:
+The `rate_hz:` explanation line always prints. The other footer lines appear only when they apply:
 
 - `<car> <sensor>: polls returned up to N readings...` appears when `per_poll` is above 1.
-- `no sensor time for <car> <sensor>: rate_hz there is the polling rate, not the sensor's` appears when a sensor gave no timestamps of its own.
+- `no sensor time for <car> <sensor>, <car> <sensor>: rate_hz there is the polling rate, not the sensor's` is one line that lists every affected sensor, separated by commas. It appears when at least one sensor has `time` of `poll` or `mixed`.
 - `unexpected format: <car> <sensor> N readings, first: ...` appears when `unexp` is above 0. The first unexpected reading is printed, so send that line back in full.
 
 A missing reading is never filled in. An empty poll counts under `empty`, and an unexpected format counts under `unexp`.
@@ -172,7 +172,7 @@ A missing reading is never filled in. An empty poll counts under `empty`, and an
 
 ### Headless run
 
-Run the same script without a simulator window. Headless still needs the GPU, and the cameras still render.
+Run the same script without a simulator window. BeamNGpy's headless mode is expected to still need a GPU and to still render the cameras. Nothing in this repo checks that. Look at the camera row. If it shows no readings, say so in your report.
 
 ```powershell
 python bridge/spike_sensors.py --home "<your BeamNG.tech folder>" --headless
@@ -243,10 +243,10 @@ logged 120 steps
 
 These lines appear only when they apply:
 
-- `lidar gave no reading on N of M steps; no lidar was logged for them`
-- `camera gave no reading on N of M steps; no image was logged for them`
-- `other cars not logged (...)`, with the error, when the script cannot read the traffic cars' positions. It keeps running without them.
-- `traffic not spawned (...)`, when AI traffic fails to start.
+- `traffic not spawned (...)`, with the error, when AI traffic fails to start. It prints right after the `model:` line, before the run starts.
+- `other cars not logged (...)`, with the error, when the script cannot read the traffic cars' positions. It keeps running without them. It prints during the run, before `logged N steps`.
+- `lidar gave no reading on N of M steps; no lidar was logged for them`, after `logged N steps`.
+- `camera gave no reading on N of M steps; no image was logged for them`, after `logged N steps`.
 - `wrote recordings\demo.rrd`, with `--save`, after a successful run.
 
 On the fake simulator with `--save demo.rrd`, the script writes no file and prints `--fake keeps nothing; the recording would have gone to scratch\R20\out\demo.rrd` instead.
@@ -266,13 +266,13 @@ Do not send the `.rrd` file unless the director asks for it.
 
 ## If a call fails
 
-Many BeamNGpy and Rerun calls are marked as unverified for BeamNGpy 1.36, so failures are expected.
+Many BeamNGpy calls are marked as unverified for BeamNGpy 1.36, and the Rerun calls are unverified against the installed `rerun-sdk`, so failures are expected.
 
-1. Copy the whole error and the traceback above it. Do not shorten it.
+1. Copy the whole output, including the traceback above the last line if there is one. Do not shorten it.
 2. Copy the exact command you ran, with the placeholder in place of your real folder.
 3. Send both to the director, with the output of `python -m pip show beamngpy rerun-sdk`.
 
-A failed run prints `error: <type>: <message>` and exits with code 1. A traceback may contain a folder path from your machine. The repo is public, so do not paste such text into a pull request, issue or comment. Send it to the director only.
+A failed run exits with code 1 and ends with one of two lines. A failure the script checks for prints `error: <message>` and no traceback. An unexpected failure prints a traceback, then `error: <type>: <message>`. The output may contain a folder path from your machine. The repo is public, so do not paste such text into a pull request, issue or comment. Send it to the director only.
 
 ## Recordings stay out of the repo
 
