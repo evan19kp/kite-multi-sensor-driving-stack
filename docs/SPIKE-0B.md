@@ -190,9 +190,9 @@ The columns:
 - `repeat`: readings with the same timestamp as the previous reading.
 - `unexp`: polls that the bridge could not read. This counts a poll that raised an error, a poll that returned a type outside None, a dict, a list, bytes or an array-like object (anything with a length), and a lidar poll without a `pointCloud`.
 - `points`: mean lidar points per scan. Other sensors show `n/a`.
-- `detect`: mean radar detections per poll. A radar poll that returns an array counts as one reading, and `detect` is its number of rows. The bridge does not read the array's columns. Other sensors show `n/a`.
+- `detect`: mean radar detections over the polls that returned an array. A radar poll that returns an array counts as one reading, and its detections are the array's rows. The bridge does not read the array's columns. Other sensors, and a radar that returned no array, show `n/a`.
 
-Only a lidar scan with no points counts under `empty`. A radar array with zero rows is one reading that records 0 detections.
+A lidar scan with no points counts under `empty`, like any poll that returned None or an empty dict, list or bytes. A radar array with zero rows does not count under `empty`. It is one reading that records 0 detections.
 
 The `rate_hz:` explanation line always prints. The other footer lines appear only when they apply:
 

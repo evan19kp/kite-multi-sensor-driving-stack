@@ -60,9 +60,11 @@ polling rate, not the sensor's, and the table says so), and `mixed` for both. A 
 without `pointCloud` is counted under `unexp` and printed with its keys, not as an empty poll. A
 poll that raises, or returns a type outside the input domain in `readings.py`, is counted under
 `unexp` for that sensor, with the first message printed in the footer; the run goes on with the
-other sensors. A radar array is one reading per poll, and the `detect` column is its mean row
-count, including polls with 0 rows; the columns are not read. Only a lidar scan with no points
-counts under `empty`.
+other sensors. A radar poll that returns an array is one reading, and the `detect` column is the
+mean row count over those arrays, including arrays with 0 rows. The bridge does not read the
+columns. A radar that returned no array shows `n/a`. A lidar scan with no points counts under
+`empty`, like any poll that returned None or an empty dict, list or bytes. A radar array with
+zero rows does not count under `empty`. It is one reading with 0 detections.
 
 Before the run every script prints one `sensor:` line per sensor with every setting the adapter
 passes, taken from `kite_bridge/sensor_settings.py`. `spike_sensors.py` writes the same table
