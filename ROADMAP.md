@@ -281,7 +281,7 @@ unless Evan's run prints it. Agents never run the real simulator; every test use
   beside the configured rate and a `possible loss` note; `docs/SPIKE-0B.md` updated. Tests (fake
   only): default rates lose no new readings against `all=60` with fewer polls (hand-computed); a
   rate above 60 or <= 0 is a usage error.
-- [ ] **R34 Streaming reads for lidar and camera** (perf, Opus builder; needs R32): `--stream`
+- [x] **R34 Streaming reads for lidar and camera** (perf, Opus builder; needs R32): `--stream`
   (default off) creates lidar and camera with `is_streaming=True` and reads them with `stream()`;
   untrustworthy streamed lidar rows and wrong-size camera images are counted under `suspect` and
   dropped; streamed reads timed separately; `docs/SPIKE-0B.md` updated. Tests (fake only): valid

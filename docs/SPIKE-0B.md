@@ -58,7 +58,7 @@ All four scripts take these options. `--home` is required for a real run.
 | `--timeout` | 300 | The longest wait, in seconds, for any one simulator call, including the map load. Must be above 0. See "Stopping a run". |
 | `--fake` | off | Use the fake simulator. Do not use it for the real run. |
 
-`spike_sensors.py` and `spike_multicar.py` also take `--rates` (how often each sensor is read, see "Reading each sensor at its own rate" under Run 2) and `--dump-raw N` (default 0, which writes nothing; see "The raw GPS and IMU dump" under Run 2).
+`spike_sensors.py` and `spike_multicar.py` also take `--rates` (how often each sensor is read, see "Reading each sensor at its own rate" under Run 2), `--dump-raw N` (default 0, which writes nothing; see "The raw GPS and IMU dump" under Run 2) and `--stream` (default off; see "Streaming the lidar and camera" under Run 2).
 
 Each script starts BeamNG.tech itself and closes it when the run ends. Close any BeamNG.tech that is already running before you start a script. The bridge connects to the simulator on a fixed local port, so a second copy may block the connection.
 
@@ -178,7 +178,7 @@ The run covers 30 simulated seconds, plus the time the simulator needs to start.
 
 ## Run 2: sensors (`spike_sensors.py`)
 
-This script attaches a lidar, a camera, a radar, GPS and an IMU to our car. It polls each sensor at its own rate (see "Reading each sensor at its own rate"; `--rates all=60` polls every sensor once per simulator step, 60 times per simulated second) and reports the rates and delays, where the wall time goes, how many new readings each sensor gave and how many bytes it read. It also takes `--rates` and `--dump-raw N` (see "The raw GPS and IMU dump"); so does `spike_multicar.py`. `spike_connect.py` polls no sensors, and the Rerun demo (`spike_lidar_rerun.py`) draws sensor data and does not measure it, so neither prints timing or takes these options.
+This script attaches a lidar, a camera, a radar, GPS and an IMU to our car. It polls each sensor at its own rate (see "Reading each sensor at its own rate"; `--rates all=60` polls every sensor once per simulator step, 60 times per simulated second) and reports the rates and delays, where the wall time goes, how many new readings each sensor gave and how many bytes it read. It also takes `--rates`, `--dump-raw N` (see "The raw GPS and IMU dump") and `--stream` (see "Streaming the lidar and camera"); so does `spike_multicar.py`. `spike_connect.py` polls no sensors, and the Rerun demo (`spike_lidar_rerun.py`) draws sensor data and does not measure it, so neither prints timing or takes these options.
 
 ```powershell
 python bridge/spike_sensors.py --home "<your BeamNG.tech folder>"
@@ -330,6 +330,74 @@ The file has the top-level `provenance` field, `readings_per_car_and_sensor` (N)
 
 Readings are in the order the polls returned them, and a reading that a later poll returns again is dumped again. Count entries with the same `time` and the same values to see how often that happens.
 
+#### Streaming the lidar and camera
+
+Every poll costs about 21 ms in your earlier runs, whatever the sensor. `--stream` tests whether streaming avoids that cost for the lidar and the camera. With `--stream`, the bridge creates those two sensors with `is_streaming=True`. The simulator then writes each reading into shared memory, and the bridge reads it with `stream()`, which sends no request to the simulator. The radar, GPS and IMU are still polled, because BeamNGpy 1.36 does not stream them. `--rates` still decides when each sensor is read. Without `--stream`, nothing changes: every sensor is polled, and the output looks as described above.
+
+Nobody has run streaming against the real simulator yet. Your run decides whether it works and whether its data can be trusted.
+
+Run the script twice with the same rates, once without and once with `--stream`:
+
+```powershell
+python bridge/spike_sensors.py --home "<your BeamNG.tech folder>" --out recordings/poll
+python bridge/spike_sensors.py --home "<your BeamNG.tech folder>" --stream --out recordings/stream
+```
+
+What `--stream` adds to the output:
+
+- The `sensor:` lines for lidar and camera end in `is_streaming=True`, and `sensor_settings` in `sensors.json` has it too.
+- Three more columns in the first table. `read` says how the sensor was read: `stream` or `poll`. `suspect` and `sus_rows` are explained below. They show `n/a` for polled sensors.
+- In the timing block, `in sensor reads` becomes two lines. `in sensor polls` is the time inside poll calls. `in stream reads` is the time inside stream calls. That covers BeamNGpy's `stream()`, which copies the shared memory, and the bridge's checks and parse. The check reads every byte of each lidar scan. The bridge does not time the check on its own, so `in stream reads` holds the bridge's time as well as BeamNGpy's. Neither line counts the other's time. The second table's `read_s` and `per_poll_ms` for lidar and camera are stream time.
+- A `stream:` footer line that says which sensors were streamed, and one `suspect:` line for each streamed sensor that dropped something.
+- In the JSON: `"stream": true` at the top (`false` without `--stream`), `timing.stream_reads_s`, and on each sensor row `read` and `suspect`. For a streamed sensor, `suspect` is `{"readings": ..., "rows": ..., "first": ...}`. For a polled sensor it is `null`.
+
+With `--seconds 2` on the fake simulator, default rates (the `sensor:` lines are left out, the second table and the usual footer lines are cut):
+
+```
+car    sensor   polls  rate_hz   time  per_poll  mean_ms  p50_ms  p95_ms  max_ms  empty  repeat  unexp  points  detect    read  suspect  sus_rows
+kite1  lidar       41    20.17   poll         1     0.14    0.20    0.26    0.34      0       0      0    1093     n/a  stream        0       273
+kite1  camera      41    20.17   poll         1     0.01    0.01    0.01    0.02      0       0      0     n/a     n/a  stream        0         0
+kite1  radar       41    20.00 sensor         1     0.01    0.01    0.02    0.03      0       0      0     n/a     n/a    poll      n/a       n/a
+kite1  gps         21    10.00 sensor         1     0.00    0.00    0.01    0.01      0       0      0     n/a     n/a    poll      n/a       n/a
+kite1  imu         21    10.05 sensor        10     0.01    0.01    0.01    0.03      0       0      0     n/a     n/a    poll      n/a       n/a
+timing: 2.000 simulated s in 0.042 wall s, real-time factor 48.074
+  waiting for steps     0.000 s    0.2%
+  in sensor polls       0.001 s    1.7%
+  in stream reads       0.006 s   14.8%
+  our processing        0.035 s   83.2%
+...
+stream: lidar and camera were read from shared memory with stream(); radar, gps and imu with poll(). suspect counts streamed readings dropped whole, sus_rows the all-zero rows cut off the end of kept lidar scans. Rows left from an earlier scan cannot be detected.
+suspect: kite1 lidar dropped 0 readings and cut 273 all-zero rows
+```
+
+The fake's times mean nothing. Its streamed camera image is 640 by 360, the configured size, but its polled image is 8 by 4, so the camera's `bytes` differ between the two fake runs for that reason alone. The streamed lidar and camera show `time` `poll` because their readings carry no timestamp.
+
+##### What `suspect` means
+
+When the lidar streams, BeamNGpy reads the whole shared-memory block and does not ask the simulator how many points the scan has. The rows after the scan may be memory that was never written, or rows left from an earlier, longer scan. The bridge checks every streamed reading before it uses it. The rules are in `bridge/kite_bridge/stream_check.py`.
+
+- `sus_rows` (JSON `suspect.rows`), lidar only: the all-zero rows cut off the end of lidar scans that were kept. An all-zero row is a row whose bytes are all zero. The bridge cuts every all-zero row after the last row that has any non-zero byte, and the matching rows of any other array in the reading with the same row count, such as the colours. The count is summed over reads, so memory read twice counts twice. A scan counted under `unexp` adds nothing to `sus_rows`. The `points` column counts the rows that were kept.
+- `suspect` (JSON `suspect.readings`): streamed readings dropped whole. Nothing of such a reading is used or counted under `polls`, `empty`, `new` or `bytes`. Its read time still counts. A lidar reading is dropped when its `pointCloud` is not an array of rows with at least 3 columns, when its byte count does not fit 4- or 8-byte floats for its shape, or when a kept value is not finite (`nan` or `inf`). A camera reading is dropped when any image in it is not the configured `resolution`, 640 by 360, or has no size. `suspect.first` holds the first reason, and the `suspect:` line prints it.
+- If a camera `stream()` returns None, the bridge counts it under `empty` and takes it as no frame yet. Whether BeamNGpy ever does this is not known. A camera `stream()` result that is not a dict of images counts under `unexp`, with `first: camera stream() returned <type>, not a dict of images`.
+- A reading whose memory has not changed since the last read is not suspect. It is not new either: `new` compares the content, as before.
+
+What the bridge cannot detect:
+
+- Rows left from an earlier, longer scan. They are ordinary points of the right shape, and the streamed reading says nothing about how many rows the new scan wrote, so they are kept and counted in `points`. If `points` with `--stream` is clearly higher than without it, stale rows are the likely reason.
+- An all-zero row in the middle of a scan. It is kept and not counted.
+- A camera image of the right size that holds an old frame or was never drawn into, such as an all-black image.
+
+Look at these numbers:
+
+- `per_poll_ms` and `mean_ms` for lidar and camera in the two runs. In your earlier runs a poll took about 21 ms. The stream run shows what a streamed read costs, including the bridge's check.
+- `in stream reads` against `in sensor reads` from the poll run, and the real-time factor of both runs.
+- `suspect` against `polls`. If every streamed reading is dropped, streaming does not deliver usable data, and the `suspect:` line says why.
+- `sus_rows` and `points`. Compare `points` with the poll run (see the list above).
+- `new_per_s` for lidar and camera in both runs. Fewer new readings with `--stream` means the shared memory changed less often than the polls returned new data.
+- The `unexpected format:` lines. A stream call that raises prints `first: stream raised <type>: <message>`.
+
+Send back both printed outputs and both `sensors.json` files.
+
 #### Footer lines
 
 The `rate_hz:` explanation line always prints. The other footer lines appear only when they apply:
@@ -339,6 +407,7 @@ The `rate_hz:` explanation line always prints. The other footer lines appear onl
 - `<car> <sensor>: polls returned up to N readings...` appears when `per_poll` is above 1.
 - `no sensor time for <car> <sensor>, <car> <sensor>: rate_hz there is the polling rate, not the sensor's` is one line that lists every affected sensor, separated by commas. It appears when at least one sensor has `time` of `poll` or `mixed`.
 - `unexpected format: <car> <sensor> N readings, first: ...` appears when `unexp` is above 0. It prints the first message for each sensor, so send those lines back in full. A poll that raised an error reads `first: poll raised <type>: <message>`.
+- With `--stream` only: the `stream:` line always, and `suspect: <car> <sensor> dropped N readings and cut M all-zero rows` for each streamed sensor where either count is above 0, with `, first reason: ...` when a reading was dropped. See "Streaming the lidar and camera".
 
 One sensor that fails never stops the run. Its polls count under `unexp`, and the other sensors keep their rows. A run where every sensor fails still exits with code 0, so read the `unexp` column. A poll that takes longer than `--timeout` is the exception: it stops the run as a timeout (see "Stopping a run").
 
@@ -353,6 +422,7 @@ A missing reading is never filled in. An empty poll counts under `empty`, and an
 - The full printed output, including the table, the `timing:` block and every footer line, from both runs under "Compare two runs".
 - `recordings/every-step/sensors.json` and `recordings/default-rates/sensors.json`.
 - `recordings/raw_gps_imu.json`, from a run with `--dump-raw 50` (see "The raw GPS and IMU dump").
+- The printed output and `sensors.json` of both runs under "Streaming the lidar and camera" (`recordings/poll` and `recordings/stream`).
 - The BeamNGpy version lines (from Run 1 and the `pip show` output).
 - Any error, in full.
 
@@ -376,9 +446,9 @@ python bridge/spike_multicar.py --home "<your BeamNG.tech folder>"
 
 ### What it prints
 
-The five `sensor:` lines once, then three blocks, one for each case. Each block starts with a `spawned` line that lists the cars of that case, then a blank line and the same summary line, table and footer lines as Run 2, then `wrote ...multicar.json`. The summary lines read `cars: 1`, `cars: 2` and `cars: 4`, and the table has one row per sensor per car (`kite1` to `kite4`). Each case also prints the `timing:` block and the second table (see "Where the time goes" and "New readings and bytes" under Run 2). Compare the `steps per second` figure and the real-time factor across the three cases to see whether more cars slow the simulator, and compare `waiting for steps` with `in sensor reads` to see which part grows. `--dump-raw N` writes `raw_gps_imu.json` with one case per car count and N GPS and N IMU readings per car.
+The five `sensor:` lines once, then three blocks, one for each case. Each block starts with a `spawned` line that lists the cars of that case, then a blank line and the same summary line, table and footer lines as Run 2, then `wrote ...multicar.json`. The summary lines read `cars: 1`, `cars: 2` and `cars: 4`, and the table has one row per sensor per car (`kite1` to `kite4`). Each case also prints the `timing:` block and the second table (see "Where the time goes" and "New readings and bytes" under Run 2). Compare the `steps per second` figure and the real-time factor across the three cases to see whether more cars slow the simulator, and compare `waiting for steps` with `in sensor reads` to see which part grows. With `--stream`, the timing block prints `in sensor polls` and `in stream reads` in place of `in sensor reads`, so compare `waiting for steps` with both. `--dump-raw N` writes `raw_gps_imu.json` with one case per car count and N GPS and N IMU readings per car.
 
-`--rates` applies to every case, with the same default as Run 2. Each case prints `poll_hz` and `req_hz` and the loss notes. To compare with the old behaviour, run it once more with `--rates all=60`.
+`--rates` applies to every case, with the same default as Run 2. Each case prints `poll_hz` and `req_hz` and the loss notes. To compare with the old behaviour, run it once more with `--rates all=60`. `--stream` also applies to every case, with the same extra columns and lines as Run 2.
 
 The script rewrites `multicar.json` after each case, so a run that fails in case 2 still leaves the result of case 1.
 
