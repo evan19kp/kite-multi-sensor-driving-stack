@@ -25,13 +25,16 @@ the spikes on it, and nothing here has run against an installed Rerun yet.
   and decides what is dropped and counted under `suspect`. Standard library only.
 - `kite_bridge/fake_sim.py`: a seeded synthetic simulator with configurable sensor rates,
   dropouts, repeated readings, latency, buffered GPS and IMU readings, a streamed lidar memory
-  block that keeps stale and zero rows after a shorter scan and, with a `FakeClock`, a fake cost
-  per request and per step (no real waiting; streamed reads cost nothing). All tests use it.
+  block that keeps stale and zero rows after a shorter scan, a free-running mode whose simulated
+  time advances with its clock (real time without one) and whose Timer stands still while paused, and, with a
+  `FakeClock`, a fake cost per request and per step (no real waiting; streamed reads cost
+  nothing). All tests use it.
 - `kite_bridge/measure.py`: pure measurement functions (effective rate, latency statistics,
   empty and repeated readings, steps per second, real-time factor, the processing remainder and
   new-reading counts). Its docstring states the input domain.
-- `kite_bridge/rates.py`: parses `--rates` and decides which steps each sensor is polled on, with
-  exact rational arithmetic. Standard library only.
+- `kite_bridge/rates.py`: parses `--rates` and decides which steps each sensor is polled on, and
+  in free mode when each is next due on the wall clock, with exact rational arithmetic. Standard
+  library only.
 - `kite_bridge/raw_data.py`: the one place that counts the bytes of a raw poll and fingerprints
   it, and that turns a raw reading into plain data for the dump. Standard library only.
 - `kite_bridge/common.py`: command-line parsing, the step-and-poll loop and the one shutdown path
@@ -52,12 +55,16 @@ All four take `--home <simulator folder>` (required unless `--fake`), `--headles
 `--config`, `--list-models`, `--timeout` (default 300) and `--fake`. `--fake` runs against the
 fake simulator and needs no simulator. `spike_sensors.py` and `spike_multicar.py` also take
 `--rates` (polls per simulated second for each sensor, default `lidar=20,camera=20,radar=20,gps=10,imu=10`),
-`--dump-raw N` (default 0) and `--stream` (default off).
+`--dump-raw N` (default 0), `--stream` (default off) and `--mode lockstep|free` (default
+`lockstep`).
 
 `--timeout` is the longest wait in seconds for any one simulator call, map loading included; it
 must be above 0. Every run ends BeamNG.tech through one shutdown path. After a normal run or an
-ordinary error it removes the sensors, then closes BeamNG.tech. After Ctrl+C or a timeout it
-closes BeamNG.tech without removing the sensors. If closing raises or takes more than 20 s, or
+ordinary error it removes the sensors, then closes BeamNG.tech; with `--mode free` it pauses the
+simulator before it removes them. If the pause fails, the script prints `warning: could not
+pause: <error>; sensors not removed` whatever the run's outcome, skips the removal and still
+closes BeamNG.tech. After Ctrl+C or a timeout it closes BeamNG.tech without
+pausing or removing the sensors. If closing raises or takes more than 20 s, or
 Ctrl+C is pressed again during shutdown, it ends the process BeamNGpy launched, and only that
 process. Ctrl+C prints `interrupted: BeamNG.tech closed` and exits with code 130. A timeout
 prints `timed out after <s> s: BeamNG.tech closed` and exits with code 1. Neither prints a
@@ -133,6 +140,25 @@ the bridge's check, which reads every byte of a lidar scan; the bridge does not 
 JSON records `"stream"`, `timing.stream_reads_s` and each row's `read` and `suspect`. Without
 `--stream` the output is as before. Streaming has not run against the real simulator.
 `spike_lidar_rerun.py` does not take `--stream`; it is a viewer demo, not a measuring script.
+
+`--mode free` on the two measuring scripts lets the simulator run on its own instead of in
+lock-step. The adapter attaches a `Timer` sensor to the first car, switches the simulator to
+non-deterministic and resumes it. The script then polls each sensor at its `--rates` rate per
+wall second. A sensor at rate `r` is due at `k / r` wall seconds after the start. A pass polls
+every due sensor once and moves it to the first `k / r` after the pass started, so a late poll
+skips the times it missed instead of making them up (`kite_bridge/rates.py`, `next_due`). The
+Timer is polled in its own request at the higher of the GPS and IMU rates. The run ends when the
+Timer has advanced `--seconds` since its first reading, or fails with one `error:` line (exit
+code 1) after `--seconds` x 20 wall seconds, which a Timer that stands still also reaches. A
+Timer reading that is not a number of seconds from 0 up fails the run the same way. It is not
+counted under `unexp` like a bad sensor reading, because the Timer decides when the run ends.
+Simulated seconds, the real-time factor (Timer seconds over wall seconds) and the per-second
+counts use the Timer; `poll_hz` is per wall second. A reading without its own time gets the
+latest Timer reading and shows `time` `timer`. The timing splits the wall time into `waiting to
+poll`, `in Timer polls`, the reads and `our processing`. The JSON records `"mode"` in both modes;
+in free mode `steps` is `null`, `timer` gives the Timer's poll count and rate, and a dump
+entry's `step` is `null`. `--stream` and `--dump-raw` work in both modes. Free mode has not run
+against the real simulator, and its real-time factor on the fake is the fake's own speed.
 
 Output goes only to `--out`, `recordings/` by default, which is gitignored. Every JSON file has a
 top-level `"provenance"` field that marks the file as simulator output not to commit. The text is

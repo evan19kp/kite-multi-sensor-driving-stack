@@ -383,6 +383,18 @@ Each item that introduces a lasting rule adds a "## Standing rules (R<n>)" secti
   `--stream` the scripts poll every sensor and print what they printed before.
 - No doc or PR claims streaming works on the real simulator until Evan's run shows it.
 
+## Standing rules (R35)
+
+- `--mode lockstep` stays the default, and `--mode lockstep` runs the same calls and prints the
+  same output as no `--mode`; `bridge/tests/test_free_running.py` enforces it.
+- Free mode's wall-clock schedule (when a sensor is next due) lives only in
+  `bridge/kite_bridge/rates.py` (`next_due`), beside the lock-step schedule.
+- Free-mode waiting goes through the `sleep` passed to `common.measure_sensors` (or
+  `common.wall_sleep`); tests pass a fake clock's sleep and never wait for real.
+- A free-running simulator is paused before its sensors are removed, only in `common._shut_down`.
+- No doc or PR claims the bridge reaches real time, or meets any speed target, until Evan's run
+  prints it.
+
 ## Simulator files (hard rule)
 
 - Never read, list, search, copy, launch or write about the simulator's install folder, its user

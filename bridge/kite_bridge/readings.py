@@ -1,11 +1,14 @@
 """Turns one BeamNGpy sensor poll result into plain data: a `Reading` for any sensor, the lidar
-points, or the camera image. An empty poll, including a lidar scan with no points, is no reading;
+points, the camera image, or the Timer's time. An empty poll, including a lidar scan with no points, is no reading;
 a radar array with no rows is a reading with 0 detections.
 
 Input domain, and nothing beyond it: a raw poll is None, a dict, a list, bytes, or an array-like
 object, which is any object with `__len__` (its truth value may raise, like a numpy array's, so
 a raw poll is never truth-tested). Anything else is an unexpected format.
 """
+
+import math
+import numbers
 
 from kite_bridge.sim_api import POLL_TIME, Reading
 
@@ -48,6 +51,17 @@ def image_from_raw(raw):
     width, height = image.size
     pixels = [tuple(int(v) for v in pixel) for pixel in image.getdata()]
     return [pixels[row * width:(row + 1) * width] for row in range(height)]
+
+
+def timer_value(raw):
+    """`raw` is the Timer sensor's "time" after a poll. Returns it as a float of simulated
+    seconds. Raises ValueError unless it is a real number (not a bool), finite and >= 0."""
+    if isinstance(raw, bool) or not isinstance(raw, numbers.Real):
+        raise ValueError(f"Timer time is not a number: got {type(raw).__name__}")
+    value = float(raw)
+    if not math.isfinite(value) or value < 0:
+        raise ValueError(f"Timer time must be finite and >= 0, got {value!r}")
+    return value
 
 
 def _reading(kind, raw, poll_time):

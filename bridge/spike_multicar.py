@@ -5,7 +5,8 @@ real-time factor and every sensor's rate and fresh-data counts per case. Every s
 at its --rates rate. Writes multicar.json to
 --out. --dump-raw N also writes the first N raw GPS and IMU readings per car, for every case, to
 raw_gps_imu.json. --stream reads the lidar and camera from shared memory with stream() and counts
-what it drops under `suspect`.
+what it drops under `suspect`. --mode free lets the simulator run on its own, polls on a wall-clock
+schedule and reads simulated time from a Timer sensor.
 """
 
 import sys
@@ -27,7 +28,7 @@ def run(args):
                 sim.set_ai_mode(car, "traffic")
             dump = common.RawDump(args.dump_raw)
             result = common.measure_sensors(sim, cars, args.seconds, dump=dump, poll_rates=args.rates,
-                                            stream=args.stream)
+                                            stream=args.stream, mode=args.mode)
             for car in cars:
                 sim.set_ai_mode(car, "disabled")
             print(f"\n{common.format_result(result)}")
