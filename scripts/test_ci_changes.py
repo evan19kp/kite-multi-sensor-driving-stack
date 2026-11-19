@@ -101,6 +101,29 @@ class ClassifyTest(unittest.TestCase):
         for path in ["docs/BASELINE.md", "eval/README.md"]:
             self.assertEqual(ci_changes.classify([path], cfg), {"app": True, "app-windows": True, "python": False}, path)
 
+    def test_repo_config_investigation_doc_alone_triggers_both_builds_only(self):
+        cfg = ci_changes.load()
+        self.assertEqual(
+            ci_changes.classify(["docs/INVESTIGATION-ASSOCIATION.md"], cfg),
+            {"app": True, "app-windows": True, "python": False},
+        )
+
+    def test_repo_config_other_docs_markdown_still_triggers_nothing(self):
+        cfg = ci_changes.load()
+        self.assertEqual(
+            ci_changes.classify(["docs/PROJECT.md"], cfg),
+            {"app": False, "app-windows": False, "python": False},
+        )
+
+    def test_repo_config_bridge_change_selects_the_python_job_only(self):
+        cfg = ci_changes.load()
+        for path in ["bridge/spike_connect.py", "bridge/kite_bridge/measure.py", "bridge/tests/test_measure.py"]:
+            self.assertEqual(
+                ci_changes.classify([path], cfg),
+                {"app": False, "app-windows": False, "python": True},
+                path,
+            )
+
     def test_repo_config_removed_folders_fall_back_to_every_job(self):
         cfg = ci_changes.load()
         everything = frozenset(cfg["jobs"])
@@ -129,6 +152,12 @@ class WorkflowShapeTest(unittest.TestCase):
         self.assertNotRegex(text, r"(?m)^  e2e:$")
         self.assertRegex(text, r"(?m)^  app-windows:$")
         self.assertIn("steps.classify.outputs.app-windows", text)
+
+    def test_python_job_runs_the_bridge_tests_without_installing_anything(self):
+        text = WORKFLOW.read_text(encoding="utf-8")
+        python_job = text.split("\n  python:\n", 1)[1]
+        self.assertIn("python -m unittest discover -s bridge -v", python_job)
+        self.assertNotIn("pip install", python_job)
 
     def test_every_job_has_a_timeout(self):
         text = WORKFLOW.read_text(encoding="utf-8")

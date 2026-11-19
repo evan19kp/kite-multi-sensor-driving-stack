@@ -88,3 +88,5 @@ jobs:
           python-version: "3.12"
       - name: Script tests
         run: python -m unittest discover -s scripts -v
+      - name: Bridge tests
+        run: python -m unittest discover -s bridge -v

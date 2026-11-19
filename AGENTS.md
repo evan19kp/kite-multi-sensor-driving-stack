@@ -306,6 +306,13 @@ Each item that introduces a lasting rule adds a "## Standing rules (R<n>)" secti
   the poll time and is labelled `poll` in the table and JSON; a reading in an unexpected format is
   reported as unexpected, not counted as an empty poll.
 
+## Standing rules (R18)
+
+- CI's `python` job runs the bridge tests (`python -m unittest discover -s bridge -v`) with no
+  installs, so bridge tests stay stdlib-only.
+- A Markdown file that a CTest test reads is listed in `md_read_by_tests` in
+  `scripts/ci_paths.json`, so changing it runs the C++ jobs.
+
 ## Simulator files (hard rule)
 
 - Never read, list, search, copy, launch or write about the simulator's install folder, its user
