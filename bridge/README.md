@@ -90,7 +90,8 @@ returned, and the JSON field `readings_per_poll_max` has the same value. When it
 sensor saying so.
 
 Output goes only to `--out`, `recordings/` by default, which is gitignored. Every JSON file has a
-top-level `"provenance"` field with the text `BeamNG.tech-generated data - never commit`.
+top-level `"provenance"` field that marks the file as simulator output not to commit. The text is
+the `PROVENANCE` constant in `bridge/kite_bridge/output_guard.py`.
 
 A script refuses an `--out` that resolves inside the repo unless it is under `recordings/` or
 `scratch/`, both gitignored. It prints a usage error naming `--out` and exits with code 2 before

@@ -350,6 +350,13 @@ Each item that introduces a lasting rule adds a "## Standing rules (R<n>)" secti
   files.
 - Never paste simulator error output into a public PR or issue text.
 
+## Standing rules (R31)
+
+- The provenance marker text is spelled only in `bridge/kite_bridge/output_guard.py` and
+  `bridge/tests/test_output_guard.py`. Docs describe the `provenance` field and point to the
+  `PROVENANCE` constant; `bridge/tests/test_marker_spelling.py` fails if another file under
+  `bridge/` or `docs/` spells it.
+
 ## Simulator files (hard rule)
 
 - Never read, list, search, copy, launch or write about the simulator's install folder, its user

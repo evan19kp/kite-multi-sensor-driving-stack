@@ -361,7 +361,7 @@ A failure the script checks for prints `error: <message>` and no traceback. An u
 
 Everything these scripts write is BeamNG-generated data: the JSON files and the `.rrd` recordings. It must never reach the public repo. The scripts enforce three things:
 
-- Each JSON file starts with a top-level field `"provenance": "BeamNG.tech-generated data - never commit"`. A `.rrd` recording logs the same text once at the start, under `meta/provenance`. Anyone who opens a stray file can see where it came from.
+- Each JSON file carries a top-level `"provenance"` field that says the file is simulator output and must not be committed. The text is the `PROVENANCE` constant in `bridge/kite_bridge/output_guard.py`. A `.rrd` recording logs the same text once at the start, under `meta/provenance`. Anyone who opens a stray file can see where it came from.
 - `--out` may be `recordings/` (the default), `scratch/` or any folder outside the repo, for example on another drive. Both folders inside the repo are ignored by Git.
 - Any other `--out` inside the repo is refused. For example `--out docs/x` prints a usage error that names `--out` and exits with code 2. The script has not started the simulator or written a file at that point. Run the script again with an allowed folder. The check follows `..` and symlinks, so `--out recordings/../docs` is refused too.
 

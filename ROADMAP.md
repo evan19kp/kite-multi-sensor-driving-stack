@@ -261,7 +261,7 @@ Measure how fast the bridge gets sensor data out of BeamNG.tech, then read less 
 (per-sensor rates, streaming, free-running). This sprint measures; it claims no target is met
 unless Evan's run prints it. Agents never run the real simulator; every test uses the fake.
 
-- [ ] **R31 Describe the provenance marker without spelling it** (docs, Sonnet): `bridge/README.md`
+- [x] **R31 Describe the provenance marker without spelling it** (docs, Sonnet): `bridge/README.md`
   and `docs/SPIKE-0B.md` describe the `provenance` field and point to the constant in
   `bridge/kite_bridge/output_guard.py` without the full text. Tests: the full marker text (built
   from the constant) appears in no file under `bridge/` or `docs/` except
