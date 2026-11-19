@@ -3,6 +3,7 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 
 from tests.test_scripts import run_script
 from kite_bridge import common, rates
@@ -58,14 +59,14 @@ def camera(**images):
     return reading_from_stream("camera", images, 0.5)
 
 
-def camera_stream_returning(value):
-    class FixedCamera(FakeSim):
+def stream_returning(fixed_kind, value):
+    class Fixed(FakeSim):
         def stream(self, car, kind):
-            if kind == "camera":
+            if kind == fixed_kind:
                 return reading_from_stream(kind, value, self.sim_time)
             return super().stream(car, kind)
 
-    return FixedCamera
+    return Fixed
 
 
 class StreamedLidarMemoryTest(unittest.TestCase):
@@ -112,6 +113,34 @@ class StreamedLidarMemoryTest(unittest.TestCase):
         self.assertEqual(rows["lidar"]["suspect"]["rows"], 60 * 100)
         self.assertEqual(rows["camera"]["suspect"]["rows"], 0)
 
+    def test_a_block_with_no_rows_is_an_empty_reading(self):
+        _, rows = measure(True, lidar_rows=0, stream_rows=0)
+        row = rows["lidar"]
+        self.assertEqual((row["polls"], row["empty"], row["new_readings"]), (STEP_HZ, STEP_HZ, 0))
+        self.assertEqual(row["unexpected"]["count"], 0)
+        self.assertEqual(row["suspect"], {"readings": 0, "rows": 0, "first": None})
+
+    def test_a_block_every_scan_fills_prints_no_suspect_line(self):
+        result, rows = measure(True, lidar_rows=1100, stream_rows=1100)
+        self.assertEqual(rows["lidar"]["suspect"], {"readings": 0, "rows": 0, "first": None})
+        self.assertEqual(rows["camera"]["suspect"], {"readings": 0, "rows": 0, "first": None})
+        text = common.format_result(result)
+        self.assertRegex(text, r"(?m)^stream: ")
+        self.assertNotRegex(text, r"(?m)^suspect:")
+        self.assertRegex(text, r"(?m)^car\s+sensor\s+polls\s.*\sdetect\s+read\s+suspect\s+sus_rows$")
+        self.assertRegex(text, r"(?m)^kite1\s+lidar\s.*\s1100\s+n/a\s+stream\s+0\s+0$")
+        self.assertRegex(text, r"(?m)^kite1\s+radar\s.*\s+poll\s+n/a\s+n/a$")
+
+    def test_rows_cut_from_a_scan_that_ends_up_unexpected_are_not_counted(self):
+        # The check cuts one zero row and keeps one. raw_data cannot size an object(), so the reading is unexpected.
+        raw = {"pointCloud": Rows([(1, 2, 3), (0, 0, 0)]), "pose": object()}
+        _, rows = measure(True, stream_returning("lidar", raw))
+        row = rows["lidar"]
+        self.assertEqual(row["unexpected"], {"count": STEP_HZ,
+                                             "first": "raw data not measurable: cannot measure raw data of type object"})
+        self.assertEqual(row["suspect"], {"readings": 0, "rows": 0, "first": None})
+        self.assertEqual((row["polls"], row["bytes_read"]), (0, 0))
+
     def test_the_configured_rates_still_schedule_the_streamed_reads(self):
         _, rows = measure(True, poll_rates=rates.parse_rates(rates.DEFAULT_RATES_TEXT))
         # 60 steps: floor(60 * 20 / 60) + 1 = 21 reads for lidar, camera, radar, 11 for GPS and IMU.
@@ -129,6 +158,20 @@ class StreamedLidarCheckTest(unittest.TestCase):
         self.assertEqual(reading.raw["pointCloud"].values(), [1, 2, 3, 4, 5, 6])
         self.assertEqual(len(reading.raw["colours"]), 2)
         self.assertIs(reading.raw["intensity"], intensity)
+
+    def test_values_without_a_row_count_are_never_cut(self):
+        # No value has a row count: no shape, an empty shape, or a shape that is not a tuple. Three
+        # of them still have 3 items or a first dimension of 3, like the cloud.
+        extras = {"name": "abc", "counts": [5, 6, 7], "scalar": Shaped(), "listed": SimpleNamespace(shape=[3, 1])}
+        reading = lidar(Rows([(1, 2, 3), (4, 5, 6), (0, 0, 0)]), **extras)
+        self.assertEqual((reading.points, reading.suspect_rows, reading.suspect), (2, 1, None))
+        for key, value in extras.items():
+            self.assertIs(reading.raw[key], value, key)
+
+    def test_a_cloud_with_no_rows_is_an_empty_reading(self):
+        reading = lidar(Rows([]))
+        self.assertEqual((reading.timestamp, reading.suspect, reading.suspect_rows, reading.unexpected),
+                         (None, None, 0, None))
 
     def test_a_zero_row_inside_the_scan_is_kept_and_not_counted(self):
         reading = lidar(Rows([(1, 2, 3), (0, 0, 0), (4, 5, 6)]))
@@ -158,11 +201,19 @@ class StreamedLidarCheckTest(unittest.TestCase):
             def tobytes(self):
                 return super().tobytes() + b"\x01\x02"
 
+        class Doubled(Rows):
+            def tobytes(self):
+                return super().tobytes() * 2
+
         cases = {
             "pointCloud is not an array of x, y, z rows: shape (2, 2)": Rows([(1, 2), (3, 4)], columns=2),
             "pointCloud is not an array of x, y, z rows: shape None": [(1.0, 2.0, 3.0)],
             "pointCloud is not an array of x, y, z rows: shape (6,)": Shaped(6),
+            "pointCloud is not an array of x, y, z rows: shape (2, 3)": Shaped(2, 3),
             "pointCloud holds 26 bytes for shape (2, 3), not 4- or 8-byte floats": Lying([(1, 2, 3), (4, 5, 6)]),
+            # 6 values: 12 bytes is 2 bytes each (int16), 96 bytes 16 each (float64 written twice).
+            "pointCloud holds 12 bytes for shape (2, 3), not 4- or 8-byte floats": Rows([(1, 2, 3), (4, 5, 6)], "h"),
+            "pointCloud holds 96 bytes for shape (2, 3), not 4- or 8-byte floats": Doubled([(1, 2, 3), (4, 5, 6)], "d"),
         }
         for reason, cloud in cases.items():
             reading = lidar(cloud)
@@ -192,6 +243,13 @@ class StreamedCameraCheckTest(unittest.TestCase):
             self.assertEqual(reading.suspect, reason)
             self.assertIsNone(reading.raw)
 
+    def test_an_image_with_no_usable_size_drops_the_whole_reading(self):
+        # A one-dimensional numpy array has a one-item shape and an int size.
+        for image in (SimpleNamespace(shape=(640,), size=640), SimpleNamespace(size=(640, 360, 3))):
+            reading = camera(colour=image)
+            self.assertEqual(reading.suspect, "camera image 'colour' has no size, expected 640x360", image)
+            self.assertIsNone(reading.raw)
+
     def test_one_wrong_image_drops_the_others_too(self):
         reading = camera(colour=FakeImage((640, 360), 1), depth=Shaped(180, 320))
         self.assertEqual(reading.suspect, "camera image 'depth' is 320x180, expected 640x360")
@@ -216,7 +274,7 @@ class StreamedCameraCheckTest(unittest.TestCase):
                       f"first reason: {reason}", text)
 
     def test_a_camera_with_no_frame_yet_gives_empty_readings(self):
-        _, rows = measure(True, camera_stream_returning(None))
+        _, rows = measure(True, stream_returning("camera", None))
         cam = rows["camera"]
         self.assertEqual((cam["polls"], cam["empty"], cam["new_readings"]), (STEP_HZ, STEP_HZ, 0))
         self.assertEqual(cam["unexpected"]["count"], 0)
@@ -224,7 +282,7 @@ class StreamedCameraCheckTest(unittest.TestCase):
 
     def test_a_camera_result_that_is_not_a_dict_is_unexpected_and_never_passed_on(self):
         for value, name in (([FakeImage((320, 180), 1)], "list"), (b"\x00" * 10, "bytes"), (7, "int")):
-            _, rows = measure(True, camera_stream_returning(value))
+            _, rows = measure(True, stream_returning("camera", value))
             cam = rows["camera"]
             self.assertEqual(cam["unexpected"], {"count": STEP_HZ,
                                                  "first": f"camera stream() returned {name}, not a dict of images"})
@@ -238,6 +296,12 @@ class FakeStreamTest(unittest.TestCase):
         car = sim.load_scenario("fake_cherrier_tograc", 1)[0]
         sim.attach_sensors(car, stream=stream)
         return sim, car
+
+    def test_a_sensor_that_is_not_attached_cannot_be_streamed(self):
+        sim = FakeSim(rates=SENSOR_RATES)
+        car = sim.load_scenario("fake_cherrier_tograc", 1)[0]
+        with self.assertRaises(KeyError):
+            sim.stream(car, "lidar")
 
     def test_a_sensor_attached_without_stream_cannot_be_streamed(self):
         sim, car = self.attached(False)

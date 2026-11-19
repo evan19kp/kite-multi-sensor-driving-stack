@@ -372,7 +372,6 @@ def measure_sensors(sim, cars, seconds, clock=time.perf_counter, dump=None, poll
             if reading.suspect:
                 suspect[key].append(reading.suspect)
                 continue
-            suspect_rows[key] += reading.suspect_rows
             stats = raw_data.EMPTY
             if reading.timestamp is not None and not reading.unexpected:
                 try:
@@ -382,6 +381,7 @@ def measure_sensors(sim, cars, seconds, clock=time.perf_counter, dump=None, poll
             if reading.unexpected:
                 unexpected[key].append(reading.unexpected)
                 continue
+            suspect_rows[key] += reading.suspect_rows
             series[key].append(reading.timestamp)
             sizes[key] += stats.nbytes
             if key[1] in BUFFERED_KINDS:

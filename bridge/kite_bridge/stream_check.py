@@ -71,8 +71,6 @@ def _check_lidar(raw):
     cloud = raw["pointCloud"]
     rows = _rows(cloud)
     kept = trusted_rows(cloud)
-    if kept == rows:
-        return raw, 0
     return {key: value[:kept] if _rows(value) == rows else value for key, value in raw.items()}, rows - kept
 
 

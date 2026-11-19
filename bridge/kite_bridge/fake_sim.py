@@ -71,7 +71,7 @@ class FakeRows:
     def __getitem__(self, rows):
         start, stop, _ = rows.indices(self.shape[0])
         row_bytes = FAKE_FLOAT32_BYTES * self.shape[1]
-        return FakeRows(self._data[start * row_bytes:max(start, stop) * row_bytes], self.shape[1])
+        return FakeRows(self._data[start * row_bytes:stop * row_bytes], self.shape[1])
 
     def tobytes(self):
         return self._data
