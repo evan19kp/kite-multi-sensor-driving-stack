@@ -8,6 +8,7 @@ BUFFERED_KINDS = ("gps", "imu")
 STREAMED_KINDS = ("lidar", "camera")
 SENSOR_TIME = "sensor"
 POLL_TIME = "poll"
+TIMER_TIME = "timer"
 
 
 @dataclass(frozen=True)
@@ -15,7 +16,8 @@ class Reading:
     """One poll result. `timestamp` is the simulator time in seconds; None means the poll
     returned nothing. `time_source` says where the timestamp came from: SENSOR_TIME when the
     reading carried its own time, POLL_TIME when it had none and the time of the poll was used
-    (a rate computed from those timestamps is the polling rate, not the sensor's). `points` is
+    (a rate computed from those timestamps is the polling rate, not the sensor's). In free mode
+    such a reading gets the latest Timer value instead and TIMER_TIME. `points` is
     the lidar point count, else None. `unexpected` is a message when the poll raised or the
     reading was not in the format the adapter expects; such a reading has no timestamp and is
     not an empty poll.
@@ -115,6 +117,26 @@ class Simulator(ABC):
     @abstractmethod
     def step(self, n: int = 1) -> None:
         """Advance the simulator by n steps of 1 / STEP_HZ seconds."""
+
+    @abstractmethod
+    def start_free_running(self, car: str) -> None:
+        """Attach a Timer sensor to `car`, switch the simulator from lock-step to running on its
+        own, and resume it. From then on `free_running` is True until `pause`."""
+
+    @abstractmethod
+    def pause(self) -> None:
+        """Pause the simulator. The Timer stops."""
+
+    @property
+    @abstractmethod
+    def free_running(self) -> bool:
+        """Whether `start_free_running` resumed the simulator and no `pause` came after it."""
+
+    @abstractmethod
+    def timer_seconds(self) -> float:
+        """Poll the Timer that `start_free_running` attached: simulated seconds since the
+        scenario started, finite and >= 0. It does not advance while the simulator is paused.
+        A clock, not ground truth of anything else."""
 
     @abstractmethod
     def lidar_points(self, car: str) -> list[tuple[float, float, float]] | None:

@@ -1,4 +1,5 @@
-"""How often each sensor is polled, in polls per simulated second.
+"""How often each sensor is polled, in polls per simulated second (lock-step mode) or per wall
+second (free mode).
 
 Input domain, and nothing beyond it: a rate is a positive finite number of polls per simulated
 second, at most STEP_HZ (the step rate, so at most one poll per step). Rates are exact rationals
@@ -10,6 +11,14 @@ step 1 means the first reading is picked up at once, and for a buffered sensor n
 before the first poll is missed. The poll count is floor(N * r / STEP_HZ) + 1 for r below
 STEP_HZ, and N for r = STEP_HZ (every step). Example, r = 20: steps 1, 3, 6, 9, ..., which is
 21 polls in 60 steps.
+
+In free mode (`--mode free`) the simulator runs on its own and the same rates are polls per
+wall second, on a wall-clock schedule: a sensor at rate r is due at k / r wall seconds after
+the run starts, k = 0, 1, 2, ... A pass at wall time t polls every sensor that is due (its due
+time is at most t), once, and moves its due time to the first k / r after t (`next_due`). A
+poll that comes late therefore covers its own slot and the slots it missed are skipped, never
+made up in a burst. With polls that take no time a run of W wall seconds gives ceil(W * r)
+polls at times below W. The wall time t is a finite number of seconds >= 0.
 
 `parse_rates` is the boundary: it turns the `--rates` text into a dict by sensor kind and
 raises ValueError for anything outside the domain.
@@ -66,6 +75,11 @@ def every_step():
 def polled(step, rate):
     """Whether a sensor at `rate` is polled after step number `step` (1 is the first step)."""
     return step == 1 or _slot(step, rate) > _slot(step - 1, rate)
+
+
+def next_due(now, rate):
+    """The first wall time k / rate strictly after `now` (free mode), as an exact Fraction."""
+    return (math.floor(Fraction(now) * rate) + 1) / rate
 
 
 def _slot(step, rate):

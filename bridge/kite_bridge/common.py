@@ -1,11 +1,14 @@
 import argparse
 import contextlib
+import dataclasses
 import json
 import math
 import sys
 import threading
 import time
 import traceback
+import typing
+from fractions import Fraction
 from pathlib import Path
 
 from kite_bridge import measure, raw_data, rates
@@ -13,7 +16,8 @@ from kite_bridge.fake_sim import FakeSim
 from kite_bridge.output_guard import PROVENANCE, out_refusal, repo_roots
 from kite_bridge.readings import readings_in
 from kite_bridge.sensor_settings import requested_update_hz, settings_lines
-from kite_bridge.sim_api import BUFFERED_KINDS, POLL_TIME, SENSOR_KINDS, STEP_HZ, STREAMED_KINDS, Reading
+from kite_bridge.sim_api import (BUFFERED_KINDS, POLL_TIME, SENSOR_KINDS, STEP_HZ, STREAMED_KINDS, TIMER_TIME,
+                                 Reading)
 
 RAW_DUMP_FILE = "raw_gps_imu.json"
 DEFAULT_MODEL = "vivace"
@@ -24,6 +28,14 @@ DEFAULT_TIMEOUT_S = 300.0
 CLOSE_WAIT_S = 20.0  # BeamNGpy's close() waits up to 10 s for the simulator to quit, then ends it itself
 JOIN_SLICE_S = 0.1
 EXIT_INTERRUPTED = 130
+LOCKSTEP = "lockstep"
+FREE = "free"
+WALL_LIMIT_FACTOR = 20
+# A due time such as 3/10 s has no exact float, so a clock can stop a hair short of it; the
+# shortest sleep makes sure the next pass is past it.
+MIN_SLEEP_S = 1e-6
+wall_clock = time.perf_counter
+wall_sleep = time.sleep
 
 
 class SpikeError(Exception):
@@ -71,9 +83,16 @@ def add_measure_options(parser):
     parser.add_argument("--rates", type=_rates_option, default=rates.DEFAULT_RATES_TEXT,
                         metavar="KIND=RATE,...",
                         help="polls per simulated second for each sensor (lidar, camera, radar, gps, imu), "
+                             "or per wall second with --mode free, "
                              f"each above 0 and at most {STEP_HZ}; all=RATE sets every sensor and a named "
                              f"sensor overrides it (default {rates.DEFAULT_RATES_TEXT}; all={STEP_HZ} polls "
                              "every sensor after every step)")
+    parser.add_argument("--mode", choices=(LOCKSTEP, FREE), default=LOCKSTEP,
+                        help=f"{LOCKSTEP} (default): step the simulator {STEP_HZ} times per simulated second "
+                             f"and poll between steps; {FREE}: let the simulator run on its own, poll each "
+                             "sensor at its --rates rate per wall second and read simulated time from a Timer "
+                             "sensor; the run ends at --seconds of Timer time, or fails after --seconds x "
+                             f"{WALL_LIMIT_FACTOR} wall seconds")
     parser.add_argument("--dump-raw", type=_count, default=0, metavar="N",
                         help=f"write the first N raw GPS and the first N raw IMU readings of each car, "
                              f"with each poll's wall time and step count, to {RAW_DUMP_FILE} in --out "
@@ -175,13 +194,16 @@ def session(args):
 
 def _shut_down(sim, in_step, close_wait):
     """Ends BeamNG.tech without waiting forever. Removes the sensors only while the connection is
-    `in_step`, then closes; if close raises or overruns `close_wait`, or Ctrl+C comes during
-    either, ends the process BeamNGpy launched. Returns whether BeamNG.tech ended, and the close
-    or Ctrl+C failure, else the removal failure, else None."""
+    `in_step`, pausing a free-running simulator first, then closes; if close raises or overruns
+    `close_wait`, or Ctrl+C comes during either, ends the process BeamNGpy launched. A pause that
+    fails skips the removal and counts as a removal failure. Returns whether BeamNG.tech ended,
+    and the close or Ctrl+C failure, else the removal failure, else None."""
     removal_failure = None
     try:
         if in_step:
             try:
+                if sim.free_running:
+                    sim.pause()
                 sim.remove_sensors()
             except Exception as error:
                 removal_failure = error
@@ -272,8 +294,9 @@ class RawDump:
 
     def add(self, car, kind, step, wall_s, poll_wall_s, readings):
         """One entry per reading of the poll, until this car's sensor has `per_sensor` entries.
-        `step` is the steps taken when the poll was made, `wall_s` the wall seconds since the run's
-        first step when the poll returned and `poll_wall_s` how long the poll call took."""
+        `step` is the steps taken when the poll was made (None in free mode, which takes no
+        steps), `wall_s` the wall seconds since the run's loop started when the poll returned and
+        `poll_wall_s` how long the poll call took."""
         for reading in readings:
             if self._counts.get((car, kind), 0) >= self.per_sensor:
                 return
@@ -289,12 +312,22 @@ def write_raw_dump(out, per_sensor, cases):
         "cases": [{"cars": cars, "entries": dump.entries} for cars, dump in cases]})
 
 
-def measure_sensors(sim, cars, seconds, clock=time.perf_counter, dump=None, poll_rates=None, stream=False):
+def measure_sensors(sim, cars, seconds, clock=None, dump=None, poll_rates=None, stream=False, mode=LOCKSTEP,
+                    sleep=None):
     """Steps the simulator for `seconds` of simulator time and polls each sensor at its rate in
     `poll_rates`, a dict by sensor kind of polls per simulated second (see `rates` for the
     schedule). By default every sensor is polled once after each step, STEP_HZ per simulator
-    second. `clock` returns wall seconds; a test passes a fake one. `dump`, a RawDump, collects
-    the raw GPS and IMU readings.
+    second. `clock` returns wall seconds and `sleep` waits for wall seconds; a test passes fake
+    ones. Without them the run uses `wall_clock` and `wall_sleep`, real time. `dump`, a
+    RawDump, collects the raw GPS and IMU readings.
+
+    `mode` FREE replaces the steps (see `_run_free`): the simulator runs on its own, the rates
+    are polls per wall second, and `simulated_s` is how far the Timer advanced. A reading
+    without its own time gets the latest Timer reading, with `time_source` TIMER_TIME. The
+    timing has `idle_s` (sleeping until the next poll is due) and `timer_reads_s` (inside the
+    Timer polls) in place of `step_wait_s`; `steps` and `steps_per_second` are None, a dump
+    entry's step is None, and `timer` gives the Timer's poll count and rate. Every sensor
+    counts as polled slower than every step for `possible_loss`. `mode` is in the result.
 
     With `stream`, the STREAMED_KINDS sensors (lidar, camera) are attached streaming and read
     with `sim.stream` instead of `sim.poll`, on the same schedule; everything below that says
@@ -332,74 +365,21 @@ def measure_sensors(sim, cars, seconds, clock=time.perf_counter, dump=None, poll
     timeout, which stops the run. Unexpected readings are left out of `polls`, `empty`,
     `rate_hz`, `readings_per_poll_max`, `new_readings` and `bytes_read`; the latency and read
     time figures include their polls."""
+    clock = clock or wall_clock
     poll_rates = rates.every_step() if poll_rates is None else poll_rates
     for car in cars:
         sim.attach_sensors(car, stream=stream)
     keys = [(car, kind) for car in cars for kind in SENSOR_KINDS]
     streamed = {key for key in keys if stream and key[1] in STREAMED_KINDS}
-    suspect = {key: [] for key in keys}
-    suspect_rows = {key: 0 for key in keys}
-    series = {key: [] for key in keys}
-    latencies = {key: [] for key in keys}
-    points = {key: [] for key in keys}
-    detections = {key: [] for key in keys}
-    sources = {key: set() for key in keys}
-    unexpected = {key: [] for key in keys}
-    per_poll = {key: [] for key in keys}
-    sizes = {key: 0 for key in keys}
-    poll_keys = {key: [] for key in keys}
-    reading_keys = {key: [] for key in keys}
-    steps = steps_for(seconds)
-    step_time = 0.0
-    loop_started = clock()
-    for step_number in range(1, steps + 1):
-        started = clock()
-        sim.step(1)
-        step_time += clock() - started
-        for key in keys:
-            if not rates.polled(step_number, poll_rates[key[1]]):
-                continue
-            method = "stream" if key in streamed else "poll"
-            started = clock()
-            try:
-                reading = getattr(sim, method)(*key)
-            except TimeoutError:
-                raise
-            except Exception as error:
-                reading = Reading(None, unexpected=f"{method} raised {type(error).__name__}: {error}")
-            finished = clock()
-            latencies[key].append(finished - started)
-            if reading.suspect:
-                suspect[key].append(reading.suspect)
-                continue
-            stats = raw_data.EMPTY
-            if reading.timestamp is not None and not reading.unexpected:
-                try:
-                    stats = raw_data.poll_stats(key[1], reading.raw)
-                except ValueError as error:
-                    reading = Reading(None, unexpected=f"raw data not measurable: {error}")
-            if reading.unexpected:
-                unexpected[key].append(reading.unexpected)
-                continue
-            suspect_rows[key] += reading.suspect_rows
-            series[key].append(reading.timestamp)
-            sizes[key] += stats.nbytes
-            if key[1] in BUFFERED_KINDS:
-                reading_keys[key].extend(stats.keys)
-            else:
-                poll_keys[key].append(stats.keys[0] if stats.keys else None)
-            if reading.timestamp is not None:
-                sources[key].add(reading.time_source)
-                per_poll[key].append(reading.count)
-                if dump is not None and key[1] in BUFFERED_KINDS:
-                    dump.add(key[0], key[1], step_number, finished - loop_started,
-                             finished - started, readings_in(reading.raw))
-            if reading.points is not None:
-                points[key].append(reading.points)
-            if reading.detections is not None:
-                detections[key].append(reading.detections)
-    wall = clock() - loop_started
-    simulated = steps / STEP_HZ
+    tally = _Tally(keys, streamed, dump)
+    if mode == FREE:
+        run = _run_free(sim, tally, cars[0], seconds, poll_rates, clock, sleep or wall_sleep)
+    else:
+        run = _run_lockstep(sim, tally, seconds, poll_rates, clock)
+    steps, simulated, wall, waits = run.steps, run.simulated_s, run.wall_s, run.waits
+    suspect, suspect_rows, series, latencies = tally.suspect, tally.suspect_rows, tally.series, tally.latencies
+    points, detections, sources, unexpected = tally.points, tally.detections, tally.sources, tally.unexpected
+    per_poll, sizes, poll_keys, reading_keys = tally.per_poll, tally.sizes, tally.poll_keys, tally.reading_keys
     reads = math.fsum(math.fsum(latencies[key]) for key in keys if key not in streamed)
     stream_reads = math.fsum(math.fsum(latencies[key]) for key in streamed)
     rows = []
@@ -412,7 +392,7 @@ def measure_sensors(sim, cars, seconds, clock=time.perf_counter, dump=None, poll
             "car": car, "sensor": kind,
             "configured_rate_hz": float(poll_rates[kind]),
             "requested_update_hz": requested,
-            "possible_loss": (poll_rates[kind] < STEP_HZ and requested is not None
+            "possible_loss": (_below_every_step(mode, poll_rates[kind]) and requested is not None
                               and measure.possible_loss(new, simulated, requested)),
             **measure.summarise(series[car, kind], latencies[car, kind], points[car, kind],
                                 detections[car, kind]),
@@ -432,11 +412,158 @@ def measure_sensors(sim, cars, seconds, clock=time.perf_counter, dump=None, poll
             rows[-1]["suspect"] = ({"readings": len(dropped), "first": dropped[0] if dropped else None,
                                     "rows": suspect_rows[car, kind]} if (car, kind) in streamed else None)
     timing = {"simulated_s": simulated, "wall_s": wall, "real_time_factor": measure.real_time_factor(simulated, wall),
-              "step_wait_s": step_time, "sensor_reads_s": reads,
+              **waits, "sensor_reads_s": reads,
               **({"stream_reads_s": stream_reads} if stream else {}),
-              "processing_s": measure.processing_time(wall, step_time, reads + stream_reads)}
-    return {"cars": len(cars), "steps": steps, "steps_per_second": measure.steps_per_second(steps, step_time),
-            "stream": stream, "timing": timing, "sensors": rows}
+              "processing_s": measure.processing_time(wall, math.fsum(waits.values()), reads + stream_reads)}
+    return {"cars": len(cars), "mode": mode, "steps": steps, "steps_per_second": run.steps_per_second,
+            "stream": stream, **run.extra, "timing": timing, "sensors": rows}
+
+
+def _below_every_step(mode, rate):
+    """Whether a sensor at `rate` can miss updates between polls: in lock-step mode when it is
+    polled slower than every step, in free mode always, since nothing holds the simulator still."""
+    return mode == FREE or rate < STEP_HZ
+
+
+class _Run(typing.NamedTuple):
+    """What one loop returns. `waits` holds the wall time spent outside the reads, by timing
+    key; `extra` the result fields only that mode has."""
+    steps: int | None
+    steps_per_second: float | None
+    simulated_s: float
+    wall_s: float
+    waits: dict
+    extra: dict
+
+
+def _run_lockstep(sim, tally, seconds, poll_rates, clock):
+    steps = steps_for(seconds)
+    step_time = 0.0
+    loop_started = clock()
+    for step_number in range(1, steps + 1):
+        started = clock()
+        sim.step(1)
+        step_time += clock() - started
+        for key in tally.keys:
+            if rates.polled(step_number, poll_rates[key[1]]):
+                tally.read(sim, key, clock, loop_started, step_number)
+    wall = clock() - loop_started
+    return _Run(steps, measure.steps_per_second(steps, step_time), steps / STEP_HZ, wall,
+                {"step_wait_s": step_time}, {})
+
+
+def _run_free(sim, tally, timer_car, seconds, poll_rates, clock, sleep):
+    """Lets the simulator run on its own and polls on the wall-clock schedule in `rates`. The
+    Timer, on `timer_car`, is polled at the higher of the GPS and IMU rates, in its own request.
+    Each pass reads the clock once, polls the Timer if it is due, and ends the run when the
+    Timer has advanced `seconds` since its first reading. Past the wall-clock limit, `seconds`
+    x WALL_LIMIT_FACTOR, it raises SpikeError instead; a Timer that stands still reaches it too.
+    Otherwise the pass polls every sensor that is due, then sleeps until the next due time or
+    the limit, whichever is first. A Timer reading below the one before raises SpikeError."""
+    timer_rate = max(poll_rates["gps"], poll_rates["imu"])
+    limit = Fraction(seconds) * WALL_LIMIT_FACTOR
+    sim.start_free_running(timer_car)
+    due = dict.fromkeys(tally.keys, 0)
+    timer_due = 0
+    idle = timer_time = 0.0
+    timer_polls = 0
+    first = latest = None
+    loop_started = clock()
+    while True:
+        now = clock() - loop_started
+        if now >= timer_due:
+            started = clock()
+            timer = sim.timer_seconds()
+            timer_time += clock() - started
+            timer_polls += 1
+            if first is None:
+                first = timer
+            elif timer < latest:
+                raise SpikeError(f"the Timer went back from {latest:g} s to {timer:g} s")
+            latest = timer
+            if latest - first >= seconds:
+                break
+            timer_due = rates.next_due(now, timer_rate)
+        if now >= limit:
+            raise SpikeError(f"free run: the Timer advanced {latest - first:.3f} of {seconds:g} simulated s "
+                             f"in the wall-clock limit of {float(limit):g} s (--seconds x {WALL_LIMIT_FACTOR})")
+        for key in tally.keys:
+            if now >= due[key]:
+                tally.read(sim, key, clock, loop_started, None, latest)
+                due[key] = rates.next_due(now, poll_rates[key[1]])
+        started = clock()
+        gap = min(timer_due, limit, *due.values()) - Fraction(started - loop_started)
+        if gap > 0:
+            sleep(max(float(gap), MIN_SLEEP_S))
+        idle += clock() - started
+    wall = clock() - loop_started
+    return _Run(None, None, latest - first, wall, {"idle_s": idle, "timer_reads_s": timer_time},
+                {"timer": {"polls": timer_polls, "rate_hz": float(timer_rate)}})
+
+
+class _Tally:
+    """Everything one run measured, by (car, kind)."""
+
+    def __init__(self, keys, streamed, dump):
+        self.keys, self.streamed, self.dump = keys, streamed, dump
+        self.suspect = {key: [] for key in keys}
+        self.suspect_rows = {key: 0 for key in keys}
+        self.series = {key: [] for key in keys}
+        self.latencies = {key: [] for key in keys}
+        self.points = {key: [] for key in keys}
+        self.detections = {key: [] for key in keys}
+        self.sources = {key: set() for key in keys}
+        self.unexpected = {key: [] for key in keys}
+        self.per_poll = {key: [] for key in keys}
+        self.sizes = {key: 0 for key in keys}
+        self.poll_keys = {key: [] for key in keys}
+        self.reading_keys = {key: [] for key in keys}
+
+    def read(self, sim, key, clock, loop_started, step, timer_s=None):
+        """Reads one sensor once and records the result. In free mode `timer_s` is the latest
+        Timer reading: a reading without its own time gets it, as TIMER_TIME, in place of the
+        poll time."""
+        method = "stream" if key in self.streamed else "poll"
+        started = clock()
+        try:
+            reading = getattr(sim, method)(*key)
+        except TimeoutError:
+            raise
+        except Exception as error:
+            reading = Reading(None, unexpected=f"{method} raised {type(error).__name__}: {error}")
+        finished = clock()
+        self.latencies[key].append(finished - started)
+        if reading.suspect:
+            self.suspect[key].append(reading.suspect)
+            return
+        if timer_s is not None and reading.time_source == POLL_TIME:
+            reading = dataclasses.replace(reading, timestamp=timer_s, time_source=TIMER_TIME)
+        stats = raw_data.EMPTY
+        if reading.timestamp is not None and not reading.unexpected:
+            try:
+                stats = raw_data.poll_stats(key[1], reading.raw)
+            except ValueError as error:
+                reading = Reading(None, unexpected=f"raw data not measurable: {error}")
+        if reading.unexpected:
+            self.unexpected[key].append(reading.unexpected)
+            return
+        self.suspect_rows[key] += reading.suspect_rows
+        self.series[key].append(reading.timestamp)
+        self.sizes[key] += stats.nbytes
+        if key[1] in BUFFERED_KINDS:
+            self.reading_keys[key].extend(stats.keys)
+        else:
+            self.poll_keys[key].append(stats.keys[0] if stats.keys else None)
+        if reading.timestamp is not None:
+            self.sources[key].add(reading.time_source)
+            self.per_poll[key].append(reading.count)
+            if self.dump is not None and key[1] in BUFFERED_KINDS:
+                self.dump.add(key[0], key[1], step, finished - loop_started,
+                              finished - started, readings_in(reading.raw))
+        if reading.points is not None:
+            self.points[key].append(reading.points)
+        if reading.detections is not None:
+            self.detections[key].append(reading.detections)
 
 
 def _fmt(value, scale=1.0, digits=2):
@@ -453,9 +580,12 @@ def _timing_lines(result):
 
     reads = ([part("in sensor polls", t["sensor_reads_s"]), part("in stream reads", t["stream_reads_s"])]
              if result["stream"] else [part("in sensor reads", t["sensor_reads_s"])])
-    lines = [f"timing: {_fmt(t['simulated_s'], digits=3)} simulated s in {_fmt(wall, digits=3)} wall s, "
-             f"real-time factor {_fmt(t['real_time_factor'], digits=3)}",
-             part("waiting for steps", t["step_wait_s"]), *reads, part("our processing", t["processing_s"]),
+    free = result["mode"] == FREE
+    waits = ([part("waiting to poll", t["idle_s"]), part("in Timer polls", t["timer_reads_s"])] if free
+             else [part("waiting for steps", t["step_wait_s"])])
+    lines = [f"timing: {_fmt(t['simulated_s'], digits=3)} simulated s{' (Timer)' if free else ''} in "
+             f"{_fmt(wall, digits=3)} wall s, real-time factor {_fmt(t['real_time_factor'], digits=3)}",
+             *waits, *reads, part("our processing", t["processing_s"]),
              f"{'car':<7}{'sensor':<8}{'read_s':>9}{'per_poll_ms':>13}{'poll_hz':>9}{'new':>7}"
              f"{'new_per_s':>11}{'req_hz':>8}{'bytes':>12}{'kB_per_s':>10}"]
     for r in result["sensors"]:
@@ -468,15 +598,17 @@ def _timing_lines(result):
 
 
 def _loss_lines(result):
+    free = result["mode"] == FREE
     lines = []
     for r in result["sensors"]:
         if r["possible_loss"]:
             lines.append(f"possible loss: {r['car']} {r['sensor']} gave {r['new_per_simulated_s']:.2f} new "
-                         f"readings per simulated second at {r['configured_rate_hz']:g} polls per second, "
+                         f"readings per simulated second at {r['configured_rate_hz']:g} polls per "
+                         f"{'wall ' if free else ''}second, "
                          f"fewer than the {r['requested_update_hz']:g} Hz requested. "
                          f"Compare with a run at --rates all={STEP_HZ}.")
     buffered = sorted({r["sensor"] for r in result["sensors"]
-                       if r["sensor"] in BUFFERED_KINDS and r["configured_rate_hz"] < STEP_HZ})
+                       if r["sensor"] in BUFFERED_KINDS and _below_every_step(result["mode"], r["configured_rate_hz"])})
     if buffered:
         lines.append(f"loss not checkable for {', '.join(buffered)}: a buffered sensor's capacity is not "
                      f"known, so compare its new readings with a run at --rates all={STEP_HZ}.")
@@ -501,9 +633,26 @@ def _suspect_lines(result):
     return lines
 
 
+def _summary_line(result):
+    if result["mode"] == FREE:
+        timer = result["timer"]
+        return (f"cars: {result['cars']}  mode: free, the Timer polled {timer['polls']} times at "
+                f"{timer['rate_hz']:g} per wall second")
+    return f"cars: {result['cars']}  steps per second: {_fmt(result['steps_per_second'], digits=1)}"
+
+
+def _free_lines(result):
+    if result["mode"] != FREE:
+        return []
+    return ["mode free: the simulator ran on its own and was polled on a wall-clock schedule. poll_hz is "
+            "polls per wall second. simulated s, rate_hz, new_per_s and kB_per_s use Timer seconds. time "
+            "timer: the readings had no time of their own and got the latest Timer reading. The real-time "
+            "factor is what this run measured, not a target."]
+
+
 def format_result(result):
     stream = result["stream"]
-    lines = [f"cars: {result['cars']}  steps per second: {_fmt(result['steps_per_second'], digits=1)}",
+    lines = [_summary_line(result),
              f"{'car':<7}{'sensor':<8}{'polls':>6}{'rate_hz':>9}{'time':>7}{'per_poll':>10}{'mean_ms':>9}"
              f"{'p50_ms':>8}{'p95_ms':>8}{'max_ms':>8}{'empty':>7}{'repeat':>8}{'unexp':>7}{'points':>8}"
              f"{'detect':>8}" + (f"{'read':>8}{'suspect':>9}{'sus_rows':>10}" if stream else "")]
@@ -521,13 +670,14 @@ def format_result(result):
     lines.append("rate_hz: distinct reading timestamps per simulator second. It counts at most one "
                  f"new reading per poll, so it is limited to about the sensor's poll rate (poll_hz, "
                  f"at most {STEP_HZ}). per_poll shows when a sensor delivered more.")
+    lines += _free_lines(result)
     lines += _loss_lines(result)
     for r in result["sensors"]:
         if (r["readings_per_poll_max"] or 0) > 1:
             lines.append(f"{r['car']} {r['sensor']}: polls returned up to {r['readings_per_poll_max']} "
                          "readings. rate_hz counts at most one per poll, so it undercounts this sensor.")
     from_poll = [f"{r['car']} {r['sensor']}" for r in result["sensors"]
-                 if r["time_source"] in (POLL_TIME, MIXED_TIME)]
+                 if r["time_source"] in (POLL_TIME, TIMER_TIME, MIXED_TIME)]
     if from_poll:
         lines.append(f"no sensor time for {', '.join(from_poll)}: rate_hz there is the "
                      "polling rate, not the sensor's")
