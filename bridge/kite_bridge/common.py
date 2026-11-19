@@ -13,7 +13,7 @@ from kite_bridge.fake_sim import FakeSim
 from kite_bridge.output_guard import PROVENANCE, out_refusal, repo_roots
 from kite_bridge.readings import readings_in
 from kite_bridge.sensor_settings import requested_update_hz, settings_lines
-from kite_bridge.sim_api import BUFFERED_KINDS, POLL_TIME, SENSOR_KINDS, STEP_HZ, Reading
+from kite_bridge.sim_api import BUFFERED_KINDS, POLL_TIME, SENSOR_KINDS, STEP_HZ, STREAMED_KINDS, Reading
 
 RAW_DUMP_FILE = "raw_gps_imu.json"
 DEFAULT_MODEL = "vivace"
@@ -78,6 +78,11 @@ def add_measure_options(parser):
                         help=f"write the first N raw GPS and the first N raw IMU readings of each car, "
                              f"with each poll's wall time and step count, to {RAW_DUMP_FILE} in --out "
                              "(default 0: write nothing)")
+    parser.add_argument("--stream", action="store_true",
+                        help="create the lidar and camera with is_streaming=True and read them from shared "
+                             "memory with stream() instead of poll(); readings that fail the checks in "
+                             "kite_bridge/stream_check.py are dropped and counted under suspect "
+                             "(default off: every sensor is polled)")
 
 
 def parse_args(description, argv=None, extra=None):
@@ -225,8 +230,8 @@ def version_report(sim):
     return {**sim.versions(), "BeamNG.tech version": TECH_VERSION_TEXT}
 
 
-def print_sensor_settings():
-    print("\n".join(settings_lines()))
+def print_sensor_settings(stream=False):
+    print("\n".join(settings_lines(stream)))
 
 
 def spawn(sim, args, n_cars):
@@ -284,12 +289,23 @@ def write_raw_dump(out, per_sensor, cases):
         "cases": [{"cars": cars, "entries": dump.entries} for cars, dump in cases]})
 
 
-def measure_sensors(sim, cars, seconds, clock=time.perf_counter, dump=None, poll_rates=None):
+def measure_sensors(sim, cars, seconds, clock=time.perf_counter, dump=None, poll_rates=None, stream=False):
     """Steps the simulator for `seconds` of simulator time and polls each sensor at its rate in
     `poll_rates`, a dict by sensor kind of polls per simulated second (see `rates` for the
     schedule). By default every sensor is polled once after each step, STEP_HZ per simulator
     second. `clock` returns wall seconds; a test passes a fake one. `dump`, a RawDump, collects
     the raw GPS and IMU readings.
+
+    With `stream`, the STREAMED_KINDS sensors (lidar, camera) are attached streaming and read
+    with `sim.stream` instead of `sim.poll`, on the same schedule; everything below that says
+    poll covers those reads too, except the timing split. Their time goes to `stream_reads_s`,
+    not `sensor_reads_s`: everything inside the adapter's stream call, which is BeamNGpy's
+    `stream()` (a copy out of shared memory, no request) plus the checks in `stream_check` and
+    the parse in `readings.py`. Each row says how it was read (`read`) and what was dropped
+    (`suspect`: whole readings dropped, the first reason, and all-zero rows cut off kept lidar
+    scans, summed over reads; None for a polled sensor). A dropped reading is left out of the
+    same counts as an unexpected one. Without `stream` the result has none of these fields
+    and every sensor is polled, as before; `stream` in the result says which it was.
 
     A row's `configured_rate_hz` is the poll rate and `requested_update_hz` the update rate the
     adapter asks of the sensor (None for GPS and IMU). `possible_loss` is True only when the
@@ -318,8 +334,11 @@ def measure_sensors(sim, cars, seconds, clock=time.perf_counter, dump=None, poll
     time figures include their polls."""
     poll_rates = rates.every_step() if poll_rates is None else poll_rates
     for car in cars:
-        sim.attach_sensors(car)
+        sim.attach_sensors(car, stream=stream)
     keys = [(car, kind) for car in cars for kind in SENSOR_KINDS]
+    streamed = {key for key in keys if stream and key[1] in STREAMED_KINDS}
+    suspect = {key: [] for key in keys}
+    suspect_rows = {key: 0 for key in keys}
     series = {key: [] for key in keys}
     latencies = {key: [] for key in keys}
     points = {key: [] for key in keys}
@@ -340,15 +359,20 @@ def measure_sensors(sim, cars, seconds, clock=time.perf_counter, dump=None, poll
         for key in keys:
             if not rates.polled(step_number, poll_rates[key[1]]):
                 continue
+            method = "stream" if key in streamed else "poll"
             started = clock()
             try:
-                reading = sim.poll(*key)
+                reading = getattr(sim, method)(*key)
             except TimeoutError:
                 raise
             except Exception as error:
-                reading = Reading(None, unexpected=f"poll raised {type(error).__name__}: {error}")
+                reading = Reading(None, unexpected=f"{method} raised {type(error).__name__}: {error}")
             finished = clock()
             latencies[key].append(finished - started)
+            if reading.suspect:
+                suspect[key].append(reading.suspect)
+                continue
+            suspect_rows[key] += reading.suspect_rows
             stats = raw_data.EMPTY
             if reading.timestamp is not None and not reading.unexpected:
                 try:
@@ -376,7 +400,8 @@ def measure_sensors(sim, cars, seconds, clock=time.perf_counter, dump=None, poll
                 detections[key].append(reading.detections)
     wall = clock() - loop_started
     simulated = steps / STEP_HZ
-    reads = math.fsum(math.fsum(latencies[key]) for key in keys)
+    reads = math.fsum(math.fsum(latencies[key]) for key in keys if key not in streamed)
+    stream_reads = math.fsum(math.fsum(latencies[key]) for key in streamed)
     rows = []
     for car, kind in keys:
         new = (measure.count_distinct(reading_keys[car, kind]) if kind in BUFFERED_KINDS
@@ -401,11 +426,17 @@ def measure_sensors(sim, cars, seconds, clock=time.perf_counter, dump=None, poll
             "new_per_simulated_s": measure.per_simulated_second(new, simulated),
             "bytes_read": sizes[car, kind],
             "bytes_per_simulated_s": measure.per_simulated_second(sizes[car, kind], simulated)})
+        if stream:
+            dropped = suspect[car, kind]
+            rows[-1]["read"] = "stream" if (car, kind) in streamed else "poll"
+            rows[-1]["suspect"] = ({"readings": len(dropped), "first": dropped[0] if dropped else None,
+                                    "rows": suspect_rows[car, kind]} if (car, kind) in streamed else None)
     timing = {"simulated_s": simulated, "wall_s": wall, "real_time_factor": measure.real_time_factor(simulated, wall),
               "step_wait_s": step_time, "sensor_reads_s": reads,
-              "processing_s": measure.processing_time(wall, step_time, reads)}
+              **({"stream_reads_s": stream_reads} if stream else {}),
+              "processing_s": measure.processing_time(wall, step_time, reads + stream_reads)}
     return {"cars": len(cars), "steps": steps, "steps_per_second": measure.steps_per_second(steps, step_time),
-            "timing": timing, "sensors": rows}
+            "stream": stream, "timing": timing, "sensors": rows}
 
 
 def _fmt(value, scale=1.0, digits=2):
@@ -420,10 +451,11 @@ def _timing_lines(result):
         share = _fmt(seconds / wall * 100, digits=1) if wall > 0 else "n/a"
         return f"  {label:<18}{seconds:>9.3f} s{share:>7}%"
 
+    reads = ([part("in sensor polls", t["sensor_reads_s"]), part("in stream reads", t["stream_reads_s"])]
+             if result["stream"] else [part("in sensor reads", t["sensor_reads_s"])])
     lines = [f"timing: {_fmt(t['simulated_s'], digits=3)} simulated s in {_fmt(wall, digits=3)} wall s, "
              f"real-time factor {_fmt(t['real_time_factor'], digits=3)}",
-             part("waiting for steps", t["step_wait_s"]), part("in sensor reads", t["sensor_reads_s"]),
-             part("our processing", t["processing_s"]),
+             part("waiting for steps", t["step_wait_s"]), *reads, part("our processing", t["processing_s"]),
              f"{'car':<7}{'sensor':<8}{'read_s':>9}{'per_poll_ms':>13}{'poll_hz':>9}{'new':>7}"
              f"{'new_per_s':>11}{'req_hz':>8}{'bytes':>12}{'kB_per_s':>10}"]
     for r in result["sensors"]:
@@ -451,11 +483,30 @@ def _loss_lines(result):
     return lines
 
 
+def _stream_columns(r):
+    s = r["suspect"]
+    return f"{r['read']:>8}{s['readings'] if s else 'n/a':>9}{s['rows'] if s else 'n/a':>10}"
+
+
+def _suspect_lines(result):
+    lines = ["stream: lidar and camera were read from shared memory with stream(); radar, gps and imu "
+             "with poll(). suspect counts streamed readings dropped whole, sus_rows the all-zero rows cut "
+             "off the end of kept lidar scans. Rows left from an earlier scan cannot be detected."]
+    for r in result["sensors"]:
+        s = r["suspect"]
+        if s and (s["readings"] or s["rows"]):
+            reason = f", first reason: {s['first']}" if s["first"] else ""
+            lines.append(f"suspect: {r['car']} {r['sensor']} dropped {s['readings']} readings and cut "
+                         f"{s['rows']} all-zero rows{reason}")
+    return lines
+
+
 def format_result(result):
+    stream = result["stream"]
     lines = [f"cars: {result['cars']}  steps per second: {_fmt(result['steps_per_second'], digits=1)}",
              f"{'car':<7}{'sensor':<8}{'polls':>6}{'rate_hz':>9}{'time':>7}{'per_poll':>10}{'mean_ms':>9}"
              f"{'p50_ms':>8}{'p95_ms':>8}{'max_ms':>8}{'empty':>7}{'repeat':>8}{'unexp':>7}{'points':>8}"
-             f"{'detect':>8}"]
+             f"{'detect':>8}" + (f"{'read':>8}{'suspect':>9}{'sus_rows':>10}" if stream else "")]
     for r in result["sensors"]:
         lat = r["latency_s"]
         lines.append(f"{r['car']:<7}{r['sensor']:<8}{r['polls']:>6}{_fmt(r['rate_hz']):>9}"
@@ -463,8 +514,10 @@ def format_result(result):
                      f"{_fmt(lat['mean'], 1000):>9}{_fmt(lat['p50'], 1000):>8}{_fmt(lat['p95'], 1000):>8}"
                      f"{_fmt(lat['max'], 1000):>8}{r['empty']:>7}{r['repeated']:>8}"
                      f"{r['unexpected']['count']:>7}{_fmt(r['points_mean'], digits=0):>8}"
-                     f"{_fmt(r['detections_mean'], digits=0):>8}")
+                     f"{_fmt(r['detections_mean'], digits=0):>8}" + (_stream_columns(r) if stream else ""))
     lines += _timing_lines(result)
+    if stream:
+        lines += _suspect_lines(result)
     lines.append("rate_hz: distinct reading timestamps per simulator second. It counts at most one "
                  f"new reading per poll, so it is limited to about the sensor's poll rate (poll_hz, "
                  f"at most {STEP_HZ}). per_poll shows when a sensor delivered more.")

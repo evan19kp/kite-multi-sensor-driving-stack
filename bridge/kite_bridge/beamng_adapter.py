@@ -10,8 +10,9 @@ checks them.
 import importlib.metadata
 
 from kite_bridge.readings import image_from_raw, points_from_raw, reading_from_raw
-from kite_bridge.sensor_settings import SENSOR_SETTINGS
+from kite_bridge.sensor_settings import settings_for
 from kite_bridge.sim_api import STEP_HZ, Simulator, remove_all
+from kite_bridge.stream_check import reading_from_stream
 
 PORT = 25252
 SCENARIO_LEVEL = "west_coast_usa"
@@ -83,18 +84,23 @@ class BeamNGAdapter(Simulator):
     def spawn_traffic(self, n):
         self._bng.traffic.spawn(max_amount=n)  # ASSUMPTION: not verified for 1.36
 
-    def attach_sensors(self, car):
+    def attach_sensors(self, car, stream=False):
         from beamngpy.sensors import GPS, AdvancedIMU, Camera, Lidar, Radar
 
         bng, vehicle = self._bng, self._vehicles[car]
         classes = {"lidar": Lidar, "camera": Camera, "radar": Radar, "gps": GPS, "imu": AdvancedIMU}
         self._sensors.update({
-            (car, kind): sensor_class(f"{kind}_{car}", bng, vehicle, **SENSOR_SETTINGS[kind])
+            (car, kind): sensor_class(f"{kind}_{car}", bng, vehicle, **settings_for(kind, stream))
             for kind, sensor_class in classes.items()
         })
 
     def poll(self, car, kind):
         return reading_from_raw(kind, self._sensors[(car, kind)].poll(), self.sim_time)
+
+    def stream(self, car, kind):
+        # ASSUMPTION: for a lidar or camera created with is_streaming=True, stream() sends no request
+        # and returns the dict poll() would (lidar) or a dict of images (camera); never run on 1.36
+        return reading_from_stream(kind, self._sensors[(car, kind)].stream(), self.sim_time)
 
     def lidar_points(self, car):
         return points_from_raw(self._sensors[(car, "lidar")].poll())

@@ -5,6 +5,7 @@ from dataclasses import dataclass, field
 STEP_HZ = 60
 SENSOR_KINDS = ("lidar", "camera", "radar", "gps", "imu")
 BUFFERED_KINDS = ("gps", "imu")
+STREAMED_KINDS = ("lidar", "camera")
 SENSOR_TIME = "sensor"
 POLL_TIME = "poll"
 
@@ -23,7 +24,11 @@ class Reading:
     `raw` is the poll result itself, kept only so the run can size and fingerprint it after the
     poll's timing has stopped; it is left out of comparison and repr, and never truth-tested.
     BUFFERED_KINDS are the sensors BeamNGpy 1.36 does not stream: they buffer readings between
-    polls, so one poll can return several."""
+    polls, so one poll can return several.
+    `suspect` and `suspect_rows` are set only by a streamed read (see `stream_check`). `suspect`
+    is why the whole reading was dropped; such a reading has no timestamp, no raw data, and is
+    neither empty nor unexpected. `suspect_rows` is how many all-zero rows were cut off the end
+    of a lidar scan that was kept."""
 
     timestamp: float | None
     points: int | None = None
@@ -32,6 +37,8 @@ class Reading:
     count: int = 1
     detections: int | None = None
     raw: object = field(default=None, compare=False, repr=False)
+    suspect: str | None = None
+    suspect_rows: int = 0
 
 
 def remove_all(sensors):
@@ -90,12 +97,20 @@ class Simulator(ABC):
         """Spawn up to n AI traffic cars. Raises if the simulator cannot."""
 
     @abstractmethod
-    def attach_sensors(self, car: str) -> None:
-        """Attach one sensor of each kind in SENSOR_KINDS to `car`."""
+    def attach_sensors(self, car: str, stream: bool = False) -> None:
+        """Attach one sensor of each kind in SENSOR_KINDS to `car`. With `stream`, the
+        STREAMED_KINDS sensors are created streaming: they write each reading to shared memory,
+        and `stream` reads it."""
 
     @abstractmethod
     def poll(self, car: str, kind: str) -> Reading:
         """Read one sensor once."""
+
+    @abstractmethod
+    def stream(self, car: str, kind: str) -> Reading:
+        """Read a streamed sensor (`kind` in STREAMED_KINDS, attached with `stream=True`) from
+        shared memory, sending no request to the simulator. The result has been through
+        `stream_check.reading_from_stream`."""
 
     @abstractmethod
     def step(self, n: int = 1) -> None:
