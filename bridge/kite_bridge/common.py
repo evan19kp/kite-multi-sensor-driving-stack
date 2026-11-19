@@ -121,7 +121,7 @@ def measure_sensors(sim, cars, seconds):
     each step, so the poll rate is STEP_HZ per simulator second.
 
     A row's `rate_hz` is the rate of distinct reading timestamps seen at poll time. It counts
-    one reading per poll, so it never exceeds the poll rate, whatever the sensor's own rate.
+    at most one new reading per poll, so it is limited to about the poll rate.
     `readings_per_poll_max` is the most readings one poll returned; above 1, the sensor
     produced readings faster than it was polled. Unexpected readings are left out of `polls`,
     `empty`, `rate_hz` and `readings_per_poll_max`; the latency figures include their polls."""
@@ -179,12 +179,13 @@ def format_result(result):
                      f"{_fmt(lat['mean'], 1000):>9}{_fmt(lat['p50'], 1000):>8}{_fmt(lat['p95'], 1000):>8}"
                      f"{_fmt(lat['max'], 1000):>8}{r['empty']:>7}{r['repeated']:>8}"
                      f"{r['unexpected']['count']:>7}{_fmt(r['points_mean'], digits=0):>8}")
-    lines.append(f"rate_hz: distinct reading timestamps per simulator second, one per poll at most, "
-                 f"so never above the poll rate of {STEP_HZ} Hz")
+    lines.append(f"rate_hz: distinct reading timestamps per simulator second. It counts at most one "
+                 f"new reading per poll, so it is limited to about the poll rate of {STEP_HZ} Hz. "
+                 "per_poll shows when a sensor delivered more.")
     for r in result["sensors"]:
         if (r["readings_per_poll_max"] or 0) > 1:
             lines.append(f"{r['car']} {r['sensor']}: polls returned up to {r['readings_per_poll_max']} "
-                         "readings; rate_hz counts one per poll and is capped at the poll rate")
+                         "readings. rate_hz counts at most one per poll, so it undercounts this sensor.")
     from_poll = [f"{r['car']} {r['sensor']}" for r in result["sensors"]
                  if r["time_source"] in (POLL_TIME, MIXED_TIME)]
     if from_poll:

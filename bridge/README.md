@@ -46,10 +46,10 @@ polling rate, not the sensor's, and the table says so), and `mixed` for both. A 
 without `pointCloud` is counted under `unexp` and printed with its keys, not as an empty poll.
 
 The scripts poll each sensor once per step, 60 times per simulator second. `rate_hz` is the rate
-of distinct reading timestamps seen at poll time. It counts one reading per poll, so it can never
-exceed 60 Hz, even for a sensor that runs faster. It does not try to recover the sensor's own
-rate. Instead, the `per_poll` column is the most readings one poll returned, and the JSON field
-`readings_per_poll_max` has the same value. When it is above 1, the table prints a line for that
+of distinct reading timestamps seen at poll time. It counts at most one new reading per poll, so
+it is limited to about 60 Hz, the poll rate, even for a sensor that runs faster. It does not try
+to recover the sensor's own rate. Instead, the `per_poll` column is the most readings one poll
+returned, and the JSON field `readings_per_poll_max` has the same value. When it is above 1, the table prints a line for that
 sensor saying so.
 
 Output goes only to `--out`, which is gitignored as `recordings/`. Ground truth (the car's true

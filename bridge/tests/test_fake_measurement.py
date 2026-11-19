@@ -150,10 +150,11 @@ class ReadingsPerPollTest(unittest.TestCase):
         self.assertLessEqual(rows["imu"]["rate_hz"], STEP_HZ)
         self.assertEqual(rows["lidar"]["readings_per_poll_max"], 1)
         table = common.format_result(result)
-        self.assertIn("kite1 imu: polls returned up to 2 readings; rate_hz counts one per poll "
-                      "and is capped at the poll rate", table)
+        self.assertIn("kite1 imu: polls returned up to 2 readings. rate_hz counts at most one per "
+                      "poll, so it undercounts this sensor.", table)
         self.assertNotIn("kite1 lidar: polls returned", table)
-        self.assertIn(f"never above the poll rate of {STEP_HZ} Hz", table)
+        self.assertIn(f"limited to about the poll rate of {STEP_HZ} Hz. per_poll shows when a "
+                      "sensor delivered more.", table)
         self.assertRegex(table, r"(?m)^kite1\s+imu\s+\d+\s+\d+\.\d+\s+sensor\s+2\s")
 
     def test_no_sensor_faster_than_the_poll_rate_prints_no_readings_per_poll_line(self):
