@@ -24,7 +24,8 @@ the spikes on it, and nothing here has run against an installed Rerun yet.
   dropouts, repeated readings and latency. All tests use it.
 - `kite_bridge/measure.py`: pure measurement functions (effective rate, latency statistics,
   empty and repeated readings, steps per second). Its docstring states the input domain.
-- `kite_bridge/common.py`: command-line parsing and the step-and-poll loop shared by the scripts.
+- `kite_bridge/common.py`: command-line parsing, the step-and-poll loop and the one shutdown path
+  shared by the scripts.
 - `kite_bridge/rerun_view.py`: the only module that imports `rerun`, and only inside a method.
   It holds the entity paths, the pure distance-to-colour function, `log_step` and the recorders.
   Its Rerun calls are guesses until the first real run and carry `# ASSUMPTION:` comments.
@@ -36,8 +37,17 @@ the spikes on it, and nothing here has run against an installed Rerun yet.
 
 All four take `--home <simulator folder>` (required unless `--fake`), `--headless`,
 `--seconds` (default 30), `--traffic` (default 8), `--out` (default `recordings/`), `--model`,
-`--config`, `--list-models` and `--fake`. `--fake` runs against the fake simulator and needs no
-simulator.
+`--config`, `--list-models`, `--timeout` (default 300) and `--fake`. `--fake` runs against the
+fake simulator and needs no simulator.
+
+`--timeout` is the longest wait in seconds for any one simulator call, map loading included; it
+must be above 0. Every run ends BeamNG.tech through one shutdown path. After a normal run or an
+ordinary error it removes the sensors, then closes BeamNG.tech. After Ctrl+C or a timeout it
+closes BeamNG.tech without removing the sensors. If closing raises or takes more than 20 s, or
+Ctrl+C is pressed again during shutdown, it ends the process BeamNGpy launched, and only that
+process. Ctrl+C prints `interrupted: BeamNG.tech closed` and exits with code 130. A timeout
+prints `timed out after <s> s: BeamNG.tech closed` and exits with code 1. Neither prints a
+traceback. A poll that times out stops the run; it is not counted under `unexp`.
 
 ```
 python bridge/spike_sensors.py --fake --seconds 2 --out scratch/example
@@ -95,7 +105,8 @@ was. It takes the common options above plus `--save NAME.rrd`.
 - Without `--save` it spawns a Rerun viewer.
 - With `--save` it writes `<--out>/NAME.rrd` and opens no viewer; open the file later with
   `rerun <file>`. The name must end in `.rrd` and stay inside `--out` (no absolute path, drive or
-  `..`), else the script exits with a usage error.
+  `..`), else the script exits with a usage error. After Ctrl+C the recording is closed before
+  BeamNG.tech, so the file keeps every step logged until then.
 - With `--fake` it uses the fake simulator and a recorder that keeps nothing: no viewer, no
   Rerun import and no file, even with `--save`.
 

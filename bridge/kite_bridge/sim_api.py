@@ -28,18 +28,19 @@ class Reading:
     detections: int | None = None
 
 
-def release(sensors, close):
-    """Calls `remove()` on every sensor in `sensors`, a dict keyed by (car, kind), and prints
-    each failure to stderr. Then calls `close`, even after a failure. Raises the error from
-    `close` if it raised, else the first removal error."""
+def remove_all(sensors):
+    """Calls `remove()` on every sensor in `sensors`, a dict keyed by (car, kind), prints each
+    failure to stderr and raises the first after trying them all. A timeout raises at once: the
+    connection is then out of step, so every later removal would wait for its timeout too."""
     failure = None
     for (car, kind), sensor in sensors.items():
         try:
             sensor.remove()
+        except TimeoutError:
+            raise
         except Exception as error:
             print(f"warning: could not remove {car} {kind}: {type(error).__name__}: {error}", file=sys.stderr)
             failure = failure or error
-    close()
     if failure is not None:
         raise failure
 
@@ -50,8 +51,17 @@ class Simulator(ABC):
         """Start or connect to the simulator."""
 
     @abstractmethod
+    def remove_sensors(self) -> None:
+        """Remove every attached sensor, as `remove_all` does."""
+
+    @abstractmethod
     def close(self) -> None:
-        """Release everything. Safe to call more than once and after a failed open."""
+        """Ask the simulator to quit. Safe after a failed open."""
+
+    @abstractmethod
+    def end_process(self) -> bool:
+        """End the simulator process the library launched. Returns False, ending nothing, when
+        the library launched none (for example, it connected to a simulator already running)."""
 
     @abstractmethod
     def versions(self) -> dict[str, str]:

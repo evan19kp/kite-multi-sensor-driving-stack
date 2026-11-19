@@ -36,12 +36,23 @@ class FakeSim(Simulator):
         self.traffic_requested = None
         self.spawned_model = None
         self.spawned_config = None
+        self.sensors_removed = False
+        self.closed = False
+        self.process_ended = False
 
     def open(self):
         pass
 
+    def remove_sensors(self):
+        self._attached.clear()
+        self.sensors_removed = True
+
     def close(self):
-        pass
+        self.closed = True
+
+    def end_process(self):
+        self.process_ended = True
+        return True
 
     def versions(self):
         return {"BeamNGpy version": "fake", "BeamNGpy protocol": "fake"}

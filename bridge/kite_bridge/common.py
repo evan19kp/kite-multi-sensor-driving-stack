@@ -3,6 +3,7 @@ import contextlib
 import json
 import math
 import sys
+import threading
 import time
 import traceback
 from pathlib import Path
@@ -16,10 +17,30 @@ DEFAULT_MODEL = "vivace"
 DEFAULT_CONFIG = "vehicles/vivace/tograc_qE.pc"
 TECH_VERSION_TEXT = "not reported by BeamNGpy 1.36"
 MIXED_TIME = "mixed"
+DEFAULT_TIMEOUT_S = 300.0
+CLOSE_WAIT_S = 20.0  # BeamNGpy's close() waits up to 10 s for the simulator to quit, then ends it itself
+JOIN_SLICE_S = 0.1
+EXIT_INTERRUPTED = 130
 
 
 class SpikeError(Exception):
     pass
+
+
+class Stopped(Exception):
+    """Ctrl+C or a simulator timeout stopped the run, and the session has shut down. `ended` is
+    False when BeamNG.tech could not be ended."""
+
+    def __init__(self, cause, ended):
+        super().__init__(cause)
+        self.interrupted = isinstance(cause, KeyboardInterrupt)
+        self.ended = ended
+
+
+def _cut_short(error):
+    """Ctrl+C or a timeout can stop a simulator call before its reply is read. The connection is
+    then out of step, and any further request may wait for a reply that never comes."""
+    return isinstance(error, (KeyboardInterrupt, TimeoutError))
 
 
 def _positive_float(text):
@@ -52,6 +73,9 @@ def parse_args(description, argv=None, extra=None):
                              "--config= spawns the model's default configuration")
     parser.add_argument("--list-models", action="store_true",
                         help="print the simulator's vehicle model names, sorted, and exit without spawning")
+    parser.add_argument("--timeout", type=_positive_float, default=DEFAULT_TIMEOUT_S, metavar="SECONDS",
+                        help=f"longest wait for any one simulator call, map loading included, before "
+                             f"the run stops as timed out (default {DEFAULT_TIMEOUT_S:g})")
     parser.add_argument("--fake", action="store_true", help="use the fake simulator")
     if extra:
         extra(parser)
@@ -71,6 +95,14 @@ def list_models(args):
 def guarded(run, args):
     try:
         (list_models if args.list_models else run)(args)
+    except (Stopped, KeyboardInterrupt) as error:
+        stopped = error if isinstance(error, Stopped) else Stopped(error, ended=True)
+        state = "BeamNG.tech closed" if stopped.ended else "BeamNG.tech may still be running"
+        if stopped.interrupted:
+            print(f"interrupted: {state}", file=sys.stderr)
+            return EXIT_INTERRUPTED
+        print(f"timed out after {args.timeout:g} s: {state}", file=sys.stderr)
+        return 1
     except SpikeError as error:
         print(f"error: {error}", file=sys.stderr)
         return 1
@@ -83,6 +115,8 @@ def guarded(run, args):
 
 @contextlib.contextmanager
 def session(args):
+    """Opens the simulator and always shuts it down through `_shut_down`. Ctrl+C or a timeout,
+    in the run or during the shutdown, comes out as `Stopped`; any other failure is re-raised."""
     if args.fake:
         sim = FakeSim()
     else:
@@ -90,12 +124,73 @@ def session(args):
             raise SpikeError("--home is not a folder")
         from kite_bridge.beamng_adapter import BeamNGAdapter
 
-        sim = BeamNGAdapter(args.home, args.headless)
+        sim = BeamNGAdapter(args.home, args.headless, args.timeout)
+    failure = None
     try:
         sim.open()
         yield sim
-    finally:
-        sim.close()
+    except BaseException as error:
+        failure = error
+    ended, shutdown_failure = _shut_down(sim, not _cut_short(failure), CLOSE_WAIT_S)
+    if failure is None:
+        failure = shutdown_failure
+    if _cut_short(failure):
+        raise Stopped(failure, ended) from failure
+    if failure is not None:
+        raise failure
+
+
+def _shut_down(sim, in_step, close_wait):
+    """Ends BeamNG.tech without waiting forever. Removes the sensors only while the connection is
+    `in_step`, then closes; if close raises or overruns `close_wait`, or Ctrl+C comes during
+    either, ends the process BeamNGpy launched. Returns whether BeamNG.tech ended, and the close
+    or Ctrl+C failure, else the removal failure, else None."""
+    removal_failure = None
+    try:
+        if in_step:
+            try:
+                sim.remove_sensors()
+            except Exception as error:
+                removal_failure = error
+        _close_within(sim, close_wait)
+    except BaseException as error:
+        return _end_process(sim, error), error
+    return True, removal_failure
+
+
+def _close_within(sim, wait):
+    failures = []
+
+    def close():
+        try:
+            sim.close()
+        except BaseException as error:
+            failures.append(error)
+
+    closer = threading.Thread(target=close, daemon=True)
+    closer.start()
+    deadline = time.monotonic() + wait
+    # Short joins: on Windows a Ctrl+C is not raised until a blocking join returns.
+    while closer.is_alive() and time.monotonic() < deadline:
+        closer.join(min(JOIN_SLICE_S, max(0.0, deadline - time.monotonic())))
+    if closer.is_alive():
+        raise SpikeError(f"close did not return within {wait:g} s")
+    if failures:
+        raise failures[0]
+
+
+def _end_process(sim, reason):
+    why = "Ctrl+C during shutdown" if isinstance(reason, KeyboardInterrupt) else _describe(reason)
+    if sim.end_process():
+        print(f"BeamNG.tech not closed ({why}); ended the process BeamNGpy launched", file=sys.stderr)
+        return True
+    print(f"BeamNG.tech not closed ({why}); BeamNGpy did not launch it, so nothing was ended: "
+          "close BeamNG.tech by hand", file=sys.stderr)
+    return False
+
+
+def _describe(error):
+    return str(error) if isinstance(error, SpikeError) else f"{type(error).__name__}: {error}"
 
 
 def version_report(sim):
@@ -117,6 +212,8 @@ def start_traffic(sim, count):
         return False
     try:
         sim.spawn_traffic(count)
+    except TimeoutError:
+        raise
     except Exception as error:
         print(f"traffic not spawned ({type(error).__name__}: {error}); continuing with our car only")
         return False
@@ -139,9 +236,9 @@ def measure_sensors(sim, cars, seconds):
     at most one new reading per poll, so it is limited to about the poll rate.
     `readings_per_poll_max` is the most readings one poll returned; above 1, the sensor
     produced readings faster than it was polled. A poll that raises counts as an unexpected
-    reading, with the error as its message, and the run goes on. Unexpected readings are left
-    out of `polls`, `empty`, `rate_hz` and `readings_per_poll_max`; the latency figures include
-    their polls."""
+    reading, with the error as its message, and the run goes on, except for a timeout, which
+    stops the run. Unexpected readings are left out of `polls`, `empty`, `rate_hz` and
+    `readings_per_poll_max`; the latency figures include their polls."""
     for car in cars:
         sim.attach_sensors(car)
     keys = [(car, kind) for car in cars for kind in SENSOR_KINDS]
@@ -162,6 +259,8 @@ def measure_sensors(sim, cars, seconds):
             started = time.perf_counter()
             try:
                 reading = sim.poll(*key)
+            except TimeoutError:
+                raise
             except Exception as error:
                 reading = Reading(None, unexpected=f"poll raised {type(error).__name__}: {error}")
             latencies[key].append(time.perf_counter() - started)

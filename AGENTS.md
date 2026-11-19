@@ -332,6 +332,14 @@ Each item that introduces a lasting rule adds a "## Standing rules (R<n>)" secti
 - `readings.py` never truth-tests a raw poll (use `is None` and `len()`); a poll that raises or is
   outside its stated input domain counts under `unexp` and never stops the run.
 
+## Standing rules (R29)
+
+- Bridge scripts connect with a socket timeout (`--timeout`) and end the simulator only through
+  `common.session`'s one shutdown path; no script adds its own close or kill.
+- A timeout from a simulator call is never caught as an ordinary failure. It stops the run, even
+  where other errors are counted under `unexp` or skipped.
+- The bridge ends only the process BeamNGpy launched, through its own handle; never by name or PID.
+
 ## Simulator files (hard rule)
 
 - Never read, list, search, copy, launch or write about the simulator's install folder, its user
