@@ -139,6 +139,47 @@ class ClassifyTest(unittest.TestCase):
         self.assertFalse(ci_changes.needs_seed(["sim/a.cpp"], cfg))
 
 
+def job_text(workflow: str, job: str) -> str:
+    start = re.search(rf"(?m)^  {re.escape(job)}:$", workflow)
+    if start is None:
+        raise ValueError(f"no job named {job}")
+    rest = workflow[start.end():]
+    following = re.search(r"(?m)^  [a-z][a-z0-9-]*:$", rest)
+    return rest[: following.start()] if following else rest
+
+
+class JobTextTest(unittest.TestCase):
+    WORKFLOW = (
+        "jobs:\n"
+        "  first:\n"
+        "    steps:\n"
+        "      - run: pip install first-only\n"
+        "  python:\n"
+        "    steps:\n"
+        "      - run: python -m unittest discover -s scripts -v\n"
+        "  later:\n"
+        "    steps:\n"
+        "      - run: pip install later-only\n"
+        "      - run: python -m unittest discover -s bridge -v\n"
+    )
+
+    def test_job_ends_at_the_next_job_header(self):
+        text = job_text(self.WORKFLOW, "python")
+        self.assertIn("discover -s scripts", text)
+        self.assertNotIn("install", text)
+        self.assertNotIn("discover -s bridge", text)
+
+    def test_job_starts_at_its_own_header(self):
+        self.assertNotIn("first-only", job_text(self.WORKFLOW, "python"))
+
+    def test_last_job_runs_to_the_end_of_the_file(self):
+        self.assertIn("discover -s bridge", job_text(self.WORKFLOW, "later"))
+
+    def test_missing_job_is_an_error(self):
+        with self.assertRaises(ValueError):
+            job_text(self.WORKFLOW, "absent")
+
+
 @unittest.skipUnless(WORKFLOW.is_file(), "no ci.yml")
 class WorkflowShapeTest(unittest.TestCase):
     def test_every_gated_job_exists_and_uses_the_classifier(self):
@@ -154,10 +195,9 @@ class WorkflowShapeTest(unittest.TestCase):
         self.assertIn("steps.classify.outputs.app-windows", text)
 
     def test_python_job_runs_the_bridge_tests_without_installing_anything(self):
-        text = WORKFLOW.read_text(encoding="utf-8")
-        python_job = text.split("\n  python:\n", 1)[1]
+        python_job = job_text(WORKFLOW.read_text(encoding="utf-8"), "python")
         self.assertIn("python -m unittest discover -s bridge -v", python_job)
-        self.assertNotIn("pip install", python_job)
+        self.assertNotIn("install", python_job)
 
     def test_every_job_has_a_timeout(self):
         text = WORKFLOW.read_text(encoding="utf-8")
