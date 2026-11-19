@@ -1,9 +1,10 @@
 import sys
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 STEP_HZ = 60
 SENSOR_KINDS = ("lidar", "camera", "radar", "gps", "imu")
+BUFFERED_KINDS = ("gps", "imu")
 SENSOR_TIME = "sensor"
 POLL_TIME = "poll"
 
@@ -18,7 +19,11 @@ class Reading:
     reading was not in the format the adapter expects; such a reading has no timestamp and is
     not an empty poll.
     `count` is how many readings the poll returned; `timestamp` is the latest one's. It means
-    nothing for an empty poll. `detections` is the number of rows in a radar array, else None."""
+    nothing for an empty poll. `detections` is the number of rows in a radar array, else None.
+    `raw` is the poll result itself, kept only so the run can size and fingerprint it after the
+    poll's timing has stopped; it is left out of comparison and repr, and never truth-tested.
+    BUFFERED_KINDS are the sensors BeamNGpy 1.36 does not stream: they buffer readings between
+    polls, so one poll can return several."""
 
     timestamp: float | None
     points: int | None = None
@@ -26,6 +31,7 @@ class Reading:
     unexpected: str | None = None
     count: int = 1
     detections: int | None = None
+    raw: object = field(default=None, compare=False, repr=False)
 
 
 def remove_all(sensors):

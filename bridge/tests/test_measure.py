@@ -110,6 +110,75 @@ class StepsPerSecondTest(unittest.TestCase):
                 measure.steps_per_second(steps, seconds)
 
 
+class RealTimeFactorTest(unittest.TestCase):
+    def test_ten_times_slower_than_real_time(self):
+        self.assertAlmostEqual(measure.real_time_factor(1.0, 10.0), 0.1)
+
+    def test_faster_than_real_time_is_above_one(self):
+        self.assertEqual(measure.real_time_factor(10.0, 4.0), 2.5)
+
+    def test_no_wall_time_has_no_factor(self):
+        self.assertIsNone(measure.real_time_factor(1.0, 0.0))
+
+    def test_no_simulated_time_is_a_factor_of_zero(self):
+        self.assertEqual(measure.real_time_factor(0.0, 5.0), 0.0)
+
+    def test_outside_the_domain_raises(self):
+        for simulated, wall in [(-1.0, 1.0), (1.0, -1.0), (math.nan, 1.0), (1.0, math.inf)]:
+            with self.assertRaises(ValueError):
+                measure.real_time_factor(simulated, wall)
+
+
+class PerSimulatedSecondTest(unittest.TestCase):
+    def test_count_over_simulated_seconds(self):
+        self.assertEqual(measure.per_simulated_second(30, 2.0), 15.0)
+
+    def test_no_simulated_time_gives_none(self):
+        self.assertIsNone(measure.per_simulated_second(30, 0.0))
+
+    def test_outside_the_domain_raises(self):
+        for count, seconds in [(-1, 1.0), (1, -1.0), (1, math.nan)]:
+            with self.assertRaises(ValueError):
+                measure.per_simulated_second(count, seconds)
+
+
+class ProcessingTimeTest(unittest.TestCase):
+    def test_the_remainder_after_steps_and_reads(self):
+        self.assertAlmostEqual(measure.processing_time(10.0, 6.0, 3.5), 0.5)
+
+    def test_parts_that_fill_the_wall_time_leave_nothing(self):
+        self.assertEqual(measure.processing_time(9.0, 6.0, 3.0), 0.0)
+
+    def test_rounding_error_gives_zero_and_a_real_excess_raises(self):
+        self.assertEqual(measure.processing_time(9.0, 6.0, 3.0 + 1e-10), 0.0)
+        with self.assertRaises(ValueError):
+            measure.processing_time(9.0, 6.0, 3.001)
+
+    def test_outside_the_domain_raises(self):
+        for args in [(-1.0, 0.0, 0.0), (1.0, math.nan, 0.0), (1.0, 0.0, math.inf)]:
+            with self.assertRaises(ValueError):
+                measure.processing_time(*args)
+
+
+class FreshReadingTest(unittest.TestCase):
+    def test_a_poll_is_new_when_it_differs_from_the_previous_poll(self):
+        self.assertEqual(measure.count_new(["a", "a", "b", "b", "b", "c"]), 3)
+
+    def test_a_key_that_comes_back_after_another_counts_again(self):
+        self.assertEqual(measure.count_new(["a", "b", "a"]), 3)
+
+    def test_empty_polls_are_skipped_and_do_not_break_a_run_of_repeats(self):
+        self.assertEqual(measure.count_new([None, "a", None, "a", "b", None]), 2)
+
+    def test_no_polls_or_only_empty_ones_have_no_new_readings(self):
+        self.assertEqual(measure.count_new([]), 0)
+        self.assertEqual(measure.count_new([None, None]), 0)
+
+    def test_distinct_counts_each_reading_once_wherever_it_comes_back(self):
+        self.assertEqual(measure.count_distinct(["a", "b", "a", "c", "b"]), 3)
+        self.assertEqual(measure.count_distinct([]), 0)
+
+
 class SummariseTest(unittest.TestCase):
     def test_one_sensor(self):
         series = [0.0, 0.0, None, 0.5, 1.0]
