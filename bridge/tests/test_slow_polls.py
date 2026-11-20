@@ -119,7 +119,6 @@ class StarvedSensorTest(unittest.TestCase):
         for kind in POLLED:
             line = f"skipped: kite1 {kind} missed {schedules[kind]['skipped']} due reads"
             self.assertEqual(line in text, schedules[kind]["skipped"] > 0, kind)
-        # The streamed lidar still waits for one poll at most and misses nothing.
         self.assertEqual(rows["lidar"]["schedule"]["skipped"], 0)
         first = first_reads(sim)
         self.assertLessEqual(max(first[u] - appeared(u) for u in range(1, 20)), 0.030 + 1e-9)

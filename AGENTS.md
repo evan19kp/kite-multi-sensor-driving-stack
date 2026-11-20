@@ -397,12 +397,13 @@ Each item that introduces a lasting rule adds a "## Standing rules (R<n>)" secti
 
 ## Standing rules (R36)
 
-- Which reads a free-mode pass makes lives only in `bridge/kite_bridge/rates.py` (`pass_reads`):
-  every due streamed read first, then at most one due poll, the most overdue. Every BeamNGpy call
-  of a run stays on the run's one thread; no script or module adds threads for simulator calls.
-  The one existing exception is the bounded close in `common._close_within` (R29), after the run.
-- A free-mode read that comes late or a due time it passes over is counted (`schedule`: `late`,
-  `worst_late_ms`, `skipped`) and printed, never dropped silently.
+- Which reads a free-mode pass makes lives only in `bridge/kite_bridge/rates.py` (`pass_reads`).
+  A pass makes every due streamed read first, then at most one due poll, the most overdue.
+- Every BeamNGpy call of a run stays on the run's one thread; no script or module adds threads
+  for simulator calls. The one existing exception is the bounded close in
+  `common._close_within` (R29), after the run.
+- A free-mode read that comes late, and a due time it passes over, is counted in `schedule`
+  (`late`, `worst_late_ms`, `skipped`) and printed, never dropped silently.
 - `spike_lidar_rerun.py` defaults to `--mode free --stream`; its `--mode lockstep` runs the
   lock-step demo unchanged. `spike_sensors.py` and `spike_multicar.py` keep `--mode lockstep` as
   their default, and lock-step output has no `schedule`.

@@ -451,7 +451,7 @@ In free mode the output has one more table, `schedule`, with a row for each sens
 
 For each sensor with `skipped` above 0, a footer line reads `skipped: <car> <sensor> missed N due reads; its latest read started X ms after its due time`. The JSON has the same numbers under `schedule` on each sensor row (`late`, `worst_late_ms`, `skipped`) and under `timer.schedule`.
 
-Look at the `lidar` row first. Its `worst_ms` is the longest a due lidar read waited. Compare it with `per_poll_ms` of the polled sensors: if the rule works on BeamNG.tech, the lidar never waits much longer than one poll.
+Look at the `lidar` row first. Its `worst_ms` is the longest a due lidar read waited. Compare it with `per_poll_ms` of the polled sensors. If the rule works on BeamNG.tech, the lidar never waits much longer than one poll.
 
 ##### Which clock each number uses
 
@@ -611,12 +611,12 @@ This script drives our car in traffic mode with AI traffic and sends the lidar p
 By default the script runs free with streaming, the same as `--mode free --stream`:
 
 - The simulator runs on its own, as in "Letting the simulator run on its own" under Run 2. The lidar and camera are read from shared memory with `stream()`. The radar, GPS, IMU and the Timer are polled. Every read follows the free-mode schedule: each pass reads the due lidar and camera first, then at most one due poll. The free-mode default rates apply: `lidar=20,camera=40,radar=10,gps=10,imu=10`, and the Timer at 10. `--rates` changes them.
-- Every lidar scan and camera image that is read goes to Rerun at its Timer time, as the simulator gave it. The points are not coloured by distance. Nothing is logged under `ground_truth/`: reading our car's or the traffic cars' positions is a request, like a poll, and would hold up the lidar.
+- Every lidar scan and camera image that is read goes to Rerun at its Timer time, as the simulator gave it. The points are not coloured by distance. Nothing is logged under `ground_truth/`, because reading our car's or the traffic cars' positions is a request, like a poll, and would hold up the lidar.
 - After the run the script prints the same tables as `spike_sensors.py --mode free --stream`, including the `schedule` table (see "Late and skipped reads"), the real-time factor and, per sensor, `new_per_s` beside `req_hz`.
 
 `--no-stream` polls the lidar and camera too. Then every read is a poll, and each pass makes one.
 
-`--mode lockstep` runs the demo as it was before. It steps the simulator and, once per step, polls the lidar and camera and logs the points coloured by distance from our car (blue near, red at 50 m and beyond), our car's position and the camera image. Our car's position and the traffic cars' positions come from simulator state, so they are ground truth. They appear under `ground_truth/` and only for display. Hide the `ground_truth/` root in the viewer to see the sensor data alone. `--mode lockstep` does not take `--stream` or `--rates`: either one gives a usage error (exit code 2).
+`--mode lockstep` runs the demo as it was before. It steps the simulator and, once per step, polls the lidar and camera and logs the points coloured by distance from our car (blue near, red at 50 m and beyond), our car's position and the camera image. Our car's position and the traffic cars' positions come from simulator state, so they are ground truth. They appear under `ground_truth/` and only for display. Hide the `ground_truth/` root in the viewer to see the sensor data alone. `--mode lockstep` does not take `--stream` or `--rates`. Either one gives a usage error with exit code 2.
 
 Nobody has run the free default against BeamNG.tech or an installed Rerun yet. The Rerun calls that log a BeamNGpy point cloud or image directly are unverified. Your run decides whether the view keeps up with real time.
 
@@ -652,10 +652,10 @@ By default: the five `sensor:` lines (lidar and camera end in `is_streaming=True
 spawned kite1 (model: vivace, config: vehicles/vivace/tograc_qE.pc)
 ...
 logged 41 lidar scans and 81 camera images at Timer times
-no ground truth logged in free mode: reading our car's or the other cars' positions is a request that would hold up the lidar
+no ground truth logged in free mode, because reading our car's or the other cars' positions is a request that would hold up the lidar
 ```
 
-The fake reads the lidar 41 times in 2 wall seconds: 20 per second, and once more at 2.0 s, before the Timer reading that ends the run.
+The fake reads the lidar 41 times in 2 wall seconds. That is 20 per second, and once more at 2.0 s, before the Timer reading that ends the run.
 
 With `--mode lockstep`: the five `sensor:` lines, a `spawned` line, then a count of the logged steps. With `--seconds 2`:
 

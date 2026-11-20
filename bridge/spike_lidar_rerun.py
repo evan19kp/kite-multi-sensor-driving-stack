@@ -2,8 +2,8 @@
 
 By default (--mode free --stream) the simulator runs on its own. The lidar and camera are read
 from shared memory with stream() and the radar, GPS, IMU and a Timer are polled, on the free-mode
-wall-clock schedule: each pass reads the due streamed sensors first, then at most one due poll.
-Each lidar scan and camera image read is logged at its Timer time, as the simulator gave it: the
+wall-clock schedule. Each pass reads the due streamed sensors first, then at most one due poll.
+Each lidar scan and camera image read is logged at its Timer time, as the simulator gave it. The
 points are not coloured and no ground truth is logged, because reading our car's position is a
 request that would hold up the lidar. The run then prints the measuring table of
 spike_sensors.py --mode free, which says how late each sensor's reads came. --no-stream polls the
@@ -89,8 +89,8 @@ def _run_free(sim, car, args, save_path):
         recorder.close()
     print(common.format_result(result))
     return [f"logged {logged['lidar']} lidar scans and {logged['camera']} camera images at Timer times",
-            "no ground truth logged in free mode: reading our car's or the other cars' positions is a request "
-            "that would hold up the lidar"]
+            "no ground truth logged in free mode, because reading our car's or the other cars' positions is a "
+            "request that would hold up the lidar"]
 
 
 def _run_lockstep(sim, car, args, save_path, show_traffic):

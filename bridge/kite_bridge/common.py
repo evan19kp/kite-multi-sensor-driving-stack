@@ -110,7 +110,6 @@ def add_measure_options(parser):
 
 
 def add_live_options(parser):
-    """The options of the live viewer: free mode and streaming by default."""
     _add_rates_and_mode(parser, FREE)
     parser.add_argument("--stream", action=argparse.BooleanOptionalAction,
                         help="read the lidar and camera from shared memory with stream(), checked by "
@@ -546,8 +545,6 @@ def _run_free(sim, tally, timer_car, seconds, poll_rates, clock, sleep):
 
 
 class _Timer:
-    """The Timer's readings in a free run: the first, the latest, how many and the time spent."""
-
     def __init__(self, sim):
         self._sim = sim
         self.first = self.latest = None

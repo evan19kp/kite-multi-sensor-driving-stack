@@ -188,12 +188,12 @@ sensor data, and scores results but never drives anything.
 timeline. It takes the common options above plus `--mode`, `--stream`/`--no-stream`, `--rates`
 and `--save NAME.rrd`.
 
-By default it runs `--mode free --stream`: `common.measure_sensors` reads the sensors on the
-free-mode schedule (streamed lidar and camera first, at most one poll per pass, free-mode
-default rates) and passes each reading to `rerun_view.log_reading`. Each lidar scan's
+By default it runs `--mode free --stream`. `common.measure_sensors` reads the sensors on the
+free-mode schedule, with the streamed lidar and camera first, at most one poll per pass and the
+free-mode default rates, and passes each reading to `rerun_view.log_reading`. Each lidar scan's
 `pointCloud` goes under `world/ego/lidar` and each camera `colour` image under `camera/image`, at
-its Timer time, as BeamNGpy gave them: no distance colours and no ground truth, because reading a
-position is a request that would hold up the lidar. The script then prints the measuring tables,
+its Timer time, as BeamNGpy gave them. It logs no distance colours and no ground truth, because
+reading a position is a request that would hold up the lidar. The script then prints the measuring tables,
 the `schedule` table included, and how many scans and images it logged. `--no-stream` polls the
 lidar and camera too.
 
