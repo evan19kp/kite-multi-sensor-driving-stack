@@ -294,6 +294,45 @@ unless Evan's run prints it. Agents never run the real simulator; every test use
   before removing sensors; `docs/SPIKE-0B.md` updated. Tests (fake only): self-advancing fake clock,
   hand-computed poll counts, stop at `--seconds`, wall-clock limit, clean Ctrl+C.
 
+## Sprint 0B.3
+
+The live lidar view runs in real time and recordings stay small, measured. This sprint measures; it
+claims nothing until Evan's run prints it. Agents never run the real simulator; every test uses the
+fake.
+
+- [ ] **R36 Slow polls never hold up the lidar; free + stream is the live default** (perf, Opus
+  builder): in free mode each pass reads due streamed lidar and camera first, then at most one due
+  slow poll (radar, GPS, IMU or Timer, the most overdue first), all on one thread; free-mode
+  defaults `lidar=20,camera=40,radar=10,gps=10,imu=10`, Timer at 10 (lock-step defaults unchanged);
+  `spike_lidar_rerun.py` defaults to `--mode free --stream` (`--mode lockstep`, `--no-stream` go
+  back), `spike_sensors.py` keeps lock-step; per sensor due reads skipped or late (count, worst
+  lateness in ms), new per simulated second beside the requested rate, and the real-time factor;
+  `docs/SPIKE-0B.md` updated. Tests (fake only, fake clock): 20 ms slow polls, 1 ms streams and a
+  10 Hz lidar give every lidar update read within one slow poll of appearing; a starved sensor is
+  reported, never silently skipped; lock-step unchanged.
+- [ ] **R37 Fast, smaller Rerun path** (perf, Opus builder; needs R36): `rerun_view.py` logs lidar
+  points and camera images as arrays (numpy lazily, in that module only; a pure-Python path only for
+  tests and the fake), distance colours in one array operation; only new scans and frames logged;
+  BeamNG's per-point `colours` never logged; `--save` camera frames stored losslessly compressed;
+  MB per simulated second and encoding time printed; `--live-stride N` thins live lidar only; our
+  car's pose under `world/ego` with lidar as its child and a default blueprint that follows it
+  (or the one-click setting documented); `docs/SPIKE-0B.md` Run 4. Tests (fake only): one
+  array-shaped call per new scan or frame; unchanged readings not logged; `--save` uses the lossless
+  encoder, never a lossy one; stride thins live only; the follow entity exists without ground truth.
+- [ ] **R38 Lidar mount and self-hits** (feat, Sonnet; needs R36): `--lidar-pos x,y,z` (vehicle
+  space, metres; default (0, 0, 1.7)) on every script, printed on the `sensor:` line; approximate
+  self-hit count (points within `--ego-radius` metres, default 2.5, of our car's reported position)
+  per scan, mean and max per run, labelled approximate; `docs/SPIKE-0B.md` height runs. Tests (fake
+  only): known points inside and outside the radius; the option reaches the sensor settings;
+  non-finite or wrong-count values are usage errors.
+- [ ] **R39 Leftovers from 0B.1 and 0B.2** (fix, Sonnet): streamed all-zero lidar counts under
+  `empty` only; a streamed camera reading with all images None counts as `empty`;
+  `spike_lidar_rerun.py` counts a raising lidar or camera read under `unexp` and continues;
+  `multicar.json` includes `sensor_settings` and `detect` prints 1 decimal; `--list-models` doesn't
+  check `--out`; `write_json` refuses a payload with its own `provenance` key; the stale
+  `scratch\R27\out` example in `docs/SPIKE-0B.md` and the unused `FakeSim.sleep` alias removed.
+  Tests for each behaviour change; every existing test keeps passing.
+
 ## Later
 
 Planned, not scheduled. Do not pick these up as roadmap items.
