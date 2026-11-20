@@ -273,7 +273,7 @@ class RecordingAfterCtrlCTest(unittest.TestCase):
         recorder = RecordingRecorder()
         stderr = io.StringIO()
         with tempfile.TemporaryDirectory() as tmp, contextlib.ExitStack() as stack:
-            stack.enter_context(mock.patch.object(spike_lidar_rerun, "make_recorder", lambda path, fake: recorder))
+            stack.enter_context(mock.patch.object(spike_lidar_rerun, "make_recorder", lambda *args: recorder))
             stack.enter_context(mock.patch.object(common, "FakeSim", CtrlCAtStep31))
             stack.enter_context(contextlib.redirect_stdout(io.StringIO()))
             stack.enter_context(contextlib.redirect_stderr(stderr))
@@ -301,7 +301,7 @@ class RecordingAfterCtrlCTest(unittest.TestCase):
                 stderr = io.StringIO()
                 with tempfile.TemporaryDirectory() as tmp, contextlib.ExitStack() as stack:
                     stack.enter_context(mock.patch.object(spike_lidar_rerun, "make_recorder",
-                                                          lambda path, fake: recorder))
+                                                          lambda *args: recorder))
                     stack.enter_context(mock.patch.object(common, "FakeSim", make))
                     stack.enter_context(mock.patch.object(common, "wall_clock", clock.now))
                     stack.enter_context(mock.patch.object(common, "wall_sleep", clock.sleep))
@@ -315,10 +315,12 @@ class RecordingAfterCtrlCTest(unittest.TestCase):
                 self.assertEqual([(s.sensors_removed, s.closed) for s in sims], [(False, True)])
                 self.assertEqual(sims[0].calls[method], call)
                 if method == "stream":
-                    # Every streamed read before the interrupted one gave a lidar scan or a camera
-                    # image with a colour image, and each was logged.
+                    # Only new content is logged. The four streamed reads before the interrupted
+                    # one are the lidar and camera at 0 s, both new; the camera at 0.025 s, still
+                    # the fake's first frame (20 per simulated second); and the lidar at 0.05 s,
+                    # still its first scan (10 per simulated second).
                     logged = [c for c in recorder.calls if c[0] in ("points", "image")]
-                    self.assertEqual(len(logged), call - 1)
+                    self.assertEqual(len(logged), 2)
 
 
 class CtrlCOnCall(FakeSim):

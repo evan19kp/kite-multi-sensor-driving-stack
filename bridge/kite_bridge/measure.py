@@ -118,18 +118,27 @@ def processing_time(wall_s, step_wait_s, reads_s):
     return max(0.0, remainder)
 
 
-def count_new(keys):
-    """Number of polls whose key differs from the previous non-empty poll's. `keys` has one
-    fingerprint per poll, in order, and None for an empty poll. The first non-empty poll is new.
-    A key that comes back after a different one counts again."""
-    previous = None
-    new = 0
-    for key in keys:
+class Freshness:
+    """Says, one poll at a time, whether a poll's key differs from the previous non-empty poll's.
+    None is an empty poll and is never new. The first non-empty poll is new. A key that comes back
+    after a different one is new again."""
+
+    def __init__(self):
+        self._previous = None
+
+    def is_new(self, key):
         if key is None:
-            continue
-        new += key != previous
-        previous = key
-    return new
+            return False
+        new = key != self._previous
+        self._previous = key
+        return new
+
+
+def count_new(keys):
+    """Number of new polls by `Freshness`. `keys` has one fingerprint per poll, in order, and
+    None for an empty poll."""
+    fresh = Freshness()
+    return sum(fresh.is_new(key) for key in keys)
 
 
 def count_distinct(keys):

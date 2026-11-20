@@ -58,7 +58,8 @@ class FakeCloud:
 
 class FakeRows:
     """Stands in for a numpy float32 array of rows: it has `shape`, `len()`, `tobytes()` (the
-    rows one after another) and slicing by rows, and its truth value raises, like numpy's."""
+    rows one after another), slicing by rows and iteration over rows (each a tuple of floats),
+    and its truth value raises, like numpy's."""
 
     def __init__(self, data, columns):
         self._data = bytes(data)
@@ -74,6 +75,11 @@ class FakeRows:
         start, stop, _ = rows.indices(self.shape[0])
         row_bytes = FAKE_FLOAT32_BYTES * self.shape[1]
         return FakeRows(self._data[start * row_bytes:stop * row_bytes], self.shape[1])
+
+    def __iter__(self):
+        values = array.array("f", self._data)
+        columns = self.shape[1]
+        return (tuple(values[row * columns:(row + 1) * columns]) for row in range(self.shape[0]))
 
     def tobytes(self):
         return self._data
