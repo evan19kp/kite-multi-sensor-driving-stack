@@ -108,10 +108,13 @@ class StarvedSensorTest(unittest.TestCase):
         reads = {kind: rows[kind]["polls"] for kind in POLLED}
         reads["timer"] = result["timer"]["polls"]
         self.assertGreater(sum(s["skipped"] for s in schedules.values()), 0)
+        run_end = Fraction(sim.starts["timer"][-1])
         for kind, schedule in schedules.items():
-            # Every due time k / 10 up to the last read's start was read or counted as skipped.
-            due_times = math.floor(Fraction(sim.starts[kind][-1]) * 10) + 1
-            self.assertEqual(reads[kind] + schedule["skipped"], due_times, kind)
+            # Every due time k / 10 up to the sensor's last read was read or counted as skipped,
+            # and no due time after the run's last Timer poll was counted.
+            accounted = reads[kind] + schedule["skipped"]
+            self.assertGreaterEqual(accounted, math.floor(Fraction(sim.starts[kind][-1]) * 10) + 1, kind)
+            self.assertLessEqual(accounted, math.floor(run_end * 10) + 1, kind)
         text = common.format_result(result)
         for kind in POLLED:
             line = f"skipped: kite1 {kind} missed {schedules[kind]['skipped']} due reads"

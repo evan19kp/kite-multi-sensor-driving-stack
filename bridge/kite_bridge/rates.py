@@ -24,9 +24,9 @@ at most the one slow poll already running. A read at wall time a moves its senso
 the first k / r after a (`next_due`). A read that comes late therefore covers its own due time;
 the due times it passed over are skipped (`skipped` counts them), never made up in a burst. With
 reads that take no time a run of W wall seconds gives ceil(W * r) reads at times below W. A read
-is late when it starts LATE_S or more after its due time. LATE_S is 2 ms: in two 2-second free
+is late when it starts LATE_S or more after its due time. LATE_S is 2 ms: in three 2-second free
 runs on the fake (real clock, developer machine) the worst start after a due time with no slow
-poll in the way was 1.1 ms of sleep wake-up delay, and one slow poll is about 20 ms. Wall times
+poll in the way was 1.3 ms of sleep wake-up delay, and one slow poll is about 20 ms. Wall times
 are finite seconds >= 0.
 
 `parse_rates` is the boundary: it turns the `--rates` text into a dict by sensor kind and
@@ -105,8 +105,10 @@ def pass_reads(now, due, streamed, slow):
 
 def skipped(due, at, rate):
     """How many due times k / rate a read at wall time `at` passed over: those after `due`, the
-    due time it served, and at most `at`."""
-    return math.floor(Fraction(at) * rate) - int(due * rate)
+    due time it served, and at most `at`. At the end of a run, `at` is the start of the last pass
+    and `due` the sensor's next due time: what a read then would have passed over (0 when `due`
+    is after `at`)."""
+    return max(0, math.floor(Fraction(at) * rate) - int(due * rate))
 
 
 def _slot(step, rate):

@@ -538,6 +538,8 @@ def _run_free(sim, tally, timer_car, seconds, poll_rates, clock, sleep):
                 sleep(max(float(gap), MIN_SLEEP_S))
             idle += clock() - started
     wall = clock() - loop_started
+    for key in tally.keys:
+        lags[key].skipped += rates.skipped(due[key], now, rate[key])
     return _Run(None, None, timer.latest - timer.first, wall, {"idle_s": idle, "timer_reads_s": timer.read_s},
                 {"timer": {"polls": timer.polls, "rate_hz": float(rate[timer_key]),
                            "schedule": lags.pop(timer_key).summary()}}, lags)

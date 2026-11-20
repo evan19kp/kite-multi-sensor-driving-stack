@@ -58,7 +58,7 @@ All four scripts take these options. `--home` is required for a real run.
 | `--timeout` | 300 | The longest wait, in seconds, for any one simulator call, including the map load. Must be above 0. See "Stopping a run". |
 | `--fake` | off | Use the fake simulator. Do not use it for the real run. |
 
-`spike_sensors.py` and `spike_multicar.py` also take `--rates` (how often each sensor is read, see "Reading each sensor at its own rate" under Run 2), `--dump-raw N` (default 0, which writes nothing; see "The raw GPS and IMU dump" under Run 2), `--stream` (default off; see "Streaming the lidar and camera" under Run 2) and `--mode` (default `lockstep`; see "Letting the simulator run on its own" under Run 2).
+`spike_sensors.py` and `spike_multicar.py` also take `--rates` (how often each sensor is read, see "Reading each sensor at its own rate" under Run 2), `--dump-raw N` (default 0, which writes nothing; see "The raw GPS and IMU dump" under Run 2), `--stream` (default off; see "Streaming the lidar and camera" under Run 2) and `--mode` (default `lockstep`; see "Letting the simulator run on its own" under Run 2). `spike_lidar_rerun.py` takes `--rates`, `--mode` (default `free`) and `--stream` (default on with `--mode free`; `--no-stream` turns it off); see Demo 1.
 
 Each script starts BeamNG.tech itself and closes it when the run ends. Close any BeamNG.tech that is already running before you start a script. The bridge connects to the simulator on a fixed local port, so a second copy may block the connection.
 
@@ -178,7 +178,7 @@ The run covers 30 simulated seconds, plus the time the simulator needs to start.
 
 ## Run 2: sensors (`spike_sensors.py`)
 
-This script attaches a lidar, a camera, a radar, GPS and an IMU to our car. It polls each sensor at its own rate (see "Reading each sensor at its own rate"; `--rates all=60` polls every sensor once per simulator step, 60 times per simulated second) and reports the rates and delays, where the wall time goes, how many new readings each sensor gave and how many bytes it read. It also takes `--rates`, `--dump-raw N` (see "The raw GPS and IMU dump") and `--stream` (see "Streaming the lidar and camera"); so does `spike_multicar.py`. `spike_connect.py` polls no sensors, and the Rerun demo (`spike_lidar_rerun.py`) draws sensor data and does not measure it, so neither prints timing or takes these options.
+This script attaches a lidar, a camera, a radar, GPS and an IMU to our car. It polls each sensor at its own rate (see "Reading each sensor at its own rate"; `--rates all=60` polls every sensor once per simulator step, 60 times per simulated second) and reports the rates and delays, where the wall time goes, how many new readings each sensor gave and how many bytes it read. It also takes `--rates`, `--dump-raw N` (see "The raw GPS and IMU dump") and `--stream` (see "Streaming the lidar and camera"); so does `spike_multicar.py`. `spike_connect.py` polls no sensors, so it prints no timing and takes none of these options. The Rerun demo (`spike_lidar_rerun.py`) prints the same tables in its default free mode; see Demo 1.
 
 ```powershell
 python bridge/spike_sensors.py --home "<your BeamNG.tech folder>"
@@ -274,11 +274,11 @@ The three parts add up to the wall time by construction. The percentage after ea
 
 | Command | Meaning |
 |---|---|
-| (no `--rates`) | The default: `lidar=20,camera=20,radar=20,gps=10,imu=10`. |
+| (no `--rates`) | The default: `lidar=20,camera=20,radar=20,gps=10,imu=10`. With `--mode free` the default is `lidar=20,camera=40,radar=10,gps=10,imu=10` (see "Letting the simulator run on its own"). |
 | `--rates all=60` | Every sensor after every step, the way the scripts read before `--rates` existed. |
 | `--rates all=30` | Every sensor 30 times per simulated second. |
 | `--rates all=60,gps=10` | `all` is the base, and a named sensor overrides it wherever it is written: GPS at 10, the rest at 60. `gps=10,all=60` means the same. |
-| `--rates gps=60` | Sensors that are not named keep their default: GPS at 60, the rest at the default rates. |
+| `--rates gps=60` | Sensors that are not named keep their default: GPS at 60, the rest at the default rates of the mode. |
 
 The lidar and the radar ask for 10 updates per second (`requested_update_time=0.1`) and the camera for 20 (`requested_update_time=0.05`). The defaults poll the lidar and the radar at twice the rate asked of them, so a new reading is picked up within half its interval. The default polls the camera at the rate asked of it, 20, so a new reading is picked up within one interval and may be missed if the polls and the updates drift apart. The camera default stays at 20, not 40. The comparison below shows whether the camera loses readings at 20. GPS and IMU buffer their readings between polls, so a poll returns everything made since the last one.
 
@@ -406,7 +406,8 @@ With `--mode free`:
 
 - The bridge switches the simulator from lock-step to running on its own and resumes it. The script takes no steps.
 - It attaches a `Timer` sensor to our car (`kite1`). The Timer gives simulated seconds since the scenario started and does not advance while the simulator is paused. It is a clock only. Our car's position from the simulator is still ground truth and is still kept apart from sensor data.
-- It polls each sensor at its `--rates` rate per wall second, not per simulated second. The rule is below.
+- It reads each sensor at its `--rates` rate per wall second, not per simulated second. The rule is below.
+- Without `--rates`, free mode has its own defaults: `lidar=20,camera=40,radar=10,gps=10,imu=10`. A sensor you do not name keeps its free-mode default, so `--mode free --rates lidar=30` reads the camera at 40. Lock-step mode keeps the defaults in "Reading each sensor at its own rate".
 - It polls the Timer in its own request, at the higher of the GPS and IMU rates. With the default rates that is 10 per wall second.
 - The run ends at the first Timer reading that is at least `--seconds` past the run's first Timer reading. `--seconds` therefore still counts simulated seconds.
 - If that has not happened after `--seconds` × 20 wall seconds, the run stops with an error. For the default of 30 seconds the limit is 600 wall seconds. A Timer that stands still, for example because the simulator is paused, reaches this limit. The run does not hang.
@@ -427,11 +428,30 @@ During the free run, watch the BeamNG.tech window. Say in your report whether it
 
 ##### The wall-clock schedule
 
-A sensor at rate `r` is due at `k / r` wall seconds after the run starts, for k = 0, 1, 2 and so on. The script works in passes. Each pass reads the wall clock once. It polls the Timer if the Timer is due, then polls each sensor that is due, once, in the usual order. It then sleeps until the next due time. A polled sensor's next due time is the first `k / r` after the start of the pass.
+A sensor at rate `r` is due at `k / r` wall seconds after the run starts, for k = 0, 1, 2 and so on. The script reads the Timer first, so every reading has a Timer time. Then it works in passes. Each pass reads the wall clock once and makes these reads, in order:
 
-The polls themselves take time, about 21 ms each in your earlier runs. When a pass runs late, each sensor that is due is polled once, and the due times it missed are skipped. They are not made up later in a burst. For example, at 20 polls per second a sensor is due every 0.05 s. If a pass takes 0.2 s, the sensor is polled once at the next pass and is next due at the first multiple of 0.05 s after that pass started. So `polls` can be lower than the rate times the wall seconds. That gap shows that the polls cannot keep up.
+1. Every streamed sensor that is due (lidar, then camera, with `--stream`). A streamed read sends no request.
+2. At most one poll: of the sensors that are not streamed and the Timer, the one whose due time is earliest. On a tie the Timer goes first, then the sensor that was polled longest ago, so the polled sensors take turns.
 
-With polls that take no time, a run of W wall seconds gives each sensor `ceil(W × r)` polls. On the fake simulator, which runs at real time, a 2-second run at the default rates gives 40 polls of lidar, camera and radar and 20 of GPS and IMU. The rule and the exact arithmetic are in `bridge/kite_bridge/rates.py`.
+When nothing is due, the script sleeps until the next due time. A sensor's next due time is the first `k / r` after the start of its read.
+
+A poll is a request to the simulator, about 17 to 21 ms each in your runs. A streamed read took about 1 to 2 ms. Before this rule a pass polled every due sensor, so a lidar that came due during a pass waited for all of that pass's polls. Now a due streamed read waits for at most the one poll that is already running. That bound is what the tests check on the fake, with 20 ms polls and 1 ms streamed reads. Whether it holds on BeamNG.tech is for your run to show.
+
+When a read comes late, it covers its own due time, and the due times it passed over are skipped. They are not made up later in a burst. For example, at 20 reads per second a sensor is due every 0.05 s. If a read starts 0.2 s late, the sensor is read once and is next due at the first multiple of 0.05 s after that read started. So `polls` can be lower than the rate times the wall seconds. The `schedule` table below says how many due times each sensor missed.
+
+With reads that take no time, a run of W wall seconds gives each polled sensor `ceil(W × r)` polls. A streamed sensor gets one more read, at W itself, because the pass that ends the run reads the streams before the Timer. On the fake simulator, which runs at real time, a 2-second run at the free-mode defaults without `--stream` gives 40 polls of lidar, 80 of camera and 20 of radar, GPS and IMU. With `--stream` the lidar and camera get 41 and 81 reads. The rule and the exact arithmetic are in `bridge/kite_bridge/rates.py`.
+
+##### Late and skipped reads
+
+In free mode the output has one more table, `schedule`, with a row for each sensor and one for the Timer:
+
+- `late`: reads that started 2 ms or more after their due time. 2 ms is above the sleep wake-up delay measured with the fake on the developer machine (at most 1.3 ms in three 2-second runs) and well below one poll (about 20 ms).
+- `worst_ms`: the latest start after a due time, in milliseconds, over all of the sensor's reads.
+- `skipped`: due times that passed with no read, because the sensor's read before had not come yet. When the run ends, a sensor that is still waiting also counts the due times that passed after the one it is waiting for. A sensor that cannot be read as often as `--rates` asks shows it here. It is never dropped silently.
+
+For each sensor with `skipped` above 0, a footer line reads `skipped: <car> <sensor> missed N due reads; its latest read started X ms after its due time`. The JSON has the same numbers under `schedule` on each sensor row (`late`, `worst_late_ms`, `skipped`) and under `timer.schedule`.
+
+Look at the `lidar` row first. Its `worst_ms` is the longest a due lidar read waited. Compare it with `per_poll_ms` of the polled sensors: if the rule works on BeamNG.tech, the lidar never waits much longer than one poll.
 
 ##### Which clock each number uses
 
@@ -465,23 +485,34 @@ Look at these numbers:
 
 ##### What free mode changes in the output and the JSON
 
-With `--seconds 2` on the fake simulator, default rates (the `sensor:` lines are left out, and the second table is cut):
+With `--seconds 2` on the fake simulator, free-mode default rates (the `sensor:` lines are left out, and the second table and the footer are cut):
 
 ```
 cars: 1  mode: free, the Timer polled 21 times at 10 per wall second
 car    sensor   polls  rate_hz   time  per_poll  mean_ms  p50_ms  p95_ms  max_ms  empty  repeat  unexp  points  detect
-kite1  lidar       40    10.00 sensor         1     0.05    0.05    0.06    0.10      0      20      0    1017     n/a
-kite1  camera      40    20.00 sensor         1     0.01    0.01    0.01    0.01      0       0      0     n/a     n/a
-kite1  radar       40    20.00 sensor         1     0.01    0.01    0.01    0.01      0       0      0     n/a     n/a
-kite1  gps         20    10.00 sensor         1     0.00    0.00    0.01    0.01      0       0      0     n/a     n/a
-kite1  imu         20    10.00 sensor        10     0.01    0.01    0.01    0.01      0       0      0     n/a     n/a
-timing: 2.000 simulated s (Timer) in 2.001 wall s, real-time factor 1.000
-  waiting to poll       1.990 s   99.5%
+kite1  lidar       40    10.00 sensor         1     0.04    0.04    0.07    0.14      0      20      0    1017     n/a
+kite1  camera      80    20.00 sensor         1     0.02    0.02    0.03    0.09      0      40      0     n/a     n/a
+kite1  radar       20    10.00 sensor         1     0.02    0.02    0.03    0.04      0       0      0     n/a     n/a
+kite1  gps         20    10.00 sensor         1     0.01    0.01    0.01    0.01      0       0      0     n/a     n/a
+kite1  imu         20    10.00 sensor        10     0.01    0.01    0.01    0.02      0       0      0     n/a     n/a
+timing: 2.001 simulated s (Timer) in 2.001 wall s, real-time factor 1.000
+  waiting to poll       1.982 s   99.1%
   in Timer polls        0.000 s    0.0%
-  in sensor reads       0.003 s    0.1%
-  our processing        0.008 s    0.4%
+  in sensor reads       0.004 s    0.2%
+  our processing        0.014 s    0.7%
+...
+schedule: late counts reads that started 2 ms or more after their due time, worst_ms is the latest start, skipped counts due times passed over with no read
+car    sensor     late  worst_ms  skipped
+kite1  lidar         0      1.20        0
+kite1  camera        0      1.28        0
+kite1  radar         0      0.86        0
+kite1  gps           0      0.98        0
+kite1  imu           0      1.05        0
+kite1  timer         0      0.80        0
 ...
 ```
+
+On the fake the polls cost almost nothing, so no read is late and `worst_ms` is only the sleep wake-up delay.
 
 The fake's polled lidar, camera and radar carry a time, so they show `sensor` here. The streamed ones do not, so with `--stream` they show `timer`.
 
@@ -489,7 +520,8 @@ After the `rate_hz:` footer line, a `mode free:` line says which clock each numb
 
 - `"mode"`: `"free"`, or `"lockstep"` in a lock-step run.
 - `"steps"` and `"steps_per_second"`: `null`.
-- `"timer"`: `{"polls": ..., "rate_hz": ...}`.
+- `"timer"`: `{"polls": ..., "rate_hz": ..., "schedule": {...}}`.
+- On each sensor row, `schedule`: `{"late": ..., "worst_late_ms": ..., "skipped": ...}` (see "Late and skipped reads"). `worst_late_ms` is `null` for a sensor that was never read. A lock-step run has no `schedule`.
 - Under `timing`: `idle_s` (waiting to poll) and `timer_reads_s` (in Timer polls) in place of `step_wait_s`.
 
 In `raw_gps_imu.json`, an entry's `step` is `null` in free mode, because no steps are taken. `wall_s` is measured from the start of the run.
@@ -510,7 +542,8 @@ The `rate_hz:` explanation line always prints. The other footer lines appear onl
 - `loss not checkable for ...` appears when GPS or IMU is polled slower than every step.
 - `<car> <sensor>: polls returned up to N readings...` appears when `per_poll` is above 1.
 - `no sensor time for <car> <sensor>, <car> <sensor>: rate_hz there is the polling rate, not the sensor's` is one line that lists every affected sensor, separated by commas. It appears when at least one sensor has `time` of `poll`, `timer` or `mixed`.
-- With `--mode free` only: the `mode free:` line, which says which clock each number uses. See "Letting the simulator run on its own".
+- With `--mode free` only: the `mode free:` line, which says which clock each number uses and how a pass picks its reads. See "Letting the simulator run on its own".
+- With `--mode free` only: `skipped: <car> <sensor> missed N due reads; ...` for each sensor or Timer row of the `schedule` table with `skipped` above 0. See "Late and skipped reads".
 - `unexpected format: <car> <sensor> N readings, first: ...` appears when `unexp` is above 0. It prints the first message for each sensor, so send those lines back in full. A poll that raised an error reads `first: poll raised <type>: <message>`.
 - With `--stream` only: the `stream:` line always, and `suspect: <car> <sensor> dropped N readings and cut M all-zero rows` for each streamed sensor where either count is above 0, with `, first reason: ...` when a reading was dropped. See "Streaming the lidar and camera".
 
@@ -571,9 +604,21 @@ The simulator starts three times, and each case runs 30 simulated seconds. Expec
 
 ## Demo 1: live lidar in Rerun (`spike_lidar_rerun.py`)
 
-This script drives our car in traffic mode with AI traffic and sends the lidar points and camera image into Rerun, once per simulator step, on one timeline. Lidar points are coloured by distance from our car: blue near, red at 50 m and beyond. Our car's position and the traffic cars' positions come from simulator state, so they are ground truth. They appear under `ground_truth/` and only for display. Hide the `ground_truth/` root in the viewer to see the sensor data alone.
+This script drives our car in traffic mode with AI traffic and sends the lidar points and camera image into Rerun on one timeline. It takes the common options, `--mode`, `--stream`, `--rates` and `--save NAME.rrd`.
 
-It takes the common options and one more: `--save NAME.rrd`.
+### The two modes
+
+By default the script runs free with streaming, the same as `--mode free --stream`:
+
+- The simulator runs on its own, as in "Letting the simulator run on its own" under Run 2. The lidar and camera are read from shared memory with `stream()`. The radar, GPS, IMU and the Timer are polled. Every read follows the free-mode schedule: each pass reads the due lidar and camera first, then at most one due poll. The free-mode default rates apply: `lidar=20,camera=40,radar=10,gps=10,imu=10`, and the Timer at 10. `--rates` changes them.
+- Every lidar scan and camera image that is read goes to Rerun at its Timer time, as the simulator gave it. The points are not coloured by distance. Nothing is logged under `ground_truth/`: reading our car's or the traffic cars' positions is a request, like a poll, and would hold up the lidar.
+- After the run the script prints the same tables as `spike_sensors.py --mode free --stream`, including the `schedule` table (see "Late and skipped reads"), the real-time factor and, per sensor, `new_per_s` beside `req_hz`.
+
+`--no-stream` polls the lidar and camera too. Then every read is a poll, and each pass makes one.
+
+`--mode lockstep` runs the demo as it was before. It steps the simulator and, once per step, polls the lidar and camera and logs the points coloured by distance from our car (blue near, red at 50 m and beyond), our car's position and the camera image. Our car's position and the traffic cars' positions come from simulator state, so they are ground truth. They appear under `ground_truth/` and only for display. Hide the `ground_truth/` root in the viewer to see the sensor data alone. `--mode lockstep` does not take `--stream` or `--rates`: either one gives a usage error (exit code 2).
+
+Nobody has run the free default against BeamNG.tech or an installed Rerun yet. The Rerun calls that log a BeamNGpy point cloud or image directly are unverified. Your run decides whether the view keeps up with real time.
 
 ### With a live viewer
 
@@ -591,7 +636,7 @@ python bridge/spike_lidar_rerun.py --home "<your BeamNG.tech folder>" --save dem
 
 With `--save`, the script writes `recordings/demo.rrd` and opens no viewer. The name must end in `.rrd` and stay inside `--out`. An absolute path, a drive or `..` gives a usage error. Change the folder with `--out` and the file goes there instead.
 
-If you stop the run with Ctrl+C, the script closes the recording before it closes BeamNG.tech, so the file keeps every step logged before you pressed it. It does not print `wrote ...` in that case. The last line is `interrupted: BeamNG.tech closed`. The close call that writes out the file has not run against an installed Rerun yet, so check that the file opens.
+If you stop the run with Ctrl+C, the script closes the recording before it closes BeamNG.tech, so the file keeps everything logged before you pressed it. It does not print `wrote ...` in that case. The last line is `interrupted: BeamNG.tech closed`. The close call that writes out the file has not run against an installed Rerun yet, so check that the file opens.
 
 To view the saved file later, run `rerun` with the file path. The script's `--help` gives this form.
 
@@ -601,31 +646,50 @@ rerun recordings/demo.rrd
 
 ### What it prints
 
-The five `sensor:` lines, a `spawned` line, then a count of the logged steps. With `--seconds 2` on the fake simulator (the `sensor:` lines are left out here):
+By default: the five `sensor:` lines (lidar and camera end in `is_streaming=True`), a `spawned` line, the measuring tables of Run 2 in free mode, then two lines. With `--seconds 2 --traffic 0` on the fake simulator (the `sensor:` lines and the tables are left out here):
+
+```
+spawned kite1 (model: vivace, config: vehicles/vivace/tograc_qE.pc)
+...
+logged 41 lidar scans and 81 camera images at Timer times
+no ground truth logged in free mode: reading our car's or the other cars' positions is a request that would hold up the lidar
+```
+
+The fake reads the lidar 41 times in 2 wall seconds: 20 per second, and once more at 2.0 s, before the Timer reading that ends the run.
+
+With `--mode lockstep`: the five `sensor:` lines, a `spawned` line, then a count of the logged steps. With `--seconds 2`:
 
 ```
 spawned kite1 (model: vivace, config: vehicles/vivace/tograc_qE.pc)
 logged 120 steps
 ```
 
-These lines appear only when they apply:
+With `--mode lockstep`, these lines appear only when they apply:
 
 - `traffic not spawned (...)`, with the error, when AI traffic fails to start. It prints right after the `spawned` line, before the run starts.
 - `other cars not logged (...)`, with the error, when the script cannot read the traffic cars' positions. It keeps running without them. It prints during the run, before `logged N steps`.
 - `lidar gave no reading on N of M steps; no lidar was logged for them`, after `logged N steps`.
 - `camera gave no reading on N of M steps; no image was logged for them`, after `logged N steps`.
-- `wrote recordings\demo.rrd`, with `--save`, after a successful run.
+
+In both modes, `traffic not spawned (...)` appears as above, and `wrote recordings\demo.rrd` with `--save` after a successful run. In free mode, a lidar or camera reading that is empty, unexpected or suspect is not logged. The tables count it under `empty`, `unexp` or `suspect`.
 
 On the fake simulator with `--save demo.rrd`, the script writes no file and prints `--fake keeps nothing; the recording would have gone to scratch\R27\out\demo.rrd` instead.
 
 ### How long it takes
 
-30 simulated seconds plus startup, as in Run 1.
+30 simulated seconds plus startup, as in Run 1. In free mode the run ends after 30 seconds of Timer time, or fails after 600 wall seconds, as under "Letting the simulator run on its own".
 
 ### What to send back
 
-- The full printed output.
-- What the viewer showed: whether it opened, and whether you saw the lidar points, the camera image and the car positions.
+Run it twice, once with the default and once with `--mode lockstep`:
+
+```powershell
+python bridge/spike_lidar_rerun.py --home "<your BeamNG.tech folder>" --seconds 10
+python bridge/spike_lidar_rerun.py --home "<your BeamNG.tech folder>" --seconds 10 --mode lockstep
+```
+
+- The full printed output of both runs. In the default run, look at the `real-time factor`, the lidar's `new_per_s` beside its `req_hz`, and the lidar's `worst_ms` and `skipped` in the `schedule` table.
+- What the viewer showed: whether it opened, and whether you saw the lidar points and the camera image, and in the lock-step run the car positions. Say whether the view looked smooth in the default run.
 - A screenshot of the viewer, if it works. Check that no folder path from your machine is visible in it first.
 - Any error, in full.
 

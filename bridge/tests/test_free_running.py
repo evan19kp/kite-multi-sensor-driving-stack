@@ -155,10 +155,11 @@ class FreeRunCountsTest(unittest.TestCase):
         # k = 0 to 14 (15), the others at k = 1 to 14 (14), not the 20 due in the first second.
         self.assertEqual(polls(rows), {"lidar": 15, "camera": 14, "radar": 14, "gps": 14, "imu": 14})
         self.assertEqual(result["timer"]["polls"], 16)
-        # The last polls start at 0.98 s, so the due times k / 20 up to 0.95 (k = 0 to 19, 20 of
-        # them) were each polled or counted as skipped: 20 - 15 = 5 for the lidar, 20 - 14 = 6.
+        # The last pass starts at 1.05 s, with every sensor due at 1.0, so the due times k / 20 up
+        # to 1.05 except 1.0 itself (k = 0 to 21, less one: 21) were each polled or counted as
+        # skipped: 21 - 15 = 6 for the lidar, 21 - 14 = 7 for the others.
         self.assertEqual({kind: row["schedule"]["skipped"] for kind, row in rows.items()},
-                         {"lidar": 5, "camera": 6, "radar": 6, "gps": 6, "imu": 6})
+                         {"lidar": 6, "camera": 7, "radar": 7, "gps": 7, "imu": 7})
         t = result["timing"]
         self.assertAlmostEqual(t["sensor_reads_s"], 15 * 0.07)
         self.assertAlmostEqual(t["wall_s"], 1.05)
