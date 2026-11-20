@@ -198,7 +198,7 @@ class SettingsLinesTest(unittest.TestCase):
         self.assertTrue(keywords)
         for keyword in keywords:
             self.assertIsNone(keyword.arg, "a sensor setting is passed by name in the adapter")
-            self.assertEqual(ast.unparse(keyword.value), "settings_for(kind, stream)")
+            self.assertEqual(ast.unparse(keyword.value), "settings_for(kind, stream, lidar_pos)")
 
     def test_without_stream_the_adapter_passes_the_table_itself(self):
         for kind in SENSOR_KINDS:

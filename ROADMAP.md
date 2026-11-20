@@ -319,7 +319,7 @@ fake.
   (or the one-click setting documented); `docs/SPIKE-0B.md` Run 4. Tests (fake only): one
   array-shaped call per new scan or frame; unchanged readings not logged; `--save` uses the lossless
   encoder, never a lossy one; stride thins live only; the follow entity exists without ground truth.
-- [ ] **R38 Lidar mount and self-hits** (feat, Sonnet; needs R36): `--lidar-pos x,y,z` (vehicle
+- [x] **R38 Lidar mount and self-hits** (feat, Sonnet; needs R36): `--lidar-pos x,y,z` (vehicle
   space, metres; default (0, 0, 1.7)) on every script, printed on the `sensor:` line; approximate
   self-hit count (points within `--ego-radius` metres, default 2.5, of our car's reported position)
   per scan, mean and max per run, labelled approximate; `docs/SPIKE-0B.md` height runs. Tests (fake
