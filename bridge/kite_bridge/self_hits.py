@@ -14,8 +14,9 @@ scan. What it cannot say:
 - The GPS sits at its own mount, `sensor_settings.py`'s GPS `pos`, not at the car's origin, so
   the cylinder is centred up to that far from the car's middle.
 - The GPS is read less often than the lidar, so its position can be older than a scan. A car
-  driving at speed v drives v times that age before the scan is counted: more points of the car
-  fall outside the cylinder and the count falls below the true number.
+  driving at speed v drives v times that age before the scan is counted, so the cylinder lags the
+  car. This is inference, not a measurement. Points of the car at the front can leave the
+  cylinder and points at the rear can enter it, so the count can be off in either direction.
 - The points and the GPS position must be in one frame. The lidar points are assumed to be in the
   world frame and the GPS x, y in the same one (see `readings.points_from_raw` and
   `rerun_view.gps_position`); the first real run shows whether they are.

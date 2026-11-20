@@ -60,7 +60,7 @@ All four scripts take these options. `--home` is required for a real run.
 
 `spike_sensors.py` and `spike_multicar.py` also take `--rates` (how often each sensor is read, see "Reading each sensor at its own rate" under Run 2), `--dump-raw N` (default 0, which writes nothing; see "The raw GPS and IMU dump" under Run 2), `--stream` (default off; see "Streaming the lidar and camera" under Run 2) and `--mode` (default `lockstep`; see "Letting the simulator run on its own" under Run 2). `spike_lidar_rerun.py` takes `--rates` (reads per wall second; it needs `--mode free`), `--mode` (default `free`) and `--stream` (default on with `--mode free`; `--no-stream` turns it off); see Demo 1.
 
-Every script that creates a lidar (`spike_sensors.py`, `spike_multicar.py` and `spike_lidar_rerun.py`) also takes `--lidar-pos X,Y,Z` (default `0,0,1.7`) and `--ego-radius METRES` (default 2.5); see Run 5. `spike_connect.py` creates no lidar, so it has neither option.
+Every script that creates a lidar (`spike_sensors.py`, `spike_multicar.py` and `spike_lidar_rerun.py`) also takes `--lidar-pos X,Y,Z` (default `0,0,1.7`); see Run 5. `spike_sensors.py` and `spike_multicar.py` also take `--ego-radius METRES` (default 2.5), and so does `spike_lidar_rerun.py` in `--mode free`; `spike_lidar_rerun.py --mode lockstep` counts no self-hits and rejects it. `spike_connect.py` creates no lidar, so it has neither option.
 
 Each script starts BeamNG.tech itself and closes it when the run ends. Close any BeamNG.tech that is already running before you start a script. The bridge connects to the simulator on a fixed local port, so a second copy may block the connection.
 
@@ -779,7 +779,7 @@ With the lidar at `pos` (0, 0, 1.7) you found that it hits our own car: the whol
 
 ### What the options do
 
-- `--lidar-pos X,Y,Z` is where the lidar sits on our car, in vehicle space, in metres. The default is `0,0,1.7`, the same as before. In the bridge's settings the car's front is `-y` (the camera at y = -0.5 sits ahead of the lidar), `x` is to one side and `z` is up, so `--lidar-pos 0,0.5,2.1` is 0.5 m behind the middle of the car and 2.1 m up. Three finite numbers separated by commas are required; anything else is a usage error and exits with code 2. Write a negative value with an equals sign, as `--lidar-pos=-0.5,0,1.9`. The `sensor:` lidar line and `sensor_settings` in `sensors.json` show it. Only the lidar moves: the radar keeps `pos=(0, 0, 1.7)`.
+- `--lidar-pos X,Y,Z` is where the lidar sits on our car, in vehicle space, in metres. The default is `0,0,1.7`, the same as before. In the bridge's settings the car's front is `-y` (the camera at y = -0.5 sits ahead of the lidar), `x` is to one side and `z` is up, so `--lidar-pos 0,0.5,2.1` is 0.5 m behind the car's origin and 2.1 m up. Three finite numbers separated by commas are required; anything else is a usage error and exits with code 2. Write a negative value with an equals sign, as `--lidar-pos=-0.5,0,1.9`. The `sensor:` lidar line and `sensor_settings` in `sensors.json` show it. Only the lidar moves: the radar keeps `pos=(0, 0, 1.7)`.
 - `--ego-radius METRES` (default 2.5, above 0) is the radius of the self-hit count below.
 
 ### What the self-hit line measures
@@ -787,7 +787,7 @@ With the lidar at `pos` (0, 0, 1.7) you found that it hits our own car: the whol
 After the tables, the run prints one line of explanation and one line per car:
 
 ```
-self hits (approximate): lidar points within 2.5 m of our car in x and y, measured from the latest GPS position; a vertical cylinder, not the car's shape, so ground points inside it count and the count falls short when the GPS position is older than the scan. Per new scan.
+self hits (approximate): lidar points within 2.5 m of our car in x and y, measured from the latest GPS position; a vertical cylinder, not the car's shape, so ground points inside it count and the count can be off when the GPS position is older than the scan. Per new scan.
 self hits (approximate): kite1 lidar at (0, 0, 2.1): <n> scans counted, mean <m> points, max <k>
 ```
 
@@ -797,14 +797,14 @@ Every new lidar scan (a repeat of the previous scan is not counted again) is cou
 
 Which position the count uses, and why:
 
-- It uses the x and y of the latest GPS reading of our car. The GPS is already one of the polls of the run, so the count adds no request. It never asks the simulator for our car's position, and no ground truth is involved. The same rule applies in `--mode lockstep` and `--mode free`. In `--mode free` a position request would be an extra blocking poll, which the one-slow-poll-per-pass rule forbids.
+- It uses the x and y of the latest GPS reading of our car. The GPS is already one of the polls of the run, so the count adds no request. It never asks the simulator for our car's position, and no ground truth is involved. The same rule applies in `--mode lockstep` and `--mode free`. In `--mode free` a position request would add a blocking request to a pass, which the one-slow-poll-per-pass rule avoids.
 - It is a score of the sensor mount, printed and written to the JSON only. It is never logged to Rerun, never put under `world/` and never fed to anything that drives.
 
 What the number cannot tell you:
 
 - It is not the shape of the car. It is a vertical cylinder, so it cannot tell a hit on the roof from a point on the ground, and ground points inside the radius count. The lowest beams reach the ground at a distance that grows with the lidar's height, so a radius below that distance keeps the ground out. The proper filter, an oriented box around the car, comes with perception.
 - The GPS sits at its own mount, `(0, 1.5, 2.0)` in `sensor_settings.py`, which is about 1.5 m behind the car's origin, so the cylinder is centred about there and not on the middle of the car.
-- The GPS is read less often than the lidar (10 times per wall second against 20 by default in free mode), so its position can be older than the scan. A car that drives at speed v moves v times that age in between: about 1.5 m for 0.1 s at 15 m/s (worked out, not measured). Points of the car then fall outside the cylinder and the count is lower than the true number. A higher `--rates gps=...` shortens the age; the `schedule` table shows whether those reads came late.
+- The GPS is read less often than the lidar (10 times per wall second against 20 by default in free mode), so its position can be older than the scan. A car that drives at speed v moves v times that age in between: about 1.5 m for 0.1 s at 15 m/s (worked out, not measured). The cylinder then lags the car. This is inference, not a measurement. Points of the car at the front can fall outside the cylinder and points at the rear can fall inside it, so the count can be off in either direction. A higher `--rates gps=...` shortens the age; the `schedule` table shows whether those reads came late.
 - It takes the lidar points and the GPS x and y to be in one frame, the world frame (see "Limits of `world/ego`"). If the GPS gives no x and y, no scan is counted and the run prints `kite1 lidar: <n> new scans had no GPS position yet and were not counted`. If the two frames differ, the counts mean nothing. Tell the director.
 - Two runs of one height differ because the car drives through different traffic. Run each height twice. If two runs of the same height differ by more than two heights differ from each other, the numbers cannot rank the heights.
 

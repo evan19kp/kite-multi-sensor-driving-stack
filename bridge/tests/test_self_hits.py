@@ -115,6 +115,16 @@ class GpsAt3(FakeSim):
         return reading_from_raw("gps", [dict(sample, x=3.0, y=0.0) for sample in reading.raw], self.sim_time)
 
 
+class UnreadableScans(GpsAt3):
+    """Every lidar poll is a new scan whose pointCloud is one flat row, not rows of x, y, z."""
+
+    def poll(self, car, kind):
+        reading = super().poll(car, kind)
+        if kind != "lidar":
+            return reading
+        return reading_from_raw("lidar", {"pointCloud": [self.sim_time, 2.0, 3.0]}, self.sim_time)
+
+
 class NoSimulatorPosition(GpsAt3):
     def position(self, car):
         raise AssertionError("the self-hit count asked the simulator for our car's position")
@@ -168,6 +178,18 @@ class MeasuredSelfHitsTest(unittest.TestCase):
         self.assertIn("kite1 lidar: 1 new scans had no GPS position yet and were not counted",
                       common.format_result(result))
 
+    def test_scans_that_cannot_be_read_are_reported_on_their_own_line_and_not_counted(self):
+        # One simulated second polled after every step is 60 polls. The lidar is read before the GPS
+        # in a step, so the first scan has no position (1) and each of the other 59 is not x, y, z rows.
+        result, _, rows = measure(False, UnreadableScans, hits=self_hits())
+        summary = rows["lidar"]["self_hits_approx"]
+        self.assertEqual((summary["scans_counted"], summary["scans_without_position"], summary["scans_unreadable"]),
+                         (0, 1, 59))
+        printed = common.format_result(result).splitlines()
+        self.assertIn("kite1 lidar: 59 new scans could not be read as x, y, z points and were not counted", printed)
+        self.assertIn("self hits (approximate): kite1 lidar at (0, 0, 1.7): 0 scans counted, mean n/a points, "
+                      "max n/a", printed)
+
     def test_without_a_counter_the_output_has_no_self_hits(self):
         result, _, rows = measure(True)
         self.assertNotIn("self_hits_approx", rows["lidar"])
@@ -189,16 +211,22 @@ class MeasuredSelfHitsTest(unittest.TestCase):
         self.assertEqual(sim.lidar_settings[CAR]["pos"], DEFAULT_POS)
 
 
-def run_script(module, *argv):
+def run_script(module, *argv, free=False):
+    """Runs `module.main` against the fake. A `free` run gets a fake clock for the simulator and
+    for the free loop's wall clock and sleep, so it never waits for real."""
     sims = []
+    clock = FakeClock()
 
     def make():
-        sims.append(FakeSim())
+        sims.append(FakeSim(clock=clock) if free else FakeSim())
         return sims[-1]
 
     stdout, stderr = io.StringIO(), io.StringIO()
     with tempfile.TemporaryDirectory() as tmp, contextlib.ExitStack() as stack:
         stack.enter_context(mock.patch.object(common, "FakeSim", make))
+        if free:
+            stack.enter_context(mock.patch.object(common, "wall_clock", clock.now))
+            stack.enter_context(mock.patch.object(common, "wall_sleep", clock.sleep))
         stack.enter_context(contextlib.redirect_stdout(stdout))
         stack.enter_context(contextlib.redirect_stderr(stderr))
         out = Path(tmp)
@@ -213,11 +241,12 @@ class LidarOptionsTest(unittest.TestCase):
         import spike_multicar
         import spike_sensors
 
-        return ((spike_sensors, ()), (spike_multicar, ()), (spike_lidar_rerun, ("--mode", "lockstep")))
+        return ((spike_sensors, (), False), (spike_multicar, (), False),
+                (spike_lidar_rerun, ("--mode", "lockstep"), False), (spike_lidar_rerun, (), True))
 
     def test_the_mount_reaches_every_lidar_every_script_creates_and_shows_on_the_sensor_line(self):
-        for module, extra in self.modules():
-            code, stdout, stderr, sims, _ = run_script(module, "--lidar-pos", "0.5,-0.25,2.3", *extra)
+        for module, extra, free in self.modules():
+            code, stdout, stderr, sims, _ = run_script(module, "--lidar-pos", "0.5,-0.25,2.3", *extra, free=free)
             self.assertEqual(code, 0, (module.__name__, stderr))
             self.assertTrue(sims, module.__name__)
             for sim in sims:
@@ -229,8 +258,8 @@ class LidarOptionsTest(unittest.TestCase):
             self.assertIn(" pos=(0, 0, 1.7) ", radar_line + " ", module.__name__)
 
     def test_without_the_option_every_lidar_stays_where_the_table_puts_it(self):
-        for module, extra in self.modules():
-            code, stdout, _, sims, _ = run_script(module, *extra)
+        for module, extra, free in self.modules():
+            code, stdout, _, sims, _ = run_script(module, *extra, free=free)
             self.assertEqual(code, 0, module.__name__)
             for sim in sims:
                 for settings in sim.lidar_settings.values():
@@ -273,16 +302,28 @@ class LidarOptionsTest(unittest.TestCase):
         _, stdout, _, _, _ = run_script(spike_sensors, "--ego-radius", "4")
         self.assertIn("within 4 m of our car in x and y", stdout)
 
+    def test_the_free_mode_lidar_demo_prints_the_self_hit_lines_for_its_mount_and_radius(self):
+        import spike_lidar_rerun
+
+        code, stdout, stderr, _, _ = run_script(spike_lidar_rerun, "--lidar-pos", "0,0,2.1", "--ego-radius", "4",
+                                                free=True)
+        self.assertEqual(code, 0, stderr)
+        self.assertIn("within 4 m of our car in x and y", stdout)
+        self.assertIn("self hits (approximate): kite1 lidar at (0, 0, 2.1): 0 scans counted, mean n/a points, "
+                      "max n/a", stdout)
+        self.assertIn("pos=(0, 0, 2.1) ", next(line for line in stdout.splitlines()
+                                              if line.startswith("sensor: lidar ")) + " ")
+
     def test_bad_values_are_usage_errors(self):
         bad_mounts = ("nan,0,1", "0,inf,1", "0,0,-inf", "0,0", "0,0,1,2", "a,b,c", "", "1,,2", "0 0 1")
-        for module, extra in self.modules():
+        for module, extra, free in self.modules():
             for bad in bad_mounts:
                 with self.assertRaises(SystemExit) as raised, contextlib.redirect_stderr(io.StringIO()):
-                    run_script(module, f"--lidar-pos={bad}", *extra)
+                    run_script(module, f"--lidar-pos={bad}", *extra, free=free)
                 self.assertEqual(raised.exception.code, 2, (module.__name__, bad))
             for bad in ("0", "-1", "nan", "inf", "x"):
                 with self.assertRaises(SystemExit) as raised, contextlib.redirect_stderr(io.StringIO()):
-                    run_script(module, f"--ego-radius={bad}", *extra)
+                    run_script(module, f"--ego-radius={bad}", *extra, free=free)
                 self.assertEqual(raised.exception.code, 2, (module.__name__, bad))
 
     def test_a_negative_mount_is_given_with_an_equals_sign(self):

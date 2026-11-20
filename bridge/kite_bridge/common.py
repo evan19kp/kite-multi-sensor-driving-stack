@@ -80,7 +80,7 @@ def _lidar_pos(text):
         values = ()
     if len(values) != 3 or not all(math.isfinite(value) for value in values):
         raise argparse.ArgumentTypeError(f"must be three finite numbers x,y,z in metres, got {text!r}")
-    return values
+    return tuple(int(value) if value.is_integer() else value for value in values)
 
 
 def _add_lidar_options(parser):
@@ -765,7 +765,7 @@ def _self_hit_lines(result):
     radius = rows[0]["self_hits_approx"]["radius_m"]
     lines = [f"self hits (approximate): lidar points within {radius:g} m of our car in x and y, measured from the "
              "latest GPS position; a vertical cylinder, not the car's shape, so ground points inside it count and "
-             "the count falls short when the GPS position is older than the scan. Per new scan."]
+             "the count can be off when the GPS position is older than the scan. Per new scan."]
     for r in rows:
         s = r["self_hits_approx"]
         mount = "(" + ", ".join(f"{value:g}" for value in s["lidar_pos"]) + ")"
