@@ -17,6 +17,8 @@ from kite_bridge.fake_sim import FakeSim
 
 SCRIPTS = ("spike_connect", "spike_sensors", "spike_multicar", "spike_lidar_rerun")
 TOGRAC_QE = "vehicles/vivace/tograc_qE.pc"
+# The Rerun demo runs free by default, on the real clock; lock-step needs no waiting.
+LOCKSTEP_ARGS = {"spike_lidar_rerun": ("--mode", "lockstep")}
 
 
 class FakeRunCase(unittest.TestCase):
@@ -37,7 +39,8 @@ class FakeRunCase(unittest.TestCase):
         module = importlib.import_module(script)
         with (mock.patch.object(common, "FakeSim", make_fake), contextlib.redirect_stdout(stdout),
               contextlib.redirect_stderr(stderr)):
-            code = module.main(["--fake", "--seconds", "1", "--traffic", "0", "--out", str(self.out), *argv])
+            code = module.main(["--fake", "--seconds", "1", "--traffic", "0", "--out", str(self.out),
+                                *LOCKSTEP_ARGS.get(script, ()), *argv])
         return SimpleNamespace(code=code, stdout=stdout.getvalue(), stderr=stderr.getvalue(), sims=sims)
 
 

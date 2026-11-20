@@ -47,6 +47,25 @@ def log_step(recorder, sim_time, ego, lidar_points, image, others=None):
         recorder.log_points(GROUND_TRUTH_PATH, others, [GROUND_TRUTH_COLOUR] * len(others))
 
 
+def log_reading(recorder, kind, reading):
+    """Free mode: logs one `reading` (a `sim_api.Reading` with a timestamp) of `kind` "lidar" or
+    "camera" at its time, which is the Timer's for a reading without its own. The lidar's
+    "pointCloud" goes under LIDAR_PATH and the camera's "colour" image under CAMERA_PATH as the
+    simulator gave them, with no colours and no ground truth. Returns True when it logged the
+    reading. A camera reading without a "colour" image logs nothing and returns False."""
+    raw = reading.raw
+    if kind == "lidar":
+        recorder.set_time(reading.timestamp)
+        recorder.log_points(LIDAR_PATH, raw["pointCloud"], None)
+        return True
+    image = raw.get("colour") if isinstance(raw, dict) else None
+    if image is None:
+        return False
+    recorder.set_time(reading.timestamp)
+    recorder.log_image(CAMERA_PATH, image)
+    return True
+
+
 def recording_name(text):
     """Checks a `--save` value: a relative path that stays inside the output folder and ends
     in `.rrd`. Returns it unchanged, else raises ValueError saying why."""
@@ -85,11 +104,14 @@ class RerunRecorder:
             self._rr.set_time_seconds(TIMELINE, seconds)  # ASSUMPTION: set_time_seconds(name, s) in older SDKs
 
     def log_points(self, path, positions, colors):
-        # ASSUMPTION: Points3D takes plain lists of (x, y, z) positions and (r, g, b) colors
+        # ASSUMPTION: Points3D takes plain lists of (x, y, z) positions and (r, g, b) colors, and in free
+        # mode a BeamNGpy pointCloud array of x, y, z rows with colors=None
         self._rr.log(path, self._rr.Points3D(positions, colors=colors))
 
     def log_image(self, path, image):
-        self._rr.log(path, self._rr.Image(image))  # ASSUMPTION: Image takes rows of (r, g, b) tuples as nested lists
+        # ASSUMPTION: Image takes rows of (r, g, b) tuples as nested lists, and in free mode the camera's
+        # "colour" image as BeamNGpy gives it (a PIL image or an array of rows)
+        self._rr.log(path, self._rr.Image(image))
 
     def close(self):
         self._rr.disconnect()  # ASSUMPTION: disconnect() flushes and closes the file or connection
