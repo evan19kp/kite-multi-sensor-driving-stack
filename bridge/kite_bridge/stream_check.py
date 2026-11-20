@@ -15,21 +15,22 @@ empty or unexpected reading, as a poll would.
   returns rows * columns values of 4 or 8 bytes each (float32 or float64, in the machine's byte
   order, row after row). Otherwise the whole reading is dropped as suspect.
 - An all-zero row is a row whose bytes are all zero. The all-zero rows after the last row with
-  any non-zero byte are cut off and counted in `suspect_rows`. Every array in the dict whose
-  `shape` has the same row count (the "colours", for example) is cut to the same rows. An
-  all-zero row before the last non-zero row is kept and not counted: it cannot be told from a
-  point.
+  any non-zero byte are cut off and counted in `suspect_rows`, unless every row is all zero: memory
+  that was never written is an empty reading (counted under `empty` only), with `suspect_rows` 0.
+  Every array in the dict whose `shape` has the same row count (the "colours", for example) is
+  cut to the same rows. An all-zero row before the last non-zero row is kept and not counted: it
+  cannot be told from a point.
 - If a kept value is not finite (nan or inf), the whole reading is dropped as suspect.
 - Not detectable: rows left from an earlier, longer scan. They are non-zero, finite rows of the
   right shape, and the streamed dict says nothing about how many rows the new scan wrote, so
   they are kept and counted as points.
 
-Camera. None (no frame yet) is an empty reading. Anything else that is not a dict is an
-unexpected reading. In a dict, every value that is not None is an image, and its size must be
-the configured `resolution` (width, height) in `sensor_settings.py`: an object with `shape` is
-(height, width, ...) like a numpy array, else an object with a two-item `size` is
-(width, height) like a PIL image. An image of another size, or with neither, drops the whole
-reading as suspect. Not detectable: an image of the right size that was never rendered into
+Camera. None (no frame yet) is an empty reading, and so is a dict whose values are all None.
+Anything else that is not a dict is an unexpected reading. In a dict, every value that is not
+None is an image, and its size must be the configured `resolution` (width, height) in
+`sensor_settings.py`: an object with `shape` is (height, width, ...) like a numpy array, else an
+object with a two-item `size` is (width, height) like a PIL image. An image of another size, or
+with neither, drops the whole reading as suspect. Not detectable: an image of the right size that was never rendered into
 (all black, for example) or holds an earlier frame.
 
 Freshness is not decided here: a reading whose memory has not changed since the last read
@@ -71,7 +72,8 @@ def _check_lidar(raw):
     cloud = raw["pointCloud"]
     rows = _rows(cloud)
     kept = trusted_rows(cloud)
-    return {key: value[:kept] if _rows(value) == rows else value for key, value in raw.items()}, rows - kept
+    cut = rows - kept if kept else 0
+    return {key: value[:kept] if _rows(value) == rows else value for key, value in raw.items()}, cut
 
 
 def _rows(value):
@@ -105,8 +107,8 @@ def _all_finite(values):
 
 
 def _check_camera(raw):
-    if raw is None:
-        return raw
+    if raw is None or all(image is None for image in raw.values()):
+        return None
     width, height = SENSOR_SETTINGS["camera"]["resolution"]
     for name, image in raw.items():
         if image is None:

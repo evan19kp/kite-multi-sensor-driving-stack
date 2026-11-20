@@ -2,10 +2,10 @@
 
 Each case starts a fresh simulator session. Prints steps per second, the wall time split, the
 real-time factor and every sensor's rate and fresh-data counts per case. Every sensor is polled
-at its --rates rate. Writes multicar.json to
---out. --dump-raw N also writes the first N raw GPS and IMU readings per car, for every case, to
-raw_gps_imu.json. --stream reads the lidar and camera from shared memory with stream() and counts
-what it drops under `suspect`. --mode free lets the simulator run on its own, polls on a wall-clock
+at its --rates rate. Writes multicar.json to --out, with the sensor settings under
+`sensor_settings`, as sensors.json has them. --dump-raw N also writes the first N raw GPS and IMU
+readings per car, for every case, to raw_gps_imu.json. --stream reads the lidar and camera from
+shared memory with stream() and counts what it drops under `suspect`. --mode free lets the simulator run on its own, polls on a wall-clock
 schedule and reads simulated time from a Timer sensor. --lidar-pos x,y,z sets where each car's
 lidar sits (vehicle space, metres) and --ego-radius the radius of the approximate self-hit count,
 which is printed and written to multicar.json per car and case, as in spike_sensors.py.
@@ -14,6 +14,7 @@ which is printed and written to multicar.json per car and case, as in spike_sens
 import sys
 
 from kite_bridge import common
+from kite_bridge.sensor_settings import settings_table
 
 CAR_COUNTS = (1, 2, 4)
 
@@ -37,7 +38,9 @@ def run(args):
             print(f"\n{common.format_result(result)}")
             cases.append(result)
             dumps.append((n_cars, dump))
-            common.write_json(args.out, "multicar.json", {"model": args.model, "config": args.config, "cases": cases})
+            common.write_json(args.out, "multicar.json", {
+                "model": args.model, "config": args.config,
+                "sensor_settings": settings_table(args.stream, args.lidar_pos), "cases": cases})
             if args.dump_raw:
                 common.write_raw_dump(args.out, args.dump_raw, dumps)
 

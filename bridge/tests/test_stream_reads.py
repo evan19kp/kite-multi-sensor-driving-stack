@@ -181,9 +181,21 @@ class StreamedLidarCheckTest(unittest.TestCase):
         reading = lidar(Rows([(1, 2, 3), (-0.0, 0, 0)]))
         self.assertEqual((reading.points, reading.suspect_rows), (2, 0))
 
-    def test_memory_that_is_all_zero_is_an_empty_reading_with_every_row_counted(self):
+    def test_memory_that_is_all_zero_is_an_empty_reading_and_cuts_no_rows(self):
         reading = lidar(Rows([(0, 0, 0)] * 5))
-        self.assertEqual((reading.timestamp, reading.suspect, reading.suspect_rows), (None, None, 5))
+        self.assertEqual((reading.timestamp, reading.suspect, reading.suspect_rows), (None, None, 0))
+
+    def test_memory_that_is_all_zero_in_a_run_counts_under_empty_only(self):
+        result, rows = measure(True, lidar_rows=0, stream_rows=100)
+        row = rows["lidar"]
+        self.assertEqual((row["polls"], row["empty"], row["new_readings"]), (STEP_HZ, STEP_HZ, 0))
+        self.assertEqual(row["suspect"], {"readings": 0, "rows": 0, "first": None})
+        self.assertRegex(common.format_result(result), r"(?m)^kite1\s+lidar\s.*\sstream\s+0\s+0$")
+        self.assertNotRegex(common.format_result(result), r"(?m)^suspect: kite1 lidar")
+
+    def test_one_written_row_among_zero_rows_is_still_cut_and_counted(self):
+        reading = lidar(Rows([(1, 2, 3)] + [(0, 0, 0)] * 4))
+        self.assertEqual((reading.points, reading.suspect_rows), (1, 4))
 
     def test_a_value_that_is_not_finite_drops_the_whole_reading(self):
         for bad in (float("nan"), float("inf"), float("-inf")):
@@ -279,6 +291,23 @@ class StreamedCameraCheckTest(unittest.TestCase):
         self.assertEqual((cam["polls"], cam["empty"], cam["new_readings"]), (STEP_HZ, STEP_HZ, 0))
         self.assertEqual(cam["unexpected"]["count"], 0)
         self.assertEqual(cam["suspect"]["readings"], 0)
+
+    def test_a_dict_whose_images_are_all_none_is_an_empty_reading(self):
+        for images in ({"colour": None}, {"colour": None, "depth": None}, {}):
+            reading = camera(**images)
+            self.assertEqual((reading.timestamp, reading.raw, reading.suspect, reading.unexpected),
+                             (None, None, None, None), images)
+
+    def test_a_dict_with_one_image_among_none_values_is_a_reading(self):
+        reading = camera(colour=None, depth=FakeImage((640, 360), 1))
+        self.assertEqual((reading.timestamp, reading.suspect), (0.5, None))
+
+    def test_a_camera_whose_images_are_all_none_counts_under_empty_in_a_run(self):
+        result, rows = measure(True, stream_returning("camera", {"colour": None, "depth": None}))
+        cam = rows["camera"]
+        self.assertEqual((cam["polls"], cam["empty"], cam["new_readings"], cam["bytes_read"]),
+                         (STEP_HZ, STEP_HZ, 0, 0))
+        self.assertEqual((cam["unexpected"]["count"], cam["suspect"]["readings"]), (0, 0))
 
     def test_a_camera_result_that_is_not_a_dict_is_unexpected_and_never_passed_on(self):
         for value, name in (([FakeImage((320, 180), 1)], "list"), (b"\x00" * 10, "bytes"), (7, "int")):
