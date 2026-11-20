@@ -100,10 +100,12 @@ class Simulator(ABC):
         """Spawn up to n AI traffic cars. Raises if the simulator cannot."""
 
     @abstractmethod
-    def attach_sensors(self, car: str, stream: bool = False) -> None:
+    def attach_sensors(self, car: str, stream: bool = False,
+                       lidar_pos: tuple[float, float, float] | None = None) -> None:
         """Attach one sensor of each kind in SENSOR_KINDS to `car`. With `stream`, the
         STREAMED_KINDS sensors are created streaming: they write each reading to shared memory,
-        and `stream` reads it."""
+        and `stream` reads it. `lidar_pos`, finite x, y, z in vehicle space in metres, is where
+        the lidar sits; None keeps the position in `sensor_settings.py`."""
 
     @abstractmethod
     def poll(self, car: str, kind: str) -> Reading:

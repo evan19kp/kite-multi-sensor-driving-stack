@@ -129,7 +129,7 @@ def recording_path(out, name):
 
 
 class NumpyArrays:
-    """The array work of RerunRecorder, on numpy arrays."""
+    """The array work of RerunRecorder and of `self_hits.SelfHits`, on numpy arrays."""
 
     @functools.cached_property
     def np(self):
@@ -157,6 +157,14 @@ class NumpyArrays:
     def all_finite(self, points):
         return bool(self.np.isfinite(points).all())
 
+    def count_within(self, points, centre, radius):
+        """How many of `points` (what `points()` returned) are at most `radius` metres from
+        `centre` in x and y, in one array operation. A point whose x or y is nan or inf is never
+        counted."""
+        np = self.np
+        offsets = points[:, :2] - np.asarray(centre, dtype=np.float32)
+        return int(np.count_nonzero((offsets ** 2).sum(axis=1) <= radius * radius))
+
     def image(self, image):
         """A PIL image, an array or rows of pixels as a (height, width, channels) uint8 array."""
         # ASSUMPTION: BeamNGpy's colour image, polled or streamed, holds 8-bit values (0 to 255) per channel
@@ -164,7 +172,8 @@ class NumpyArrays:
 
 
 class ListArrays:
-    """The work of NumpyArrays on plain lists, one point at a time. For tests and the fake only."""
+    """The work of NumpyArrays on plain lists, one point at a time. For tests and the fake only,
+    never for a real scan."""
 
     def points(self, cloud):
         return [tuple(float(value) for value in row[:3]) for row in cloud]
@@ -174,6 +183,9 @@ class ListArrays:
 
     def all_finite(self, points):
         return all(math.isfinite(value) for point in points for value in point)
+
+    def count_within(self, points, centre, radius):
+        return sum(math.dist(point[:2], centre) <= radius for point in points)
 
     def image(self, image):
         return image
