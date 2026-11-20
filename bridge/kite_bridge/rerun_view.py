@@ -48,17 +48,17 @@ def log_step(recorder, sim_time, ego, lidar_points, image, others=None):
 
 
 def log_reading(recorder, kind, reading):
-    """Free mode: logs one lidar or camera `reading` (a `sim_api.Reading` with a timestamp) at
-    its time, which is the Timer's for a reading without its own. The lidar's "pointCloud" goes
-    under LIDAR_PATH and the camera's "colour" image under CAMERA_PATH as the simulator gave them,
-    with no colours and no ground truth. Returns whether it logged anything: other sensors, and a
-    camera reading without a "colour" image, log nothing."""
+    """Free mode: logs one `reading` (a `sim_api.Reading` with a timestamp) of `kind` "lidar" or
+    "camera" at its time, which is the Timer's for a reading without its own. The lidar's
+    "pointCloud" goes under LIDAR_PATH and the camera's "colour" image under CAMERA_PATH as the
+    simulator gave them, with no colours and no ground truth. Returns True when it logged the
+    reading. A camera reading without a "colour" image logs nothing and returns False."""
     raw = reading.raw
     if kind == "lidar":
         recorder.set_time(reading.timestamp)
         recorder.log_points(LIDAR_PATH, raw["pointCloud"], None)
         return True
-    image = raw.get("colour") if kind == "camera" and isinstance(raw, dict) else None
+    image = raw.get("colour") if isinstance(raw, dict) else None
     if image is None:
         return False
     recorder.set_time(reading.timestamp)

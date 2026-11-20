@@ -16,8 +16,8 @@ from kite_bridge.fake_sim import FakeSim
 from kite_bridge.output_guard import PROVENANCE, out_refusal, repo_roots
 from kite_bridge.readings import readings_in
 from kite_bridge.sensor_settings import requested_update_hz, settings_lines
-from kite_bridge.sim_api import (BUFFERED_KINDS, POLL_TIME, SENSOR_KINDS, STEP_HZ, STREAMED_KINDS, TIMER_TIME,
-                                 Reading)
+from kite_bridge.sim_api import (BUFFERED_KINDS, POLL_TIME, SENSOR_KINDS, STEP_HZ, STREAMED_KINDS, TIMER,
+                                 TIMER_TIME, Reading)
 
 RAW_DUMP_FILE = "raw_gps_imu.json"
 DEFAULT_MODEL = "vivace"
@@ -30,9 +30,10 @@ JOIN_SLICE_S = 0.1
 EXIT_INTERRUPTED = 130
 LOCKSTEP = "lockstep"
 FREE = "free"
-TIMER = "timer"
 WALL_LIMIT_FACTOR = 20
 MIN_SLEEP_S = 1e-6
+RATES_RULE = (f"for each sensor (lidar, camera, radar, gps, imu), each above 0 and at most {STEP_HZ}; all=RATE "
+              "sets every sensor and a named sensor overrides it")
 wall_clock = time.perf_counter
 wall_sleep = time.sleep
 
@@ -79,13 +80,8 @@ def _rates_option(text):
     return text
 
 
-def _add_rates_and_mode(parser, default_mode):
-    parser.add_argument("--rates", type=_rates_option, metavar="KIND=RATE,...",
-                        help="polls per simulated second for each sensor (lidar, camera, radar, gps, imu), "
-                             "or per wall second with --mode free, "
-                             f"each above 0 and at most {STEP_HZ}; all=RATE sets every sensor and a named "
-                             f"sensor overrides it (default {rates.DEFAULT_RATES_TEXT}, with --mode free "
-                             f"{rates.FREE_DEFAULT_RATES_TEXT}; all={STEP_HZ} polls every sensor after every step)")
+def _add_rates_and_mode(parser, default_mode, rates_help):
+    parser.add_argument("--rates", type=_rates_option, metavar="KIND=RATE,...", help=rates_help)
     other = FREE if default_mode == LOCKSTEP else LOCKSTEP
     parser.add_argument("--mode", choices=(LOCKSTEP, FREE), default=default_mode,
                         help=f"{default_mode} (default) or {other}. {LOCKSTEP}: step the simulator {STEP_HZ} "
@@ -97,7 +93,10 @@ def _add_rates_and_mode(parser, default_mode):
 
 
 def add_measure_options(parser):
-    _add_rates_and_mode(parser, LOCKSTEP)
+    _add_rates_and_mode(parser, LOCKSTEP,
+                        f"polls per simulated second, or reads per wall second with --mode free, {RATES_RULE} "
+                        f"(default {rates.DEFAULT_RATES_TEXT}, with --mode free {rates.FREE_DEFAULT_RATES_TEXT}; "
+                        f"all={STEP_HZ} polls every sensor after every step)")
     parser.add_argument("--dump-raw", type=_count, default=0, metavar="N",
                         help=f"write the first N raw GPS and the first N raw IMU readings of each car, "
                              f"with each poll's wall time and step count, to {RAW_DUMP_FILE} in --out "
@@ -110,7 +109,8 @@ def add_measure_options(parser):
 
 
 def add_live_options(parser):
-    _add_rates_and_mode(parser, FREE)
+    _add_rates_and_mode(parser, FREE, f"reads per wall second {RATES_RULE} (default {rates.FREE_DEFAULT_RATES_TEXT}); "
+                                      "needs --mode free")
     parser.add_argument("--stream", action=argparse.BooleanOptionalAction,
                         help="read the lidar and camera from shared memory with stream(), checked by "
                              "kite_bridge/stream_check.py (default: on with --mode free; --no-stream polls them)")

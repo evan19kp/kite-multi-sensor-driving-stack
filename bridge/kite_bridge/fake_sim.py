@@ -5,7 +5,7 @@ import time
 
 from kite_bridge.readings import reading_from_raw, timer_value
 from kite_bridge.sensor_settings import SENSOR_SETTINGS
-from kite_bridge.sim_api import BUFFERED_KINDS, SENSOR_KINDS, STEP_HZ, STREAMED_KINDS, Simulator
+from kite_bridge.sim_api import BUFFERED_KINDS, SENSOR_KINDS, STEP_HZ, STREAMED_KINDS, TIMER, Simulator
 from kite_bridge.stream_check import reading_from_stream
 
 DEFAULT_RATES = {"lidar": 10.0, "camera": 20.0, "radar": 20.0, "gps": 10.0, "imu": 100.0}
@@ -22,7 +22,6 @@ FAKE_FLOAT32_BYTES = 4
 FAKE_LIDAR_ROW_RANGE = (900, 1100)
 FAKE_STREAM_ROWS = FAKE_LIDAR_ROW_RANGE[1]
 FAKE_LIDAR_COLUMNS = 3
-TIMER = "timer"
 
 
 class FakeClock:

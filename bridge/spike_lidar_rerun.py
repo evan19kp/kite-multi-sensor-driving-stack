@@ -76,11 +76,17 @@ def run(args):
 
 def _run_free(sim, car, args, save_path):
     logged = {"lidar": 0, "camera": 0}
+    no_colour = 0
     recorder = make_recorder(save_path, args.fake)
 
     def log(key, reading):
-        if key[1] in logged:
-            logged[key[1]] += rerun_view.log_reading(recorder, key[1], reading)
+        nonlocal no_colour
+        if key[1] not in logged:
+            return
+        if rerun_view.log_reading(recorder, key[1], reading):
+            logged[key[1]] += 1
+        else:
+            no_colour += 1
 
     try:
         result = common.measure_sensors(sim, [car], args.seconds, poll_rates=args.rates, stream=args.stream,
@@ -88,9 +94,11 @@ def _run_free(sim, car, args, save_path):
     finally:
         recorder.close()
     print(common.format_result(result))
-    return [f"logged {logged['lidar']} lidar scans and {logged['camera']} camera images at Timer times",
-            "no ground truth logged in free mode, because reading our car's or the other cars' positions is a "
-            "request that would hold up the lidar"]
+    report = [f"logged {logged['lidar']} lidar scans and {logged['camera']} camera images at Timer times"]
+    if no_colour:
+        report.append(f"camera gave {no_colour} readings without a colour image; not logged")
+    return report + ["no ground truth logged in free mode, because reading our car's or the other cars' positions "
+                     "is a request that would hold up the lidar"]
 
 
 def _run_lockstep(sim, car, args, save_path, show_traffic):

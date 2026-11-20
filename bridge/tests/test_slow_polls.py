@@ -14,6 +14,7 @@ from tests.test_scripts import run_script
 from kite_bridge import common, rates
 from kite_bridge.fake_sim import FakeSim
 from kite_bridge.rerun_view import CAMERA_PATH, EGO_PATH, GROUND_TRUTH_PATH, LIDAR_PATH
+from kite_bridge.stream_check import reading_from_stream
 
 # Evan's real runs: a poll costs about 20 ms, a streamed read about 1 ms.
 SLOW_S = 0.020
@@ -196,15 +197,29 @@ class RawRecorder:
         self.closed += 1
 
 
+class NoColourCamera(Timed):
+    """Its streamed camera gives a dict whose only image is None, which passes stream_check."""
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.camera_reads = 0
+
+    def stream(self, car, kind):
+        if kind != "camera":
+            return super().stream(car, kind)
+        self.camera_reads += 1
+        return reading_from_stream(kind, {"colour": None}, self.sim_time)
+
+
 class LiveViewerDefaultTest(unittest.TestCase):
-    def run_main(self, *argv):
+    def run_main(self, *argv, sim_class=Timed):
         import spike_lidar_rerun
 
         clock = BoundedClock()
         sims, recorder = [], RawRecorder()
 
         def make():
-            sims.append(Timed(clock=clock, rates=SENSOR_RATES))
+            sims.append(sim_class(clock=clock, rates=SENSOR_RATES))
             return sims[-1]
 
         stdout, stderr = io.StringIO(), io.StringIO()
@@ -248,6 +263,20 @@ class LiveViewerDefaultTest(unittest.TestCase):
         self.assertEqual(times, sorted(times))
         self.assertEqual(len(times), len(lidar) + len(images))
 
+    def test_camera_readings_without_a_colour_image_are_counted_and_printed(self):
+        code, stdout, _, (sim,), recorder = self.run_main(sim_class=NoColourCamera)
+        self.assertEqual(code, 0)
+        self.assertEqual([c for c in recorder.calls if c[0] == "image"], [])
+        # The free default reads the camera 40 times per wall second, at k / 40 for k = 0 to 40
+        # in a 1 s run, and none of those readings has a colour image.
+        self.assertEqual(sim.camera_reads, 41)
+        self.assertIn("logged 21 lidar scans and 0 camera images at Timer times", stdout)
+        self.assertIn("camera gave 41 readings without a colour image; not logged", stdout)
+
+    def test_every_camera_image_logged_prints_no_not_logged_line(self):
+        _, stdout, _, _, _ = self.run_main()
+        self.assertNotIn("not logged", stdout)
+
     def test_no_stream_polls_the_lidar_and_camera_in_free_mode(self):
         code, stdout, _, (sim,), _ = self.run_main("--no-stream")
         self.assertEqual(code, 0)
@@ -276,6 +305,10 @@ class LiveViewerDefaultTest(unittest.TestCase):
         self.assertIn("free (default) or lockstep", flat)
         self.assertIn("--stream, --no-stream", flat)
         self.assertIn("default: on with --mode free", flat)
+        self.assertIn("reads per wall second for each sensor", flat)
+        self.assertIn(f"(default {rates.FREE_DEFAULT_RATES_TEXT}); needs --mode free", flat)
+        self.assertNotIn("polls per simulated second", flat)
+        self.assertNotIn(rates.DEFAULT_RATES_TEXT, flat)
 
 
 if __name__ == "__main__":

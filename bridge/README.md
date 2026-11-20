@@ -59,8 +59,9 @@ fake simulator and needs no simulator. `spike_sensors.py` and `spike_multicar.py
 `--rates` (polls per simulated second for each sensor, default `lidar=20,camera=20,radar=20,gps=10,imu=10`;
 with `--mode free` reads per wall second, default `lidar=20,camera=40,radar=10,gps=10,imu=10`),
 `--dump-raw N` (default 0), `--stream` (default off) and `--mode lockstep|free` (default
-`lockstep`). `spike_lidar_rerun.py` takes `--rates`, `--mode` (default `free`) and
-`--stream`/`--no-stream` (default on with `--mode free`); see "Rerun lidar demo".
+`lockstep`). `spike_lidar_rerun.py` takes `--rates` (reads per wall second, default
+`lidar=20,camera=40,radar=10,gps=10,imu=10`; it needs `--mode free`), `--mode` (default `free`)
+and `--stream`/`--no-stream` (default on with `--mode free`); see "Rerun lidar demo".
 
 `--timeout` is the longest wait in seconds for any one simulator call, map loading included; it
 must be above 0. Every run ends BeamNG.tech through one shutdown path. After a normal run or an
@@ -194,7 +195,8 @@ free-mode default rates, and passes each reading to `rerun_view.log_reading`. Ea
 `pointCloud` goes under `world/ego/lidar` and each camera `colour` image under `camera/image`, at
 its Timer time, as BeamNGpy gave them. It logs no distance colours and no ground truth, because
 reading a position is a request that would hold up the lidar. The script then prints the measuring tables,
-the `schedule` table included, and how many scans and images it logged. `--no-stream` polls the
+the `schedule` table included, and how many scans and images it logged. It does not log a camera
+reading with no colour image, and prints how many there were. `--no-stream` polls the
 lidar and camera too.
 
 `--mode lockstep` is the demo as before; it takes neither `--stream` nor `--rates` (usage error,

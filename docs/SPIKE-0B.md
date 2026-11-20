@@ -58,7 +58,7 @@ All four scripts take these options. `--home` is required for a real run.
 | `--timeout` | 300 | The longest wait, in seconds, for any one simulator call, including the map load. Must be above 0. See "Stopping a run". |
 | `--fake` | off | Use the fake simulator. Do not use it for the real run. |
 
-`spike_sensors.py` and `spike_multicar.py` also take `--rates` (how often each sensor is read, see "Reading each sensor at its own rate" under Run 2), `--dump-raw N` (default 0, which writes nothing; see "The raw GPS and IMU dump" under Run 2), `--stream` (default off; see "Streaming the lidar and camera" under Run 2) and `--mode` (default `lockstep`; see "Letting the simulator run on its own" under Run 2). `spike_lidar_rerun.py` takes `--rates`, `--mode` (default `free`) and `--stream` (default on with `--mode free`; `--no-stream` turns it off); see Demo 1.
+`spike_sensors.py` and `spike_multicar.py` also take `--rates` (how often each sensor is read, see "Reading each sensor at its own rate" under Run 2), `--dump-raw N` (default 0, which writes nothing; see "The raw GPS and IMU dump" under Run 2), `--stream` (default off; see "Streaming the lidar and camera" under Run 2) and `--mode` (default `lockstep`; see "Letting the simulator run on its own" under Run 2). `spike_lidar_rerun.py` takes `--rates` (reads per wall second; it needs `--mode free`), `--mode` (default `free`) and `--stream` (default on with `--mode free`; `--no-stream` turns it off); see Demo 1.
 
 Each script starts BeamNG.tech itself and closes it when the run ends. Close any BeamNG.tech that is already running before you start a script. The bridge connects to the simulator on a fixed local port, so a second copy may block the connection.
 
@@ -610,7 +610,7 @@ This script drives our car in traffic mode with AI traffic and sends the lidar p
 
 By default the script runs free with streaming, the same as `--mode free --stream`:
 
-- The simulator runs on its own, as in "Letting the simulator run on its own" under Run 2. The lidar and camera are read from shared memory with `stream()`. The radar, GPS, IMU and the Timer are polled. Every read follows the free-mode schedule: each pass reads the due lidar and camera first, then at most one due poll. The free-mode default rates apply: `lidar=20,camera=40,radar=10,gps=10,imu=10`, and the Timer at 10. `--rates` changes them.
+- The simulator runs on its own, as in "Letting the simulator run on its own" under Run 2. The lidar and camera are read from shared memory with `stream()`. The radar, GPS, IMU and the Timer are polled. Every read follows the free-mode schedule: each pass reads the due lidar and camera first, then at most one due poll. The free-mode default rates apply: `lidar=20,camera=40,radar=10,gps=10,imu=10`, and the Timer at 10. `--rates` changes them, in reads per wall second.
 - Every lidar scan and camera image that is read goes to Rerun at its Timer time, as the simulator gave it. The points are not coloured by distance. Nothing is logged under `ground_truth/`, because reading our car's or the traffic cars' positions is a request, like a poll, and would hold up the lidar.
 - After the run the script prints the same tables as `spike_sensors.py --mode free --stream`, including the `schedule` table (see "Late and skipped reads"), the real-time factor and, per sensor, `new_per_s` beside `req_hz`.
 
@@ -646,7 +646,7 @@ rerun recordings/demo.rrd
 
 ### What it prints
 
-By default: the five `sensor:` lines (lidar and camera end in `is_streaming=True`), a `spawned` line, the measuring tables of Run 2 in free mode, then two lines. With `--seconds 2 --traffic 0` on the fake simulator (the `sensor:` lines and the tables are left out here):
+By default: the five `sensor:` lines (lidar and camera end in `is_streaming=True`), a `spawned` line, the measuring tables of Run 2 in free mode, then two lines (three when a camera reading had no colour image, see below). With `--seconds 2 --traffic 0` on the fake simulator (the `sensor:` lines and the tables are left out here):
 
 ```
 spawned kite1 (model: vivace, config: vehicles/vivace/tograc_qE.pc)
@@ -671,7 +671,9 @@ With `--mode lockstep`, these lines appear only when they apply:
 - `lidar gave no reading on N of M steps; no lidar was logged for them`, after `logged N steps`.
 - `camera gave no reading on N of M steps; no image was logged for them`, after `logged N steps`.
 
-In both modes, `traffic not spawned (...)` appears as above, and `wrote recordings\demo.rrd` with `--save` after a successful run. In free mode, a lidar or camera reading that is empty, unexpected or suspect is not logged. The tables count it under `empty`, `unexp` or `suspect`.
+In both modes, `traffic not spawned (...)` appears as above, and `wrote recordings\demo.rrd` with `--save` after a successful run.
+
+In free mode, a lidar or camera reading that is empty, unexpected or suspect is not logged. The tables count it under `empty`, `unexp` or `suspect`. The script does not log a camera reading that has no colour image either. That reading passes the stream check and the tables count it as a reading, so the script prints `camera gave N readings without a colour image; not logged` after the `logged ...` line.
 
 On the fake simulator with `--save demo.rrd`, the script writes no file and prints `--fake keeps nothing; the recording would have gone to scratch\R27\out\demo.rrd` instead.
 
