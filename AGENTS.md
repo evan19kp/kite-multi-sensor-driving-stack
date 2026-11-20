@@ -408,6 +408,21 @@ Each item that introduces a lasting rule adds a "## Standing rules (R<n>)" secti
   lock-step demo unchanged. `spike_sensors.py` and `spike_multicar.py` keep `--mode lockstep` as
   their default, and lock-step output has no `schedule`.
 
+## Standing rules (R37)
+
+- Camera images in a recording or dataset are stored only losslessly (PNG through
+  `rerun_view.pillow_png` today); no lossy image format anywhere. `bridge/tests/test_rerun_view.py`
+  checks the encoder used and that no bridge code names a lossy format.
+- Only `bridge/kite_bridge/rerun_view.py` imports numpy and Pillow, each only lazily inside a
+  function; its `ListArrays` path and a fake encoder are for tests and the fake only, and tests
+  import neither.
+- Free-mode Rerun logging gets only new readings from `common.measure_sensors` (`on_reading`,
+  decided by `measure.Freshness` on `raw_data` fingerprints); no script keeps a second rule.
+- `world/ego` is placed only from a position-measuring sensor reading (the GPS), never from
+  simulator state; without such a position it stays at the origin and the run says how many
+  GPS polls lacked one. This adds to R19: simulator positions stay under `ground_truth/`.
+  `--live-stride` thins the live viewer only; a recording keeps every lidar point.
+
 ## Simulator files (hard rule)
 
 - Never read, list, search, copy, launch or write about the simulator's install folder, its user

@@ -42,10 +42,13 @@ the spikes on it, and nothing here has run against an installed Rerun yet.
   shared by the scripts.
 - `kite_bridge/output_guard.py`: the provenance text every written file carries and the `--out`
   check. It imports nothing outside the standard library.
-- `kite_bridge/rerun_view.py`: the only module that imports `rerun`, and only inside a method.
-  It holds the entity paths, the pure distance-to-colour function, `log_step` (lock-step),
-  `log_reading` (free mode) and the recorders.
-  Its Rerun calls are guesses until the first real run and carry `# ASSUMPTION:` comments.
+- `kite_bridge/rerun_view.py`: the only module that imports `rerun`, numpy and Pillow, each
+  only inside a method. It holds the entity paths, the pure distance-to-colour function,
+  `log_step` (lock-step), `log_reading` (free mode), `gps_position` and the recorders. The real
+  recorder hands lidar points and camera images to Rerun as numpy arrays (`NumpyArrays`), with no
+  Python loop over points or pixels. `ListArrays` does the same work on plain lists, only for
+  tests and the fake. Its Rerun calls are guesses until the first real run and carry
+  `# ASSUMPTION:` comments.
 - `spike_connect.py`, `spike_sensors.py`, `spike_multicar.py`: the spike scripts.
 - `spike_lidar_rerun.py`: Demo 1, the Rerun lidar demo.
 - `requirements.txt`: `beamngpy==1.36` and `rerun-sdk`. Tests need neither.
@@ -60,8 +63,9 @@ fake simulator and needs no simulator. `spike_sensors.py` and `spike_multicar.py
 with `--mode free` reads per wall second, default `lidar=20,camera=40,radar=10,gps=10,imu=10`),
 `--dump-raw N` (default 0), `--stream` (default off) and `--mode lockstep|free` (default
 `lockstep`). `spike_lidar_rerun.py` takes `--rates` (reads per wall second, default
-`lidar=20,camera=40,radar=10,gps=10,imu=10`; it needs `--mode free`), `--mode` (default `free`)
-and `--stream`/`--no-stream` (default on with `--mode free`); see "Rerun lidar demo".
+`lidar=20,camera=40,radar=10,gps=10,imu=10`; it needs `--mode free`), `--mode` (default `free`),
+`--stream`/`--no-stream` (default on with `--mode free`), `--save NAME.rrd` and `--live-stride N`
+(default 1); see "Rerun lidar demo".
 
 `--timeout` is the longest wait in seconds for any one simulator call, map loading included; it
 must be above 0. Every run ends BeamNG.tech through one shutdown path. After a normal run or an
@@ -186,18 +190,29 @@ sensor data, and scores results but never drives anything.
 ## Rerun lidar demo
 
 `spike_lidar_rerun.py` drives our car in traffic mode with AI traffic and logs on one `sim_time`
-timeline. It takes the common options above plus `--mode`, `--stream`/`--no-stream`, `--rates`
-and `--save NAME.rrd`.
+timeline. It takes the common options above plus `--mode`, `--stream`/`--no-stream`, `--rates`,
+`--save NAME.rrd` and `--live-stride N`.
 
 By default it runs `--mode free --stream`. `common.measure_sensors` reads the sensors on the
 free-mode schedule, with the streamed lidar and camera first, at most one poll per pass and the
-free-mode default rates, and passes each reading to `rerun_view.log_reading`. Each lidar scan's
-`pointCloud` goes under `world/ego/lidar` and each camera `colour` image under `camera/image`, at
-its Timer time, as BeamNGpy gave them. It logs no distance colours and no ground truth, because
-reading a position is a request that would hold up the lidar. The script then prints the measuring tables,
-the `schedule` table included, and how many scans and images it logged. It does not log a camera
-reading with no colour image, and prints how many there were. `--no-stream` polls the
-lidar and camera too.
+free-mode default rates. It passes each reading whose content is new (the `new` rule of the
+measuring table) to the script, so a scan or image read twice is logged once. Each new lidar
+scan's x, y, z go under `world/ego/lidar`, coloured by distance in x and y from `world/ego`, and
+each new camera `colour` image under `camera/image`, at its Timer time. BeamNG's per-point
+`colours` are never logged. `world/ego` is our car as the sensors place it: the x and y in
+metres of the GPS's latest new reading (`rerun_view.gps_position`), at height 0 because GPS gives
+no height, or the origin until the GPS gives an x and y. It never comes from simulator state.
+The script logs no ground truth in free mode, because reading a position from the simulator is
+a request that would hold up the lidar. It then prints the measuring
+tables, the `schedule` table included, and how many scans and images it logged. It does not log
+a lidar scan with a point whose x, y or z is not finite, or a camera reading with no colour
+image, and prints how many new ones there were; the run goes on. It prints how many new GPS polls
+had no position in their latest reading. `--no-stream` polls the lidar and camera too.
+
+The recorder sends a default layout: a 3D view whose origin is `world/ego`, so it follows our
+car, beside the camera image and the provenance text. If the installed Rerun cannot take it, the
+script prints `default layout not sent (...)` and goes on; set the 3D view's origin to
+`/world/ego` in the viewer by hand.
 
 `--mode lockstep` is the demo as before; it takes neither `--stream` nor `--rates` (usage error,
 exit code 2). Once per simulator step it logs lidar points coloured by distance from our car
@@ -208,11 +223,15 @@ are ground truth, shown for display only under `ground_truth/ego/position` and
 When the lidar or the camera gives no reading on a step, nothing is logged for that sensor and the
 script prints how many steps that was.
 
-- Without `--save` it spawns a Rerun viewer.
+- Without `--save` it spawns a Rerun viewer and passes camera images as they are.
+  `--live-stride N` (a whole number, default 1) shows every Nth lidar point.
 - With `--save` it writes `<--out>/NAME.rrd` and opens no viewer; open the file later with
   `rerun <file>`. The name must end in `.rrd` and stay inside `--out` (no absolute path, drive or
-  `..`), else the script exits with a usage error. After Ctrl+C the recording is closed before
-  BeamNG.tech, so the file keeps everything logged until then.
+  `..`), else the script exits with a usage error. The recording keeps every lidar point, so
+  `--live-stride` with `--save` is a usage error. Each camera image is stored as a PNG (lossless,
+  through Pillow, which BeamNGpy installs). After a run the script prints the file's size on disk
+  after close, in MB per simulated second, and the time spent encoding PNGs. After Ctrl+C the
+  recording is closed before BeamNG.tech, so the file keeps everything logged until then.
 - With `--fake` it uses the fake simulator and a recorder that keeps nothing: no viewer, no
   Rerun import and no file, even with `--save`.
 
