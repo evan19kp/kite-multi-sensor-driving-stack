@@ -310,7 +310,7 @@ fake.
   `docs/SPIKE-0B.md` updated. Tests (fake only, fake clock): 20 ms slow polls, 1 ms streams and a
   10 Hz lidar give every lidar update read within one slow poll of appearing; a starved sensor is
   reported, never silently skipped; lock-step unchanged.
-- [ ] **R37 Fast, smaller Rerun path** (perf, Opus builder; needs R36): `rerun_view.py` logs lidar
+- [x] **R37 Fast, smaller Rerun path** (perf, Opus builder; needs R36): `rerun_view.py` logs lidar
   points and camera images as arrays (numpy lazily, in that module only; a pure-Python path only for
   tests and the fake), distance colours in one array operation; only new scans and frames logged;
   BeamNG's per-point `colours` never logged; `--save` camera frames stored losslessly compressed;

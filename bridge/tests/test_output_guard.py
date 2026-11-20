@@ -12,7 +12,7 @@ from unittest import mock
 
 from tests import BRIDGE_DIR
 from tests.test_car_and_versions import LOCKSTEP_ARGS
-from tests.test_rerun_view import fake_rerun, fake_session
+from tests.test_rerun_view import FakePng, fake_rerun, fake_session, installed, plain_lists
 from kite_bridge import common, output_guard
 from kite_bridge.output_guard import out_refusal, repo_roots
 
@@ -192,8 +192,8 @@ class MarkerInRecordingTest(unittest.TestCase):
         self.order = []
         for name in ("init", "save", "log"):
             getattr(fake, name).side_effect = lambda *a, _name=name, **k: self.order.append(_name)
-        with mock.patch.dict(sys.modules, {"rerun": fake}):
-            spike_lidar_rerun.make_recorder(save_path, False)
+        with installed(fake):
+            spike_lidar_rerun.make_recorder(save_path, False, 1)
         return fake
 
     def test_a_saved_recording_starts_with_one_provenance_text_entry(self):
@@ -211,9 +211,10 @@ class MarkerInRecordingTest(unittest.TestCase):
     def test_a_whole_script_run_logs_the_provenance_once_before_any_step(self):
         import spike_lidar_rerun
 
-        fake = fake_rerun()
+        fake = fake_rerun(writes=1)
         with tempfile.TemporaryDirectory() as tmp, contextlib.ExitStack() as stack:
-            stack.enter_context(mock.patch.dict(sys.modules, {"rerun": fake}))
+            stack.enter_context(installed(fake))
+            stack.enter_context(plain_lists(FakePng()))
             stack.enter_context(mock.patch.object(common, "session", fake_session))
             stack.enter_context(contextlib.redirect_stdout(io.StringIO()))
             code = spike_lidar_rerun.main(["--home", tmp, "--mode", "lockstep", "--out", str(Path(tmp) / "out"),

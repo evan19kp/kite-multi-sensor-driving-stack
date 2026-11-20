@@ -13,7 +13,7 @@ from tests.test_free_running import SENSOR_RATES, BoundedClock
 from tests.test_scripts import run_script
 from kite_bridge import common, rates
 from kite_bridge.fake_sim import FakeSim
-from kite_bridge.rerun_view import CAMERA_PATH, EGO_PATH, GROUND_TRUTH_PATH, LIDAR_PATH
+from kite_bridge.rerun_view import CAMERA_PATH, EGO_PATH, GROUND_TRUTH_PATH, LIDAR_PATH, ORIGIN
 from kite_bridge.stream_check import reading_from_stream
 
 # Evan's real runs: a poll costs about 20 ms, a streamed read about 1 ms.
@@ -187,8 +187,14 @@ class RawRecorder:
     def set_time(self, seconds):
         self.calls.append(("time", seconds))
 
+    def log_lidar(self, path, cloud, centre):
+        self.calls.append(("points", path, cloud, centre))
+
     def log_points(self, path, positions, colors):
         self.calls.append(("points", path, positions, colors))
+
+    def log_translation(self, path, translation):
+        self.calls.append(("translation", path, translation))
 
     def log_image(self, path, image):
         self.calls.append(("image", path, image))
@@ -227,7 +233,7 @@ class LiveViewerDefaultTest(unittest.TestCase):
             stack.enter_context(mock.patch.object(common, "FakeSim", make))
             stack.enter_context(mock.patch.object(common, "wall_clock", clock.now))
             stack.enter_context(mock.patch.object(common, "wall_sleep", clock.sleep))
-            stack.enter_context(mock.patch.object(spike_lidar_rerun, "make_recorder", lambda path, fake: recorder))
+            stack.enter_context(mock.patch.object(spike_lidar_rerun, "make_recorder", lambda *args: recorder))
             stack.enter_context(contextlib.redirect_stdout(stdout))
             stack.enter_context(contextlib.redirect_stderr(stderr))
             code = spike_lidar_rerun.main(["--fake", "--seconds", "1", "--traffic", "0", "--out", tmp, *argv])
@@ -246,17 +252,19 @@ class LiveViewerDefaultTest(unittest.TestCase):
         self.assertNotIn("camera", sim.starts)
         self.assertEqual(recorder.closed, 1)
 
-    def test_each_streamed_scan_and_image_is_logged_at_its_timer_time_without_ground_truth(self):
+    def test_each_new_streamed_scan_and_image_is_logged_once_at_its_timer_time_without_ground_truth(self):
         _, stdout, _, (sim,), recorder = self.run_main()
         lidar = [c for c in recorder.calls if c[0] == "points"]
         images = [c for c in recorder.calls if c[0] == "image"]
-        # One lidar call per streamed lidar read; the free defaults read it 20 times per wall
-        # second, at k / 20 for k = 0 to 20 in a 1 s run.
-        self.assertEqual(len(lidar), len(sim.lidar_reads))
-        self.assertEqual(len(lidar), 21)
-        self.assertEqual({(c[1], c[3]) for c in lidar}, {(LIDAR_PATH, None)})
+        # The free defaults read the lidar 20 times per wall second, at k / 20 for k = 0 to 20 in
+        # a 1 s run. The fake lidar updates 10 times per simulated second (SENSOR_RATES), so each
+        # update is read twice and logged once: updates 0 to 10.
+        self.assertEqual(len(sim.lidar_reads), 21)
+        self.assertEqual(len(lidar), len({update for _, update in sim.lidar_reads}))
+        self.assertEqual(len(lidar), 11)
+        self.assertEqual({(c[1], c[3]) for c in lidar}, {(LIDAR_PATH, ORIGIN)})
         self.assertEqual({c[1] for c in images}, {CAMERA_PATH})
-        self.assertIn(f"logged 21 lidar scans and {len(images)} camera images at Timer times", stdout)
+        self.assertIn(f"logged 11 lidar scans and {len(images)} camera images at Timer times", stdout)
         self.assertNotIn(EGO_PATH, [c[1] for c in recorder.calls if c[0] != "time"])
         self.assertNotIn(GROUND_TRUTH_PATH, [c[1] for c in recorder.calls if c[0] != "time"])
         times = [c[1] for c in recorder.calls if c[0] == "time"]
@@ -268,10 +276,11 @@ class LiveViewerDefaultTest(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertEqual([c for c in recorder.calls if c[0] == "image"], [])
         # The free default reads the camera 40 times per wall second, at k / 40 for k = 0 to 40
-        # in a 1 s run, and none of those readings has a colour image.
+        # in a 1 s run, and none of those readings has a colour image. All 41 hold the same
+        # content, so only the first is new and reaches the logger.
         self.assertEqual(sim.camera_reads, 41)
-        self.assertIn("logged 21 lidar scans and 0 camera images at Timer times", stdout)
-        self.assertIn("camera gave 41 readings without a colour image; not logged", stdout)
+        self.assertIn("logged 11 lidar scans and 0 camera images at Timer times", stdout)
+        self.assertIn("camera gave 1 new readings without a colour image; not logged", stdout)
 
     def test_every_camera_image_logged_prints_no_not_logged_line(self):
         _, stdout, _, _, _ = self.run_main()

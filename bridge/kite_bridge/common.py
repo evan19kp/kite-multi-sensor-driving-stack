@@ -351,8 +351,10 @@ def measure_sensors(sim, cars, seconds, clock=None, dump=None, poll_rates=None, 
     second. `clock` returns wall seconds and `sleep` waits for wall seconds; a test passes fake
     ones. Without them the run uses `wall_clock` and `wall_sleep`, real time. `dump`, a
     RawDump, collects the raw GPS and IMU readings. `on_reading(key, reading)`, if given, is
-    called on the loop's thread with each reading that has a timestamp, after it is counted; its
-    time counts as our processing.
+    called on the loop's thread with each reading whose content is new, after it is counted; its
+    time counts as our processing. New is `measure.Freshness` on the poll's fingerprints from
+    `raw_data`: the rule `new_readings` counts by for the lidar, camera and radar. For GPS and IMU
+    it compares the fingerprints of all readings in the poll with the previous poll's.
 
     `mode` FREE replaces the steps. The simulator runs on its own and each sensor is read on
     the wall-clock schedule in `rates`, so the rates are reads per wall second. Each pass reads
@@ -599,6 +601,7 @@ class _Tally:
         self.sizes = {key: 0 for key in keys}
         self.poll_keys = {key: [] for key in keys}
         self.reading_keys = {key: [] for key in keys}
+        self.fresh = {key: measure.Freshness() for key in keys}
 
     def read(self, sim, key, clock, loop_started, step, timer_s=None):
         method = "stream" if key in self.streamed else "poll"
@@ -642,7 +645,7 @@ class _Tally:
             self.points[key].append(reading.points)
         if reading.detections is not None:
             self.detections[key].append(reading.detections)
-        if self.on_reading is not None and reading.timestamp is not None:
+        if self.fresh[key].is_new(stats.keys or None) and self.on_reading is not None:
             self.on_reading(key, reading)
 
 
