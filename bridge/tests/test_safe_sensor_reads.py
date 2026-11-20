@@ -11,6 +11,7 @@ from unittest import mock
 
 from tests import BRIDGE_DIR
 from tests.fake_array import FakeArray
+from tests.test_car_and_versions import LOCKSTEP_ARGS
 from tests.test_scripts import run_script
 from kite_bridge import common
 from kite_bridge.fake_sim import FakeSim
@@ -150,7 +151,7 @@ class SettingsLinesTest(unittest.TestCase):
 
     def test_every_script_prints_one_line_per_sensor_before_the_run(self):
         for script in ("spike_connect", "spike_sensors", "spike_multicar", "spike_lidar_rerun"):
-            by_kind, lines = self.sensor_lines(script)
+            by_kind, lines = self.sensor_lines(script, *LOCKSTEP_ARGS.get(script, ()))
             self.assertEqual(list(by_kind), list(SENSOR_KINDS), script)
             spawned = next(i for i, line in enumerate(lines) if line.startswith("spawned"))
             for line in by_kind.values():

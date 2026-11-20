@@ -24,7 +24,10 @@ at most the one slow poll already running. A read at wall time a moves its senso
 the first k / r after a (`next_due`). A read that comes late therefore covers its own due time;
 the due times it passed over are skipped (`skipped` counts them), never made up in a burst. With
 reads that take no time a run of W wall seconds gives ceil(W * r) reads at times below W. A read
-is late when it starts LATE_S or more after its due time. Wall times are finite seconds >= 0.
+is late when it starts LATE_S or more after its due time. LATE_S is 2 ms: in two 2-second free
+runs on the fake (real clock, developer machine) the worst start after a due time with no slow
+poll in the way was 1.1 ms of sleep wake-up delay, and one slow poll is about 20 ms. Wall times
+are finite seconds >= 0.
 
 `parse_rates` is the boundary: it turns the `--rates` text into a dict by sensor kind and
 raises ValueError for anything outside the domain.
@@ -40,7 +43,7 @@ FREE_DEFAULT_RATES = {"lidar": 20, "camera": 40, "radar": 10, "gps": 10, "imu": 
 DEFAULT_RATES_TEXT = ",".join(f"{kind}={rate}" for kind, rate in DEFAULT_RATES.items())
 FREE_DEFAULT_RATES_TEXT = ",".join(f"{kind}={rate}" for kind, rate in FREE_DEFAULT_RATES.items())
 ALL = "all"
-LATE_S = Fraction(1, 1000)
+LATE_S = Fraction(2, 1000)
 
 
 def _rate(name, text):

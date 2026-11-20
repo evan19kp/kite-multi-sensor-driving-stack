@@ -13,6 +13,7 @@ from pathlib import Path
 from unittest import mock
 
 from tests import BRIDGE_DIR
+from tests.test_car_and_versions import LOCKSTEP_ARGS
 from tests.test_release import Sensor
 from tests.test_rerun_view import RecordingRecorder
 from kite_bridge import common
@@ -85,7 +86,8 @@ class ShutdownTest(unittest.TestCase):
             stack.enter_context(contextlib.redirect_stdout(stdout))
             stack.enter_context(contextlib.redirect_stderr(stderr))
             started = time.monotonic()
-            code = module.main(["--fake", "--seconds", "1", "--traffic", "0", "--out", str(self.out), *argv])
+            code = module.main(["--fake", "--seconds", "1", "--traffic", "0", "--out", str(self.out),
+                                *LOCKSTEP_ARGS.get(script, ()), *argv])
             elapsed = time.monotonic() - started
         self.assertLess(elapsed, LIMIT_S)
         return code, stderr.getvalue().splitlines(), made
@@ -274,8 +276,8 @@ class RecordingAfterCtrlCTest(unittest.TestCase):
             stack.enter_context(contextlib.redirect_stdout(io.StringIO()))
             stack.enter_context(contextlib.redirect_stderr(stderr))
             started = time.monotonic()
-            code = spike_lidar_rerun.main(["--fake", "--seconds", "1", "--traffic", "0", "--out", tmp,
-                                           "--save", "demo.rrd"])
+            code = spike_lidar_rerun.main(["--fake", "--mode", "lockstep", "--seconds", "1", "--traffic", "0",
+                                           "--out", tmp, "--save", "demo.rrd"])
         self.assertLess(time.monotonic() - started, LIMIT_S)
         self.assertEqual((code, stderr.getvalue()), (130, "interrupted: BeamNG.tech closed\n"))
         self.assertEqual(recorder.closed, 1)
