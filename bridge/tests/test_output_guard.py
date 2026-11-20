@@ -11,6 +11,7 @@ from pathlib import Path
 from unittest import mock
 
 from tests import BRIDGE_DIR
+from tests.test_car_and_versions import LOCKSTEP_ARGS
 from tests.test_rerun_view import fake_rerun, fake_session
 from kite_bridge import common, output_guard
 from kite_bridge.output_guard import out_refusal, repo_roots
@@ -126,7 +127,8 @@ class ScriptOutFolderTest(FakeRepoCase):
         with (mock.patch.object(common, "repo_roots", lambda: [self.repo]),
               contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr)):
             try:
-                code = module.main(["--fake", "--seconds", "1", "--traffic", "0", "--out", str(out), *argv])
+                code = module.main(["--fake", "--seconds", "1", "--traffic", "0", "--out", str(out),
+                                    *LOCKSTEP_ARGS.get(script, ()), *argv])
             except SystemExit as stop:
                 code = stop.code
         return code, stdout.getvalue(), stderr.getvalue()
@@ -214,7 +216,7 @@ class MarkerInRecordingTest(unittest.TestCase):
             stack.enter_context(mock.patch.dict(sys.modules, {"rerun": fake}))
             stack.enter_context(mock.patch.object(common, "session", fake_session))
             stack.enter_context(contextlib.redirect_stdout(io.StringIO()))
-            code = spike_lidar_rerun.main(["--home", tmp, "--out", str(Path(tmp) / "out"),
+            code = spike_lidar_rerun.main(["--home", tmp, "--mode", "lockstep", "--out", str(Path(tmp) / "out"),
                                            "--seconds", "0.05", "--traffic", "0", "--save", "demo.rrd"])
         self.assertEqual(code, 0)
         fake.TextLog.assert_called_once_with(MARKER)

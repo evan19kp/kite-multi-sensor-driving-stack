@@ -12,7 +12,7 @@ from unittest import mock
 
 from tests import BRIDGE_DIR
 from kite_bridge import common, rerun_view
-from kite_bridge.fake_sim import FakeSim
+from kite_bridge.fake_sim import FakeClock, FakeSim
 from kite_bridge.readings import image_from_raw, points_from_raw, reading_from_raw
 from kite_bridge.rerun_view import (CAMERA_PATH, EGO_PATH, GROUND_TRUTH_PATH, LIDAR_PATH,
                                     distance_colour, log_step)
@@ -257,7 +257,7 @@ class ScriptTest(unittest.TestCase):
                 stack.enter_context(mock.patch.object(common, "FakeSim", sim_class))
             stack.enter_context(contextlib.redirect_stdout(stdout))
             stack.enter_context(contextlib.redirect_stderr(stderr))
-            code = spike_lidar_rerun.main(["--fake", "--out", self.out, *argv])
+            code = spike_lidar_rerun.main(["--fake", "--mode", "lockstep", "--out", self.out, *argv])
         return code, stdout.getvalue(), stderr.getvalue()
 
     def test_two_seconds_log_five_calls_per_step_on_one_increasing_timeline(self):
@@ -388,7 +388,8 @@ class CommandLineTest(unittest.TestCase):
     def test_a_fake_run_writes_no_file_even_with_save(self):
         with tempfile.TemporaryDirectory() as tmp:
             out = Path(tmp) / "out"
-            code, stdout, stderr = run_script("--fake", "--seconds", "1", "--out", str(out), "--save", "demo.rrd")
+            code, stdout, stderr = run_script("--fake", "--mode", "lockstep", "--seconds", "1", "--out", str(out),
+                                              "--save", "demo.rrd")
             self.assertEqual(code, 0, stderr)
             self.assertIn("logged 60 steps", stdout)
             self.assertIn(str(out / "demo.rrd"), stdout)
@@ -500,7 +501,7 @@ class RealRecorderTest(unittest.TestCase):
         import spike_lidar_rerun
 
         out = self.tmp / "out"
-        argv = ["--home", str(self.tmp), "--out", str(out), "--seconds", "0.05",
+        argv = ["--home", str(self.tmp), "--mode", "lockstep", "--out", str(out), "--seconds", "0.05",
                 "--traffic", "0", "--save", "day1/demo.rrd"]
         stdout, stderr = io.StringIO(), io.StringIO()
         with contextlib.ExitStack() as stack:
@@ -521,10 +522,14 @@ class NoRerunTest(unittest.TestCase):
     def test_running_the_script_against_the_fake_imports_neither_rerun_nor_the_adapter(self):
         import spike_lidar_rerun
 
-        with tempfile.TemporaryDirectory() as tmp, contextlib.redirect_stdout(io.StringIO()):
-            self.assertEqual(spike_lidar_rerun.main(["--fake", "--seconds", "1", "--out", tmp]), 0)
-        for name in ("rerun", "beamngpy", "kite_bridge.beamng_adapter"):
-            self.assertNotIn(name, sys.modules)
+        clock = FakeClock()
+        for mode in ("lockstep", "free"):
+            with (tempfile.TemporaryDirectory() as tmp, contextlib.redirect_stdout(io.StringIO()),
+                  mock.patch.object(common, "FakeSim", lambda: FakeSim(clock=clock)),
+                  mock.patch.object(common, "wall_clock", clock.now), mock.patch.object(common, "wall_sleep", clock.sleep)):
+                self.assertEqual(spike_lidar_rerun.main(["--fake", "--mode", mode, "--seconds", "1", "--out", tmp]), 0)
+            for name in ("rerun", "beamngpy", "kite_bridge.beamng_adapter"):
+                self.assertNotIn(name, sys.modules, mode)
 
     def test_only_rerun_view_imports_rerun(self):
         sources = [*BRIDGE_DIR.glob("*.py"), *(BRIDGE_DIR / "kite_bridge").glob("*.py")]

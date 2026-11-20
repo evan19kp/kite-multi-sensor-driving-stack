@@ -13,8 +13,11 @@ from pathlib import Path
 from unittest import mock
 
 from tests import BRIDGE_DIR
+from tests.test_car_and_versions import LOCKSTEP_ARGS
+from tests.test_free_running import BoundedClock
 from tests.test_release import Sensor
 from tests.test_rerun_view import RecordingRecorder
+from tests.test_slow_polls import RawRecorder
 from kite_bridge import common
 from kite_bridge.fake_sim import FakeSim
 from kite_bridge.sim_api import remove_all
@@ -85,7 +88,8 @@ class ShutdownTest(unittest.TestCase):
             stack.enter_context(contextlib.redirect_stdout(stdout))
             stack.enter_context(contextlib.redirect_stderr(stderr))
             started = time.monotonic()
-            code = module.main(["--fake", "--seconds", "1", "--traffic", "0", "--out", str(self.out), *argv])
+            code = module.main(["--fake", "--seconds", "1", "--traffic", "0", "--out", str(self.out),
+                                *LOCKSTEP_ARGS.get(script, ()), *argv])
             elapsed = time.monotonic() - started
         self.assertLess(elapsed, LIMIT_S)
         return code, stderr.getvalue().splitlines(), made
@@ -274,12 +278,82 @@ class RecordingAfterCtrlCTest(unittest.TestCase):
             stack.enter_context(contextlib.redirect_stdout(io.StringIO()))
             stack.enter_context(contextlib.redirect_stderr(stderr))
             started = time.monotonic()
-            code = spike_lidar_rerun.main(["--fake", "--seconds", "1", "--traffic", "0", "--out", tmp,
-                                           "--save", "demo.rrd"])
+            code = spike_lidar_rerun.main(["--fake", "--mode", "lockstep", "--seconds", "1", "--traffic", "0",
+                                           "--out", tmp, "--save", "demo.rrd"])
         self.assertLess(time.monotonic() - started, LIMIT_S)
         self.assertEqual((code, stderr.getvalue()), (130, "interrupted: BeamNG.tech closed\n"))
         self.assertEqual(recorder.closed, 1)
         self.assertEqual(len([c for c in recorder.calls if c[0] == "time"]), 30)
+
+    def test_ctrl_c_in_the_default_free_run_closes_the_recording_before_beamng(self):
+        import spike_lidar_rerun
+
+        for method, call in (("stream", 5), ("timer_seconds", 2)):
+            with self.subTest(method=method):
+                clock = BoundedClock()
+                sims = []
+                recorder = ClosingOrderRecorder(sims)
+
+                def make():
+                    sims.append(CtrlCOnCall(method, call, clock=clock))
+                    return sims[-1]
+
+                stderr = io.StringIO()
+                with tempfile.TemporaryDirectory() as tmp, contextlib.ExitStack() as stack:
+                    stack.enter_context(mock.patch.object(spike_lidar_rerun, "make_recorder",
+                                                          lambda path, fake: recorder))
+                    stack.enter_context(mock.patch.object(common, "FakeSim", make))
+                    stack.enter_context(mock.patch.object(common, "wall_clock", clock.now))
+                    stack.enter_context(mock.patch.object(common, "wall_sleep", clock.sleep))
+                    stack.enter_context(contextlib.redirect_stdout(io.StringIO()))
+                    stack.enter_context(contextlib.redirect_stderr(stderr))
+                    code = spike_lidar_rerun.main(["--fake", "--seconds", "1", "--traffic", "0", "--out", tmp,
+                                                   "--save", "demo.rrd"])
+                self.assertEqual((code, stderr.getvalue()), (130, "interrupted: BeamNG.tech closed\n"))
+                self.assertEqual(recorder.closed, 1)
+                self.assertEqual(recorder.sims_closed_when_closed, [False])
+                self.assertEqual([(s.sensors_removed, s.closed) for s in sims], [(False, True)])
+                self.assertEqual(sims[0].calls[method], call)
+                if method == "stream":
+                    # Every streamed read before the interrupted one gave a lidar scan or a camera
+                    # image with a colour image, and each was logged.
+                    logged = [c for c in recorder.calls if c[0] in ("points", "image")]
+                    self.assertEqual(len(logged), call - 1)
+
+
+class CtrlCOnCall(FakeSim):
+    """Raises KeyboardInterrupt on call number `call` of `method` ("stream" or "timer_seconds")."""
+
+    def __init__(self, method, call, **kwargs):
+        super().__init__(**kwargs)
+        self.method, self.call = method, call
+        self.calls = {"stream": 0, "timer_seconds": 0}
+
+    def _count(self, method):
+        self.calls[method] += 1
+        if method == self.method and self.calls[method] == self.call:
+            raise KeyboardInterrupt
+
+    def stream(self, car, kind):
+        self._count("stream")
+        return super().stream(car, kind)
+
+    def timer_seconds(self):
+        self._count("timer_seconds")
+        return super().timer_seconds()
+
+
+class ClosingOrderRecorder(RawRecorder):
+    """Notes, when the recording closes, whether each simulator was already closed."""
+
+    def __init__(self, sims):
+        super().__init__()
+        self.sims = sims
+        self.sims_closed_when_closed = None
+
+    def close(self):
+        super().close()
+        self.sims_closed_when_closed = [s.closed for s in self.sims]
 
 
 def run_script(name, *args):

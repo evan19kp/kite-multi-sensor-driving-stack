@@ -6,6 +6,7 @@ STEP_HZ = 60
 SENSOR_KINDS = ("lidar", "camera", "radar", "gps", "imu")
 BUFFERED_KINDS = ("gps", "imu")
 STREAMED_KINDS = ("lidar", "camera")
+TIMER = "timer"
 SENSOR_TIME = "sensor"
 POLL_TIME = "poll"
 TIMER_TIME = "timer"

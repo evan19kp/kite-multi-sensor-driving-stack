@@ -300,7 +300,7 @@ The live lidar view runs in real time and recordings stay small, measured. This 
 claims nothing until Evan's run prints it. Agents never run the real simulator; every test uses the
 fake.
 
-- [ ] **R36 Slow polls never hold up the lidar; free + stream is the live default** (perf, Opus
+- [x] **R36 Slow polls never hold up the lidar; free + stream is the live default** (perf, Opus
   builder): in free mode each pass reads due streamed lidar and camera first, then at most one due
   slow poll (radar, GPS, IMU or Timer, the most overdue first), all on one thread; free-mode
   defaults `lidar=20,camera=40,radar=10,gps=10,imu=10`, Timer at 10 (lock-step defaults unchanged);
