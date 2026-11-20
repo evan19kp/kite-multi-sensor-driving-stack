@@ -706,7 +706,7 @@ This run checks the Sprint 0B.3 changes to Demo 1 with its default `--mode free 
 
 - The script hands lidar points and camera images to Rerun as numpy arrays. The distance colours are worked out for a whole scan at once. No Python loop runs over points or pixels in `bridge/kite_bridge/rerun_view.py`. `--mode lockstep` still turns each poll into Python lists in the adapter first, so Run 4 uses the free default.
 - Only new data is logged. A lidar scan or camera image goes to Rerun only when its content differs from the previous one, by the rule behind the `new` column of the tables. BeamNG's per-point `colours` are never logged.
-- `--save` keeps every lidar point and stores each camera image as a PNG through Pillow, which BeamNGpy installs. PNG is lossless: the file holds exactly the pixels the camera gave. The live viewer gets the images as they are, without encoding.
+- `--save` keeps every lidar point and stores each camera image as a PNG through Pillow, which BeamNGpy installs. PNG is lossless, so the file holds exactly the pixels the camera gave. The live viewer gets the images as they are, without encoding.
 - `--live-stride N` shows every Nth lidar point in the live viewer (default 1, every point). It does not change what is measured, and a `--save` recording always keeps every point, so `--live-stride` with `--save` is a usage error.
 - `world/ego` is our car as the sensors place it, with the lidar under it. The script reads its position from the IMU readings it already polls, so it adds no request. Until the IMU reports a position, `world/ego` stays at the origin. Simulator state never goes under `world/`; the free mode logs no ground truth.
 - The script sends a default layout: a 3D view whose origin is `world/ego`, so the view moves with our car, beside the camera image and the provenance text.
@@ -747,7 +747,7 @@ PNG encoding: <n> camera images in <s> s
 - It counts everything in the file: the provenance text, the layout, the `world/ego` positions, the lidar points and their colours, and the PNG images. Before Rerun's own encoding, a lidar point is 15 bytes: three 4-byte floats and three 1-byte colours. A 640 x 360 colour image is 691,200 bytes before PNG. How much smaller the PNG is depends on the picture.
 - If closing did not write everything to the file, the number is too low. Check that the file opens and plays to the end.
 - `PNG encoding:` is the wall time spent in Pillow's PNG encoder, summed over the images, by the same clock as the tables. It is part of `our processing` in the timing block, so it holds up the reads after it. Compare the `schedule` table of the save run with the live run.
-- A live run prints neither line: what the viewer receives is not measured.
+- A live run prints neither line, because nothing measures what the viewer receives.
 - After Ctrl+C neither line is printed.
 
 ### What to send back
