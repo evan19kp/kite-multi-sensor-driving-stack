@@ -12,7 +12,7 @@ from unittest import mock
 
 from tests import BRIDGE_DIR
 from kite_bridge import common, rerun_view
-from kite_bridge.fake_sim import FakeClock, FakeSim
+from kite_bridge.fake_sim import DEFAULT_RATES, FakeClock, FakeSim
 from kite_bridge.readings import image_from_raw, points_from_raw, reading_from_raw
 from kite_bridge.rerun_view import (CAMERA_PATH, EGO_FRAME_PATH, EGO_PATH, GROUND_TRUTH_PATH, LIDAR_PATH,
                                     distance_colour, log_step)
@@ -29,6 +29,9 @@ class RecordingRecorder:
     def __init__(self):
         self.calls = []
         self.closed = 0
+
+    def all_finite(self, cloud):
+        return LISTS.all_finite(LISTS.points(cloud))
 
     def set_time(self, seconds):
         self.calls.append(("time", seconds))
@@ -576,6 +579,18 @@ class RerunRecorderTest(unittest.TestCase):
                 recorder.log_lidar(LIDAR_PATH, [(1.0, 0.0, 0.0), (bad, 0.0, 0.0)], rerun_view.GROUND_ORIGIN)
         fake.Points3D.assert_not_called()
 
+    def test_a_free_mode_scan_with_a_non_finite_x_y_or_z_logs_nothing_and_says_so(self):
+        recorder, fake = self.recorder(live_stride=2)
+        fake.log.reset_mock()
+        # The stride shows points 0 and 2 only; the bad value is in point 1, which it skips.
+        for bad in ((float("nan"), 0.0, 0.0), (0.0, float("inf"), 0.0), (0.0, 0.0, float("nan"))):
+            cloud = [(1.0, 0.0, 0.0), bad, (2.0, 0.0, 0.0)]
+            logged = rerun_view.log_reading(recorder, "lidar", Reading(2.0, 1, raw={"pointCloud": cloud}), (1.0, 2.0))
+            self.assertFalse(logged, bad)
+        fake.log.assert_not_called()
+        fake.Points3D.assert_not_called()
+        fake.Transform3D.assert_not_called()
+
     def test_live_stride_thins_the_live_view_and_a_recording_keeps_every_point(self):
         cloud = [(float(i), 0.0, 0.0) for i in range(10)]
         live, live_fake = self.recorder(live_stride=3)
@@ -753,7 +768,7 @@ class RealRecorderTest(unittest.TestCase):
 class FreeModeViewTest(unittest.TestCase):
     """The default free run against the fake, with a recorder that keeps what reaches Rerun."""
 
-    def run_free(self, sim_class=FakeSim):
+    def run_free(self, sim_class=FakeSim, *argv):
         import spike_lidar_rerun
 
         clock = FakeClock()
@@ -770,7 +785,7 @@ class FreeModeViewTest(unittest.TestCase):
             stack.enter_context(mock.patch.object(common, "wall_sleep", clock.sleep))
             stack.enter_context(mock.patch.object(spike_lidar_rerun, "make_recorder", lambda *a: recorder))
             stack.enter_context(contextlib.redirect_stdout(stdout))
-            code = spike_lidar_rerun.main(["--fake", "--seconds", "1", "--traffic", "0", "--out", tmp])
+            code = spike_lidar_rerun.main(["--fake", "--seconds", "1", "--traffic", "0", "--out", tmp, *argv])
         self.assertEqual(code, 0)
         return stdout.getvalue(), sims[0], recorder
 
@@ -801,8 +816,30 @@ class FreeModeViewTest(unittest.TestCase):
         # times per wall second, due at k / 10 for k = 0 to 9, before the Timer reading at 1 s
         # ends the run. A poll waits at most for the Timer, radar and IMU polls due at the same
         # time, one per pass, and passes come every 0.025 s (the camera's 40 reads per second), so
-        # each poll lands before the next sample: 10 new readings, none with a position.
-        self.assertIn("gps gave 10 new readings without a position; world/ego did not move for them", stdout)
+        # each poll lands before the next sample: 10 new polls, none with a position.
+        self.assertIn("gps gave 10 new polls without a position in their latest reading; world/ego did not move "
+                      "for them", stdout)
+
+    def test_the_gps_line_counts_polls_even_when_a_poll_carries_several_readings(self):
+        stdout, sim, _ = self.run_free(GpsAt20Hz)
+        # The same 10 polls as above, due at k / 10 for k = 0 to 9. At 20 samples per simulated
+        # second every poll after the first carries the samples made since the one before it.
+        self.assertGreater(max(sim.gps_readings_per_poll), 1)
+        self.assertEqual(len(sim.gps_readings_per_poll), 10)
+        self.assertIn("gps gave 10 new polls without a position in their latest reading", stdout)
+
+    def test_a_polled_scan_with_a_non_finite_point_is_counted_and_not_logged_and_the_run_goes_on(self):
+        stdout, sim, recorder = self.run_free(LidarWithNonFinitePoints, "--no-stream")
+        scans = [c[2] for c in recorder.points_at(LIDAR_PATH)]
+        for scan in scans:
+            self.assertTrue(all(math.isfinite(value) for point in scan for value in point), scan)
+        logged_times = {scan[0][2] for scan in scans}
+        self.assertEqual(logged_times & set(LidarWithNonFinitePoints.BAD), set())
+        # The fake lidar updates 10 times per simulated second; the scans of 0.1 s and 0.3 s each
+        # hold one point with a NaN, in x and in z, and every other new scan is logged.
+        self.assertEqual(sorted(logged_times | set(LidarWithNonFinitePoints.BAD)), sorted(sim.lidar_times))
+        self.assertIn(f"logged {len(scans)} lidar scans", stdout)
+        self.assertIn("lidar gave 2 new scans with a non-finite point; not logged", stdout)
 
     def test_only_readings_with_new_content_are_logged(self):
         stdout, sim, recorder = self.run_free()
@@ -830,6 +867,40 @@ class GpsWithPosition(FakeSim):
         self.gps_ticks.update(float(sample["tick"]) for sample in reading.raw)
         raw = [dict(sample, x=100.0 + sample["tick"], y=200.0) for sample in reading.raw]
         return reading_from_raw("gps", raw, self.sim_time)
+
+
+class GpsAt20Hz(FakeSim):
+    """Its GPS makes 20 samples per simulated second; records how many readings each GPS poll holds."""
+
+    def __init__(self, **kwargs):
+        super().__init__(rates={**DEFAULT_RATES, "gps": 20.0}, **kwargs)
+        self.gps_readings_per_poll = []
+
+    def poll(self, car, kind):
+        reading = super().poll(car, kind)
+        if kind == "gps" and reading.raw is not None:
+            self.gps_readings_per_poll.append(len(reading.raw))
+        return reading
+
+
+class LidarWithNonFinitePoints(FakeSim):
+    """Its polled lidar scan of time t is a plain list of rows: (5, 0, t), plus the point in BAD
+    for the scans of 0.1 s and 0.3 s. Records the time of every scan it gives."""
+
+    BAD = {0.1: (float("nan"), 1.0, 2.0), 0.3: (1.0, 2.0, float("nan"))}
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.lidar_times = set()
+
+    def poll(self, car, kind):
+        reading = super().poll(car, kind)
+        if kind != "lidar" or reading.raw is None:
+            return reading
+        time = reading.raw["time"]
+        self.lidar_times.add(time)
+        cloud = [(5.0, 0.0, time), *([self.BAD[time]] if time in self.BAD else [])]
+        return reading_from_raw("lidar", {"time": time, "pointCloud": cloud}, self.sim_time)
 
 
 class ImuWithPosition(FakeSim):

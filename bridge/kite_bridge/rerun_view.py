@@ -66,8 +66,9 @@ def log_step(recorder, sim_time, ego, lidar_points, image, others=None):
 def log_reading(recorder, kind, reading, ego=None):
     """Free mode: logs one new `reading` (a `sim_api.Reading` with a timestamp) of `kind` "lidar"
     or "camera" at its time, which is the Timer's for a reading without its own. Returns True when
-    it logged the reading. A camera reading without a "colour" image logs nothing and returns
-    False.
+    it logged the reading. A lidar scan with a point whose x, y or z is not finite, and a camera
+    reading without a "colour" image, log nothing and return False, so a bad reading never stops
+    the run (R28).
 
     The lidar's "pointCloud" goes under LIDAR_PATH, coloured by distance on the ground (x and y
     only) from `ego`, the (x, y) the GPS last measured, or from the origin while `ego` is None.
@@ -77,6 +78,8 @@ def log_reading(recorder, kind, reading, ego=None):
     them in the world view, and a view whose origin is EGO_FRAME_PATH follows our car."""
     raw = reading.raw
     if kind == "lidar":
+        if not recorder.all_finite(raw["pointCloud"]):
+            return False
         recorder.set_time(reading.timestamp)
         if ego is not None:
             x, y = ego
@@ -151,6 +154,9 @@ class NumpyArrays:
         far = np.rint(255 * np.minimum(distance / FAR_M, 1.0)).astype(np.uint8)
         return np.stack([far, np.zeros_like(far), 255 - far], axis=1)
 
+    def all_finite(self, points):
+        return bool(self.np.isfinite(points).all())
+
     def image(self, image):
         """A PIL image, an array or rows of pixels as a (height, width, channels) uint8 array."""
         # ASSUMPTION: BeamNGpy's colour image, polled or streamed, holds 8-bit values (0 to 255) per channel
@@ -165,6 +171,9 @@ class ListArrays:
 
     def distance_colours(self, points, centre):
         return [distance_colour(math.dist(point[:len(centre)], centre)) for point in points]
+
+    def all_finite(self, points):
+        return all(math.isfinite(value) for point in points for value in point)
 
     def image(self, image):
         return image
@@ -229,6 +238,10 @@ class RerunRecorder:
         else:
             self._rr.set_time_seconds(TIMELINE, seconds)  # ASSUMPTION: set_time_seconds(name, s) in older SDKs
 
+    def all_finite(self, cloud):
+        """True when every point of `cloud`, not only those a stride shows, has a finite x, y and z."""
+        return self._arrays.all_finite(self._arrays.points(cloud))
+
     def log_lidar(self, path, cloud, centre):
         points = self._arrays.points(cloud)[::self._stride]
         colours = self._arrays.distance_colours(points, centre)
@@ -260,6 +273,9 @@ class RerunRecorder:
 
 
 class NullRecorder:
+    def all_finite(self, cloud):
+        return True
+
     def set_time(self, seconds):
         pass
 

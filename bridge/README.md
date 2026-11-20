@@ -205,8 +205,9 @@ no height, or the origin until the GPS gives an x and y. It never comes from sim
 The script logs no ground truth in free mode, because reading a position from the simulator is
 a request that would hold up the lidar. It then prints the measuring
 tables, the `schedule` table included, and how many scans and images it logged. It does not log
-a camera reading with no colour image, and prints how many new ones there were. It prints how
-many new GPS readings had no position. `--no-stream` polls the lidar and camera too.
+a lidar scan with a point whose x, y or z is not finite, or a camera reading with no colour
+image, and prints how many new ones there were; the run goes on. It prints how many new GPS polls
+had no position in their latest reading. `--no-stream` polls the lidar and camera too.
 
 The recorder sends a default layout: a 3D view whose origin is `world/ego`, so it follows our
 car, beside the camera image and the provenance text. If the installed Rerun cannot take it, the

@@ -646,17 +646,17 @@ rerun recordings/demo.rrd
 
 ### What it prints
 
-By default: the five `sensor:` lines (lidar and camera end in `is_streaming=True`), a `spawned` line, the measuring tables of Run 2 in free mode, then two to four lines (see below). With `--seconds 2 --traffic 0` on the fake simulator (the `sensor:` lines and the tables are left out here):
+By default: the five `sensor:` lines (lidar and camera end in `is_streaming=True`), a `spawned` line, the measuring tables of Run 2 in free mode, then two to five lines (see below). With `--seconds 2 --traffic 0` on the fake simulator (the `sensor:` lines and the tables are left out here):
 
 ```
 spawned kite1 (model: vivace, config: vehicles/vivace/tograc_qE.pc)
 ...
 logged 21 lidar scans and 41 camera images at Timer times, each only when its content was new
-gps gave 20 new readings without a position; world/ego did not move for them
+gps gave 20 new polls without a position in their latest reading; world/ego did not move for them
 no ground truth logged in free mode, because reading our car's or the other cars' positions is a request that would hold up the lidar
 ```
 
-The fake reads the lidar 41 times in 2 wall seconds, 20 per second and once more at 2.0 s, but its lidar updates only 10 times per simulated second. Each update is read twice and logged once: 21 scans. The counts match the `new` column of the tables. The fake GPS gives no x and y, so the `gps gave ...` line appears; see Run 4. Its 20 matches the `new` column of the gps row.
+The fake reads the lidar 41 times in 2 wall seconds, 20 per second and once more at 2.0 s, but its lidar updates only 10 times per simulated second. Each update is read twice and logged once: 21 scans. The counts match the `new` column of the tables. The fake GPS gives no x and y, so the `gps gave ...` line appears; see Run 4. That line counts polls. Here each GPS poll carries one reading (`per_poll` 1), so its 20 matches both the `polls` and the `new` column of the gps row.
 
 With `--mode lockstep`: the five `sensor:` lines, a `spawned` line, then a count of the logged steps. With `--seconds 2`:
 
@@ -674,7 +674,12 @@ With `--mode lockstep`, these lines appear only when they apply:
 
 In both modes, `traffic not spawned (...)` appears as above. With `--save`, a successful run ends with `wrote recordings\demo.rrd` and the two lines described under "What the size line measures" in Run 4. With `--live-stride N` above 1, the run prints `the live viewer showed 1 of every N lidar points`.
 
-In free mode, a lidar or camera reading that is empty, unexpected or suspect is not logged. The tables count it under `empty`, `unexp` or `suspect`. The script does not log a camera reading that has no colour image either. That reading passes the stream check and the tables count it as a reading, so the script prints `camera gave N new readings without a colour image; not logged` after the `logged ...` line. When new GPS readings carry no x and y, it prints `gps gave N new readings without a position; world/ego did not move for them`.
+In free mode, a lidar or camera reading that is empty, unexpected or suspect is not logged. The tables count it under `empty`, `unexp` or `suspect`. The script also skips two kinds of reading that the tables count as readings. It prints how many new ones it skipped after the `logged ...` line, and the run goes on:
+
+- A lidar scan with a point whose x, y or z is not finite (nan or inf): `lidar gave N new scans with a non-finite point; not logged`. The stream check already drops such a streamed scan as `suspect`, so this happens only with `--no-stream`, where the lidar is polled and its scans skip the stream check. With `--mode lockstep`, such a scan still stops the run with an error.
+- A camera reading that has no colour image: `camera gave N new readings without a colour image; not logged`. That reading passes the stream check.
+
+When new GPS polls carry no x and y in their latest reading, the script prints `gps gave N new polls without a position in their latest reading; world/ego did not move for them`. N counts polls, not readings, because `world/ego` moves at most once per poll, to the position of the poll's latest reading. N matches the `new` column of the gps row only when each GPS poll carries one reading (`per_poll` 1). A GPS that buffers several readings between polls has a larger `new`.
 
 On the fake simulator with `--save demo.rrd`, the script writes no file and prints `--fake keeps nothing; the recording would have gone to scratch\R27\out\demo.rrd` instead.
 
@@ -714,7 +719,7 @@ This run checks the Sprint 0B.3 changes to Demo 1 with its default `--mode free 
 
 ### Limits of `world/ego`
 
-- It is a guess that BeamNG's GPS reading carries its position in metres under `x` and `y`, in the same world frame as the lidar points. If it gives only latitude and longitude, the script does not convert them, every run prints `gps gave N new readings without a position; world/ego did not move for them`, and the view stays at the origin. Then follow the car by hand as described below; it does not follow on its own.
+- It is a guess that BeamNG's GPS reading carries its position in metres under `x` and `y`, in the same world frame as the lidar points. If it gives only latitude and longitude, the script does not convert them, every run prints `gps gave N new polls without a position in their latest reading; world/ego did not move for them`, and the view stays at the origin. Then follow the car by hand as described below; it does not follow on its own.
 - A GPS gives no height, so `world/ego` sits at height 0. Where the road is not at height 0, the points sit above or below the centre of the following view.
 - It is the GPS's position only: the view follows where the car is, not which way it faces.
 - The GPS is read 10 times per wall second and the lidar 20 times, so `world/ego` can be up to one GPS read (about 0.1 s) older than a scan. In the 3D view that follows `world/ego`, the points can then sit off by the distance the car drove in that time: about 1.5 m at 15 m/s. In a view with the origin `/`, the points stay where the lidar saw them.
@@ -758,7 +763,7 @@ PNG encoding: <n> camera images in <s> s
 - From the `--save` run: the `recording:` and `PNG encoding:` lines.
 - Whether the 3D view follows the car as it drives, and whether the view feels live or jumps. Say whether `default layout not sent` was printed, and whether you set the origin by hand.
 - Whether the lidar points sit around the car in the following view.
-- Whether `gps gave N new readings without a position` was printed. If it was, also send a `raw_gps_imu.json` (see "The raw GPS and IMU dump"), so the director can see which fields the GPS gives.
+- Whether `gps gave N new polls without a position` was printed, and the gps row's `polls`, `per_poll` and `new`. If it was, also send a `raw_gps_imu.json` (see "The raw GPS and IMU dump"), so the director can see which fields the GPS gives.
 - A screenshot of the viewer, if it works. Check that no folder path from your machine is visible in it first.
 - Any error, in full.
 

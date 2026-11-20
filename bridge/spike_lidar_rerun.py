@@ -118,11 +118,12 @@ def recording_lines(nbytes, simulated_s, encoded, encode_s):
 
 def _run_free(sim, car, args, recorder):
     logged = {"lidar": 0, "camera": 0}
-    no_colour = no_position = 0
+    not_logged = {"lidar": 0, "camera": 0}
+    no_position = 0
     ego = None
 
     def log(key, reading):
-        nonlocal ego, no_colour, no_position
+        nonlocal ego, no_position
         kind = key[1]
         if kind == "gps":
             position = rerun_view.gps_position(reading.raw)
@@ -134,17 +135,19 @@ def _run_free(sim, car, args, recorder):
             if rerun_view.log_reading(recorder, kind, reading, ego):
                 logged[kind] += 1
             else:
-                no_colour += 1
+                not_logged[kind] += 1
 
     result = common.measure_sensors(sim, [car], args.seconds, poll_rates=args.rates, stream=args.stream,
                                     mode=common.FREE, on_reading=log)
     print(common.format_result(result))
     report = [f"logged {logged['lidar']} lidar scans and {logged['camera']} camera images at Timer times, "
               "each only when its content was new"]
-    if no_colour:
-        report.append(f"camera gave {no_colour} new readings without a colour image; not logged")
+    if not_logged["lidar"]:
+        report.append(f"lidar gave {not_logged['lidar']} new scans with a non-finite point; not logged")
+    if not_logged["camera"]:
+        report.append(f"camera gave {not_logged['camera']} new readings without a colour image; not logged")
     if no_position:
-        report.append(f"gps gave {no_position} new readings without a position; "
+        report.append(f"gps gave {no_position} new polls without a position in their latest reading; "
                       f"{rerun_view.EGO_FRAME_PATH} did not move for them")
     report.append("no ground truth logged in free mode, because reading our car's or the other cars' positions "
                   "is a request that would hold up the lidar")

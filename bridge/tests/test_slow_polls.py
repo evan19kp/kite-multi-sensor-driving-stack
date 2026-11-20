@@ -180,9 +180,14 @@ class DefaultsTest(unittest.TestCase):
 
 
 class RawRecorder:
+    """Keeps each lidar cloud as it came, so it takes every scan as finite without reading it."""
+
     def __init__(self):
         self.calls = []
         self.closed = 0
+
+    def all_finite(self, cloud):
+        return True
 
     def set_time(self, seconds):
         self.calls.append(("time", seconds))
