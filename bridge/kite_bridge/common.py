@@ -30,6 +30,7 @@ JOIN_SLICE_S = 0.1
 EXIT_INTERRUPTED = 130
 LOCKSTEP = "lockstep"
 FREE = "free"
+TIMER = "timer"
 WALL_LIMIT_FACTOR = 20
 MIN_SLEEP_S = 1e-6
 wall_clock = time.perf_counter
@@ -72,25 +73,31 @@ def _count(text):
 
 def _rates_option(text):
     try:
-        return rates.parse_rates(text)
+        rates.parse_rates(text)
     except ValueError as error:
         raise argparse.ArgumentTypeError(str(error)) from None
+    return text
 
 
-def add_measure_options(parser):
-    parser.add_argument("--rates", type=_rates_option, default=rates.DEFAULT_RATES_TEXT,
-                        metavar="KIND=RATE,...",
+def _add_rates_and_mode(parser, default_mode):
+    parser.add_argument("--rates", type=_rates_option, metavar="KIND=RATE,...",
                         help="polls per simulated second for each sensor (lidar, camera, radar, gps, imu), "
                              "or per wall second with --mode free, "
                              f"each above 0 and at most {STEP_HZ}; all=RATE sets every sensor and a named "
-                             f"sensor overrides it (default {rates.DEFAULT_RATES_TEXT}; all={STEP_HZ} polls "
-                             "every sensor after every step)")
-    parser.add_argument("--mode", choices=(LOCKSTEP, FREE), default=LOCKSTEP,
-                        help=f"{LOCKSTEP} (default): step the simulator {STEP_HZ} times per simulated second "
-                             f"and poll between steps; {FREE}: let the simulator run on its own, poll each "
-                             "sensor at its --rates rate per wall second and read simulated time from a Timer "
-                             "sensor; the run ends at --seconds of Timer time, or fails after --seconds x "
+                             f"sensor overrides it (default {rates.DEFAULT_RATES_TEXT}, with --mode free "
+                             f"{rates.FREE_DEFAULT_RATES_TEXT}; all={STEP_HZ} polls every sensor after every step)")
+    other = FREE if default_mode == LOCKSTEP else LOCKSTEP
+    parser.add_argument("--mode", choices=(LOCKSTEP, FREE), default=default_mode,
+                        help=f"{default_mode} (default) or {other}. {LOCKSTEP}: step the simulator {STEP_HZ} "
+                             f"times per simulated second and poll between steps; {FREE}: let the simulator "
+                             "run on its own, read each sensor at its --rates rate per wall second, streamed "
+                             "sensors first and at most one poll per pass, and read simulated time from a "
+                             "Timer sensor; the run ends at --seconds of Timer time, or fails after --seconds x "
                              f"{WALL_LIMIT_FACTOR} wall seconds")
+
+
+def add_measure_options(parser):
+    _add_rates_and_mode(parser, LOCKSTEP)
     parser.add_argument("--dump-raw", type=_count, default=0, metavar="N",
                         help=f"write the first N raw GPS and the first N raw IMU readings of each car, "
                              f"with each poll's wall time and step count, to {RAW_DUMP_FILE} in --out "
@@ -102,7 +109,19 @@ def add_measure_options(parser):
                              "(default off: every sensor is polled)")
 
 
-def parse_args(description, argv=None, extra=None):
+def add_live_options(parser):
+    """The options of the live viewer: free mode and streaming by default."""
+    _add_rates_and_mode(parser, FREE)
+    parser.add_argument("--stream", action=argparse.BooleanOptionalAction,
+                        help="read the lidar and camera from shared memory with stream(), checked by "
+                             "kite_bridge/stream_check.py (default: on with --mode free; --no-stream polls them)")
+
+
+def parse_args(description, argv=None, extra=None, check=None):
+    """`check(args)`, if given, returns a usage error message or None. It sees `--rates` as the
+    text given (None without it) and `--stream` as given (None without it, when the script's
+    option has no default). After it, `--rates` becomes the rates of the chosen mode and an
+    unset `--stream` becomes on in free mode and off in lock-step."""
     parser = argparse.ArgumentParser(description=description)
     parser.add_argument("--home", help="the simulator's folder (required unless --fake)")
     parser.add_argument("--headless", action="store_true", help="run the simulator without a window")
@@ -132,6 +151,14 @@ def parse_args(description, argv=None, extra=None):
     refusal = out_refusal(args.out, repo_roots())
     if refusal:
         parser.error(f"--out {refusal}")
+    problem = check(args) if check else None
+    if problem:
+        parser.error(problem)
+    if hasattr(args, "rates"):
+        defaults = rates.FREE_DEFAULT_RATES if args.mode == FREE else rates.DEFAULT_RATES
+        args.rates = rates.parse_rates(args.rates, defaults)
+    if hasattr(args, "stream") and args.stream is None:
+        args.stream = args.mode == FREE
     args.config = args.config or None
     return args
 
@@ -318,23 +345,31 @@ def write_raw_dump(out, per_sensor, cases):
 
 
 def measure_sensors(sim, cars, seconds, clock=None, dump=None, poll_rates=None, stream=False, mode=LOCKSTEP,
-                    sleep=None):
+                    sleep=None, on_reading=None):
     """Steps the simulator for `seconds` of simulator time and polls each sensor at its rate in
     `poll_rates`, a dict by sensor kind of polls per simulated second (see `rates` for the
     schedule). By default every sensor is polled once after each step, STEP_HZ per simulator
     second. `clock` returns wall seconds and `sleep` waits for wall seconds; a test passes fake
     ones. Without them the run uses `wall_clock` and `wall_sleep`, real time. `dump`, a
-    RawDump, collects the raw GPS and IMU readings.
+    RawDump, collects the raw GPS and IMU readings. `on_reading(key, reading)`, if given, is
+    called on the loop's thread with each reading that has a timestamp, after it is counted; its
+    time counts as our processing.
 
-    `mode` FREE replaces the steps. The simulator runs on its own and each sensor is polled on
-    the wall-clock schedule in `rates`, so the rates are polls per wall second. The Timer, on
-    the first car, is polled in its own request at the higher of the GPS and IMU rates. The run
-    ends at the first Timer reading `seconds` past its first one, and raises SpikeError after
-    `seconds` x WALL_LIMIT_FACTOR wall seconds, when the Timer goes back, or when a Timer
-    reading is not finite seconds >= 0. `simulated_s` is how far the Timer advanced. A reading without its own time gets the latest Timer reading,
-    with `time_source` TIMER_TIME. The timing has `idle_s` (sleeping until the next poll is due) and `timer_reads_s` (inside the
-    Timer polls) in place of `step_wait_s`; `steps` and `steps_per_second` are None, a dump
-    entry's step is None, and `timer` gives the Timer's poll count and rate. Every sensor
+    `mode` FREE replaces the steps. The simulator runs on its own and each sensor is read on
+    the wall-clock schedule in `rates`, so the rates are reads per wall second. Each pass reads
+    the due streamed sensors, then at most one due poll: a sensor that is not streamed or the
+    Timer, the most overdue first (`rates.pass_reads`). The Timer, on the first car, is polled
+    in its own request at the higher of the GPS and IMU rates, and first of all, so every
+    reading has a Timer time. The run ends at the first Timer reading `seconds` past its first
+    one, and raises SpikeError after `seconds` x WALL_LIMIT_FACTOR wall seconds, when the Timer
+    goes back, or when a Timer reading is not finite seconds >= 0. `simulated_s` is how far the
+    Timer advanced. A reading without its own time gets the latest Timer reading, with
+    `time_source` TIMER_TIME. The timing has `idle_s` (sleeping until the next read is due) and
+    `timer_reads_s` (inside the Timer polls) in place of `step_wait_s`; `steps` and
+    `steps_per_second` are None, a dump entry's step is None, and `timer` gives the Timer's poll
+    count and rate. Each row and `timer` have `schedule`: `late` (reads that started
+    `rates.LATE_S` or more after their due time), `worst_late_ms` (the latest start after a due
+    time, None without reads) and `skipped` (due times passed over with no read). Every sensor
     counts as polled slower than every step for `possible_loss`. `mode` is in the result.
 
     With `stream`, the STREAMED_KINDS sensors (lidar, camera) are attached streaming and read
@@ -379,7 +414,7 @@ def measure_sensors(sim, cars, seconds, clock=None, dump=None, poll_rates=None, 
         sim.attach_sensors(car, stream=stream)
     keys = [(car, kind) for car in cars for kind in SENSOR_KINDS]
     streamed = {key for key in keys if stream and key[1] in STREAMED_KINDS}
-    tally = _Tally(keys, streamed, dump)
+    tally = _Tally(keys, streamed, dump, on_reading)
     if mode == FREE:
         run = _run_free(sim, tally, cars[0], seconds, poll_rates, clock, sleep or wall_sleep)
     else:
@@ -414,6 +449,8 @@ def measure_sensors(sim, cars, seconds, clock=None, dump=None, poll_rates=None, 
             "new_per_simulated_s": measure.per_simulated_second(new, simulated),
             "bytes_read": sizes[car, kind],
             "bytes_per_simulated_s": measure.per_simulated_second(sizes[car, kind], simulated)})
+        if run.lags is not None:
+            rows[-1]["schedule"] = run.lags[car, kind].summary()
         if stream:
             dropped = suspect[car, kind]
             rows[-1]["read"] = "stream" if (car, kind) in streamed else "poll"
@@ -438,6 +475,7 @@ class _Run(typing.NamedTuple):
     wall_s: float
     waits: dict
     extra: dict
+    lags: dict | None = None
 
 
 def _run_lockstep(sim, tally, seconds, poll_rates, clock):
@@ -457,53 +495,99 @@ def _run_lockstep(sim, tally, seconds, poll_rates, clock):
 
 
 def _run_free(sim, tally, timer_car, seconds, poll_rates, clock, sleep):
-    timer_rate = max(poll_rates["gps"], poll_rates["imu"])
+    timer_key = (timer_car, TIMER)
+    rate = {key: poll_rates[key[1]] for key in tally.keys}
+    rate[timer_key] = max(poll_rates["gps"], poll_rates["imu"])
+    streamed = [key for key in tally.keys if key in tally.streamed]
+    slow = [timer_key, *(key for key in tally.keys if key not in tally.streamed)]
     limit = Fraction(seconds) * WALL_LIMIT_FACTOR
     sim.start_free_running(timer_car)
-    due = dict.fromkeys(tally.keys, 0)
-    timer_due = 0
-    idle = timer_time = 0.0
-    timer_polls = 0
-    first = latest = None
+    timer = _Timer(sim)
+    due = dict.fromkeys(rate, 0)
+    lags = {key: _Lag() for key in rate}
+    idle = 0.0
     loop_started = clock()
-    while True:
+
+    def read(key):
+        at = clock() - loop_started
+        lags[key].add(at - due[key], rates.skipped(due[key], at, rate[key]))
+        due[key] = rates.next_due(at, rate[key])
+        if key == timer_key:
+            timer.read(clock)
+            return
+        if key in slow:
+            slow.remove(key)
+            slow.append(key)
+        tally.read(sim, key, clock, loop_started, None, timer.latest)
+
+    read(timer_key)
+    while timer.latest - timer.first < seconds:
         now = clock() - loop_started
-        if now >= timer_due:
-            started = clock()
-            try:
-                timer = sim.timer_seconds()
-            except ValueError as error:
-                raise SpikeError(f"free run: unusable Timer reading: {error}") from error
-            timer_time += clock() - started
-            timer_polls += 1
-            if first is None:
-                first = timer
-            elif timer < latest:
-                raise SpikeError(f"the Timer went back from {latest:g} s to {timer:g} s")
-            latest = timer
-            if latest - first >= seconds:
+        for key in rates.pass_reads(now, due, streamed, slow):
+            read(key)
+            if timer.latest - timer.first >= seconds:
                 break
-            timer_due = rates.next_due(now, timer_rate)
-        if now >= limit:
-            raise SpikeError(f"free run: the Timer advanced {latest - first:.3f} of {seconds:g} simulated s "
-                             f"in the wall-clock limit of {float(limit):g} s (--seconds x {WALL_LIMIT_FACTOR})")
-        for key in tally.keys:
-            if now >= due[key]:
-                tally.read(sim, key, clock, loop_started, None, latest)
-                due[key] = rates.next_due(now, poll_rates[key[1]])
-        started = clock()
-        gap = min(timer_due, limit, *due.values()) - Fraction(started - loop_started)
-        if gap > 0:
-            sleep(max(float(gap), MIN_SLEEP_S))
-        idle += clock() - started
+        else:
+            if now >= limit:
+                raise SpikeError(f"free run: the Timer advanced {timer.latest - timer.first:.3f} of {seconds:g} "
+                                 f"simulated s in the wall-clock limit of {float(limit):g} s "
+                                 f"(--seconds x {WALL_LIMIT_FACTOR})")
+            started = clock()
+            gap = min(limit, *due.values()) - Fraction(started - loop_started)
+            if gap > 0:
+                sleep(max(float(gap), MIN_SLEEP_S))
+            idle += clock() - started
     wall = clock() - loop_started
-    return _Run(None, None, latest - first, wall, {"idle_s": idle, "timer_reads_s": timer_time},
-                {"timer": {"polls": timer_polls, "rate_hz": float(timer_rate)}})
+    return _Run(None, None, timer.latest - timer.first, wall, {"idle_s": idle, "timer_reads_s": timer.read_s},
+                {"timer": {"polls": timer.polls, "rate_hz": float(rate[timer_key]),
+                           "schedule": lags.pop(timer_key).summary()}}, lags)
+
+
+class _Timer:
+    """The Timer's readings in a free run: the first, the latest, how many and the time spent."""
+
+    def __init__(self, sim):
+        self._sim = sim
+        self.first = self.latest = None
+        self.polls = 0
+        self.read_s = 0.0
+
+    def read(self, clock):
+        started = clock()
+        try:
+            value = self._sim.timer_seconds()
+        except ValueError as error:
+            raise SpikeError(f"free run: unusable Timer reading: {error}") from error
+        self.read_s += clock() - started
+        self.polls += 1
+        if self.first is None:
+            self.first = value
+        elif value < self.latest:
+            raise SpikeError(f"the Timer went back from {self.latest:g} s to {value:g} s")
+        self.latest = value
+
+
+class _Lag:
+    """How late one sensor's (or the Timer's) free-mode reads started after their due times."""
+
+    def __init__(self):
+        self.late = 0
+        self.worst_s = None
+        self.skipped = 0
+
+    def add(self, lateness_s, skipped):
+        self.late += lateness_s >= rates.LATE_S
+        self.worst_s = lateness_s if self.worst_s is None else max(self.worst_s, lateness_s)
+        self.skipped += skipped
+
+    def summary(self):
+        return {"late": self.late, "worst_late_ms": None if self.worst_s is None else self.worst_s * 1000,
+                "skipped": self.skipped}
 
 
 class _Tally:
-    def __init__(self, keys, streamed, dump):
-        self.keys, self.streamed, self.dump = keys, streamed, dump
+    def __init__(self, keys, streamed, dump, on_reading):
+        self.keys, self.streamed, self.dump, self.on_reading = keys, streamed, dump, on_reading
         self.suspect = {key: [] for key in keys}
         self.suspect_rows = {key: 0 for key in keys}
         self.series = {key: [] for key in keys}
@@ -559,6 +643,8 @@ class _Tally:
             self.points[key].append(reading.points)
         if reading.detections is not None:
             self.detections[key].append(reading.detections)
+        if self.on_reading is not None and reading.timestamp is not None:
+            self.on_reading(key, reading)
 
 
 def _fmt(value, scale=1.0, digits=2):
@@ -589,6 +675,21 @@ def _timing_lines(result):
                      f"{r['new_readings']:>7}{_fmt(r['new_per_simulated_s']):>11}"
                      f"{_fmt(r['requested_update_hz']):>8}{r['bytes_read']:>12}"
                      f"{_fmt(r['bytes_per_simulated_s'], 0.001, 1):>10}")
+    return lines
+
+
+def _schedule_lines(result):
+    if result["mode"] != FREE:
+        return []
+    rows = [(r["car"], r["sensor"], r["schedule"]) for r in result["sensors"]]
+    rows.append((result["sensors"][0]["car"], TIMER, result["timer"]["schedule"]))
+    lines = [f"schedule: late counts reads that started {float(rates.LATE_S * 1000):g} ms or more after their due "
+             "time, worst_ms is the latest start, skipped counts due times passed over with no read",
+             f"{'car':<7}{'sensor':<8}{'late':>7}{'worst_ms':>10}{'skipped':>9}"]
+    lines += [f"{car:<7}{sensor:<8}{s['late']:>7}{_fmt(s['worst_late_ms']):>10}{s['skipped']:>9}"
+              for car, sensor, s in rows]
+    lines += [f"skipped: {car} {sensor} missed {s['skipped']} due reads; its latest read started "
+              f"{s['worst_late_ms']:.2f} ms after its due time" for car, sensor, s in rows if s["skipped"]]
     return lines
 
 
@@ -643,7 +744,9 @@ def _free_lines(result):
             "polls per wall second. simulated s, rate_hz, new_per_s and kB_per_s use Timer seconds. Where "
             "time is timer, the readings had no time of their own and got the latest Timer reading, so "
             "rate_hz and repeat there follow how often the Timer was polled; new_per_s does not. The "
-            "real-time factor is what this run measured, not a target."]
+            "real-time factor is what this run measured, not a target. Each pass read the due streamed "
+            "sensors first, then at most one due poll (a sensor that is not streamed, or the Timer), the "
+            "most overdue."]
 
 
 def format_result(result):
@@ -661,6 +764,7 @@ def format_result(result):
                      f"{r['unexpected']['count']:>7}{_fmt(r['points_mean'], digits=0):>8}"
                      f"{_fmt(r['detections_mean'], digits=0):>8}" + (_stream_columns(r) if stream else ""))
     lines += _timing_lines(result)
+    lines += _schedule_lines(result)
     if stream:
         lines += _suspect_lines(result)
     lines.append("rate_hz: distinct reading timestamps per simulator second. It counts at most one "

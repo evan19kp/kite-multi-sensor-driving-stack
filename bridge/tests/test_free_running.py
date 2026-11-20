@@ -121,7 +121,7 @@ class FreeRunCountsTest(unittest.TestCase):
         # follows them at 10: it reads 0, 0.1, ..., 1.0, 11 polls, and the run ends at the
         # reading 1.0, before that pass polls anything else.
         self.assertEqual(polls(rows), {"lidar": 20, "camera": 20, "radar": 20, "gps": 10, "imu": 10})
-        self.assertEqual(result["timer"], {"polls": 11, "rate_hz": 10.0})
+        self.assertEqual((result["timer"]["polls"], result["timer"]["rate_hz"]), (11, 10.0))
         self.assertEqual(result["mode"], "free")
         self.assertIsNone(result["steps"])
         self.assertIsNone(result["steps_per_second"])
@@ -146,12 +146,19 @@ class FreeRunCountsTest(unittest.TestCase):
 
     def test_a_pass_that_runs_late_polls_once_and_skips_instead_of_catching_up(self):
         result, rows, _ = free_run(rates.parse_rates("all=20"), request_cost={"lidar": 0.07})
-        # A lidar poll takes 0.07 wall s, longer than the 0.05 s between due times, so every pass
-        # starts late, right after the one before: at 0.07 k s. Each pass polls each sensor once.
-        # The Timer reads 0.07 k; it first reaches 1 at k = 15 (1.05), which ends the run, so
-        # passes k = 0 to 14 poll the sensors: 15 polls each, not the 20 due in the first second.
-        self.assertEqual(polls(rows), dict.fromkeys(rows, 15))
+        # A lidar poll takes 0.07 wall s, longer than the 0.05 s between due times. Every sensor is
+        # polled (none streams), so each pass makes one poll. At 0 s the Timer reads 0, then the
+        # lidar, first of the sensors due at 0, is polled until 0.07. From then on each round at
+        # 0.07 k s polls the Timer, camera, radar, GPS and IMU (free) and the lidar (0.07 s), each
+        # once: none is polled twice, and the due times they passed are skipped. The Timer reads
+        # 0.07 k and first reaches 1 at k = 15 (1.05), which ends the run: the lidar was polled at
+        # k = 0 to 14 (15), the others at k = 1 to 14 (14), not the 20 due in the first second.
+        self.assertEqual(polls(rows), {"lidar": 15, "camera": 14, "radar": 14, "gps": 14, "imu": 14})
         self.assertEqual(result["timer"]["polls"], 16)
+        # The last polls start at 0.98 s, so the due times k / 20 up to 0.95 (k = 0 to 19, 20 of
+        # them) were each polled or counted as skipped: 20 - 15 = 5 for the lidar, 20 - 14 = 6.
+        self.assertEqual({kind: row["schedule"]["skipped"] for kind, row in rows.items()},
+                         {"lidar": 5, "camera": 6, "radar": 6, "gps": 6, "imu": 6})
         t = result["timing"]
         self.assertAlmostEqual(t["sensor_reads_s"], 15 * 0.07)
         self.assertAlmostEqual(t["wall_s"], 1.05)
@@ -168,18 +175,19 @@ class FreeRunCountsTest(unittest.TestCase):
                 return super().poll(car, kind)
 
         result, rows, _ = free_run(rates.parse_rates("all=20"), sim_class=SlowFirstLidar)
-        # Every sensor and the Timer are at 20 per wall second. The pass at 0 s takes 0.2 s, so
-        # the due times 0.05, 0.10 and 0.15 pass with no pass. The next pass, at 0.2 s, polls each
-        # sensor once and moves it to 0.25; then the passes at 0.25, 0.30, ..., 0.95 run on time
-        # and the Timer reading 1.0 ends the run. Polls: 1 + 1 + 15 = 17 each. Making the missed
-        # times up would add 3 more polls at 0.2 s, 20 in all.
-        self.assertEqual(polls(rows), dict.fromkeys(rows, 17))
+        # Every sensor and the Timer are at 20 per wall second, one poll per pass. After the
+        # Timer's first reading, the lidar poll at 0 s takes 0.2 s, so the due times 0.05, 0.10
+        # and 0.15 pass with no poll. At 0.2 s each sensor and the Timer is polled once and moved
+        # to 0.25; then the polls at 0.25, 0.30, ..., 0.95 run on time and the Timer reading 1.0
+        # ends the run. Lidar: 1 + 1 + 15 = 17; the others were not reached at 0 s: 1 + 15 = 16.
+        # Making the missed times up would add 3 more polls each at 0.2 s.
+        self.assertEqual(polls(rows), {"lidar": 17, "camera": 16, "radar": 16, "gps": 16, "imu": 16})
         self.assertEqual(result["timer"]["polls"], 18)
 
     def test_the_timer_follows_the_higher_of_the_gps_and_imu_rates(self):
         result, rows, _ = free_run(rates.parse_rates("gps=5,imu=25"))
         # Timer at 25: k / 25 for k = 0 to 25, the reading at 1.0 ends the run: 26 polls.
-        self.assertEqual(result["timer"], {"polls": 26, "rate_hz": 25.0})
+        self.assertEqual((result["timer"]["polls"], result["timer"]["rate_hz"]), (26, 25.0))
         self.assertEqual((rows["gps"]["polls"], rows["imu"]["polls"]), (5, 25))
 
     def test_the_run_ends_after_seconds_of_timer_time_counted_from_its_first_reading(self):
@@ -211,7 +219,10 @@ class TimerTimeTest(unittest.TestCase):
         self.assertEqual((rows["lidar"]["read"], rows["lidar"]["time_source"]), ("stream", "timer"))
         self.assertEqual((rows["camera"]["read"], rows["camera"]["time_source"]), ("stream", "timer"))
         self.assertEqual(rows["radar"]["time_source"], "sensor")
-        self.assertEqual(polls(rows), {"lidar": 20, "camera": 20, "radar": 20, "gps": 10, "imu": 10})
+        # A pass reads the due streamed sensors before its one poll, so the pass at 1.0 s reads
+        # the lidar and camera, then polls the Timer, whose reading 1.0 ends the run: k / 20 for
+        # k = 0 to 20, 21 reads. The polled sensors stop at 0.95 and 0.9, as without --stream.
+        self.assertEqual(polls(rows), {"lidar": 21, "camera": 21, "radar": 20, "gps": 10, "imu": 10})
         self.assertIn("stream_reads_s", result["timing"])
 
     def test_a_timer_that_goes_back_stops_the_run(self):
@@ -420,10 +431,17 @@ class ScriptTest(unittest.TestCase):
         self.assertIn("provenance", saved)
         self.assertEqual(saved["mode"], "free")
         self.assertIsNone(saved["steps"])
-        self.assertEqual(saved["timer"], {"polls": 11, "rate_hz": 10.0})
+        self.assertEqual(set(saved["timer"]), {"polls", "rate_hz", "schedule"})
+        self.assertEqual((saved["timer"]["polls"], saved["timer"]["rate_hz"]), (11, 10.0))
         self.assertEqual(set(saved["timing"]), TIMING_KEYS_FREE | {"stream_reads_s"})
+        # The free-mode defaults: lidar 20 and camera 40 per wall second, streamed, so the pass at
+        # 1.0 s reads them before the Timer ends the run (k / 20 for k = 0 to 20, k / 40 for k = 0
+        # to 40); radar, GPS and IMU at 10 are polled at 0 to 0.9 s.
         self.assertEqual({r["sensor"]: r["polls"] for r in saved["sensors"]},
-                         {"lidar": 20, "camera": 20, "radar": 20, "gps": 10, "imu": 10})
+                         {"lidar": 21, "camera": 41, "radar": 10, "gps": 10, "imu": 10})
+        self.assertEqual({r["sensor"]: r["configured_rate_hz"] for r in saved["sensors"]},
+                         {"lidar": 20.0, "camera": 40.0, "radar": 10.0, "gps": 10.0, "imu": 10.0})
+        self.assertEqual({(r["schedule"]["late"], r["schedule"]["skipped"]) for r in saved["sensors"]}, {(0, 0)})
         dump = self.saved("raw_gps_imu.json")
         self.assertIn("provenance", dump)
         self.assertEqual({e["step"] for e in dump["cases"][0]["entries"]}, {None})

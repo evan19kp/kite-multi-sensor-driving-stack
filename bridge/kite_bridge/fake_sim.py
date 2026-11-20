@@ -102,8 +102,8 @@ class FakeSim(Simulator):
     point count, or, as a tuple, gives sample `tick` the count `lidar_rows[tick % len(lidar_rows)]`;
     by default it varies between 900 and 1099 with the sample.
 
-    Streaming (`attach_sensors(car, stream=True)`, then `stream`) costs no fake time and sends no
-    request. The lidar's shared memory is a block of `stream_rows` float32 rows of x, y, z, all
+    Streaming (`attach_sensors(car, stream=True)`, then `stream`) sends no request and costs
+    `stream_cost` fake seconds per read (0 by default). The lidar's shared memory is a block of `stream_rows` float32 rows of x, y, z, all
     zero at first. Every sample, read or not, writes its scan over the start of the block and
     leaves the rest as it was, so after a shorter scan the block holds the scan, then rows left
     from an earlier longer scan, then zero rows. Row r of sample t is (t + 1, r + 1, 2). Until
@@ -118,11 +118,12 @@ class FakeSim(Simulator):
 
     def __init__(self, seed=0, rates=None, dropout=0.0, repeat=0.0, latency=0.0,
                  models=DEFAULT_MODELS, sensor_time=True, clock=None, request_cost=0.0,
-                 step_cost=0.0, lidar_rows=None, stream_rows=FAKE_STREAM_ROWS, free_speed=1.0):
+                 step_cost=0.0, lidar_rows=None, stream_rows=FAKE_STREAM_ROWS, free_speed=1.0, stream_cost=0.0):
         self._request_cost = (dict(request_cost) if isinstance(request_cost, dict)
                               else dict.fromkeys((*SENSOR_KINDS, TIMER), request_cost))
-        if clock is None and any((step_cost, *self._request_cost.values())):
-            raise ValueError("a request or step cost needs a clock")
+        if clock is None and any((step_cost, stream_cost, *self._request_cost.values())):
+            raise ValueError("a request, stream or step cost needs a clock")
+        self._stream_cost = stream_cost
         self._clock = clock
         self._wall = time.perf_counter if clock is None else clock.now
         self._free_speed = free_speed
@@ -252,6 +253,7 @@ class FakeSim(Simulator):
         self._require_attached(car, kind)
         if (car, kind) not in self._streamed:
             raise ValueError(f"{kind!r} of {car!r} was not attached with stream=True")
+        self._charge(self._stream_cost)
         tick = self._tick(kind)
         if kind == "lidar":
             raw = {"pointCloud": FakeRows(self._lidar_block(car, tick), FAKE_LIDAR_COLUMNS)}
