@@ -110,7 +110,7 @@ Write `--config=` and not `--config ""`. Windows PowerShell 5.1 and PowerShell 7
 
 If you change `--model`, also change `--config`. The default configuration file belongs to `vivace`, and the scripts do not check that a file matches the model.
 
-To see which model names the simulator offers, run any script with `--list-models`. It starts the simulator, prints the names sorted, one per line, and exits with code 0 without loading a scenario.
+To see which model names the simulator offers, run any script with `--list-models`. It starts the simulator, prints the names sorted, one per line, and exits with code 0 without loading a scenario. It writes nothing, so it does not check `--out`.
 
 ```powershell
 python bridge/spike_connect.py --home "<your BeamNG.tech folder>" --list-models
@@ -130,7 +130,7 @@ sensor: gps pos=(0, 1.5, 2.0) ref_lon=0.0 ref_lat=0.0
 sensor: imu pos=(0, 0, 0.5) dir=(0, -1, 0) up=(0, 0, 1) gfx_update_time=0.01 physics_update_time=0.01
 ```
 
-The camera renders colour only: `is_render_annotations` and `is_render_depth` are `False`. The lidar and radar values are the BeamNGpy 1.36 defaults, passed explicitly, except `is_360_mode`, `is_using_shared_memory` and the radar `dir` and `up`, which are the bridge's own choices. The camera, GPS and IMU values are the bridge's own choices too. None of these values has run against the real simulator yet, so a rejected setting is a useful result. `spike_sensors.py` also writes the table into `sensors.json` under `sensor_settings`.
+The camera renders colour only: `is_render_annotations` and `is_render_depth` are `False`. The lidar and radar values are the BeamNGpy 1.36 defaults, passed explicitly, except `is_360_mode`, `is_using_shared_memory` and the radar `dir` and `up`, which are the bridge's own choices. The camera, GPS and IMU values are the bridge's own choices too. None of these values has run against the real simulator yet, so a rejected setting is a useful result. `spike_sensors.py` also writes the table into `sensors.json`, and `spike_multicar.py` into `multicar.json`, under `sensor_settings`.
 
 `--lidar-pos X,Y,Z` replaces the lidar's `pos` only (vehicle space, metres). The `sensor:` line and `sensors.json` then show the position you gave, and the adapter passes it to BeamNGpy through the same table. The radar's `pos` stays `(0, 0, 1.7)`. See Run 5.
 
@@ -162,7 +162,7 @@ sensor: imu pos=(0, 0, 0.5) ...
 spawned kite1 (model: vivace, config: vehicles/vivace/tograc_qE.pc)
 t=1s position=(10.00, 0.00, 0.00)
 t=2s position=(20.00, 0.00, 0.00)
-wrote scratch\R27\out\connect.json
+wrote scratch\example\connect.json
 ```
 
 On the real run, expect 30 `t=` lines and `wrote recordings\connect.json`. The first two version lines are the installed BeamNGpy package version and the protocol version it speaks to the simulator. BeamNGpy 1.36 has no call that returns the BeamNG.tech version, so the third line is fixed text. Read the BeamNG.tech version from the simulator itself, not from this output. If AI traffic cannot start, the script prints `traffic not spawned (...)` with the error and continues with our car alone.
@@ -255,7 +255,7 @@ The columns:
 - `repeat`: readings with the same timestamp as the previous reading.
 - `unexp`: polls that the bridge could not read. This counts a poll that raised an error, a poll that returned a type outside None, a dict, a list, bytes or an array-like object (anything with a length), a lidar poll without a `pointCloud`, and a poll holding a value the bridge cannot size or fingerprint (`first: raw data not measurable: ...`). That last case is a value of a type `raw_data.py` does not list, such as a complex number, an integer beyond 64 bits, or an object with a length that can be neither iterated nor turned into bytes. The bridge measures dict keys of every type that `raw_data.py` lists: text, numbers, true/false, None, bytes and tuples.
 - `points`: mean lidar points per scan. Other sensors show `n/a`.
-- `detect`: mean radar detections over the polls that returned an array. A radar poll that returns an array counts as one reading, and its detections are the array's rows. The bridge does not read the array's columns. Other sensors, and a radar that returned no array, show `n/a`.
+- `detect`: mean radar detections over the polls that returned an array, printed with one decimal. A radar poll that returns an array counts as one reading, and its detections are the array's rows. The bridge does not read the array's columns. Other sensors, and a radar that returned no array, show `n/a`.
 
 A lidar scan with no points counts under `empty`, like any poll that returned None or an empty dict, list or bytes. A radar array with zero rows does not count under `empty`. It is one reading that records 0 detections.
 
@@ -380,9 +380,9 @@ The fake's times mean nothing. Its streamed camera image is 640 by 360, the conf
 
 When the lidar streams, BeamNGpy reads the whole shared-memory block and does not ask the simulator how many points the scan has. The rows after the scan may be memory that was never written, or rows left from an earlier, longer scan. The bridge checks every streamed reading before it uses it. The rules are in `bridge/kite_bridge/stream_check.py`.
 
-- `sus_rows` (JSON `suspect.rows`), lidar only: the all-zero rows cut off the end of lidar scans that were kept. An all-zero row is a row whose bytes are all zero. The bridge cuts every all-zero row after the last row that has any non-zero byte, and the matching rows of any other array in the reading with the same row count, such as the colours. The count is summed over reads, so memory read twice counts twice. A scan counted under `unexp` adds nothing to `sus_rows`. The `points` column counts the rows that were kept.
+- `sus_rows` (JSON `suspect.rows`), lidar only: the all-zero rows cut off the end of lidar scans that were kept. An all-zero row is a row whose bytes are all zero. The bridge cuts every all-zero row after the last row that has any non-zero byte, and the matching rows of any other array in the reading with the same row count, such as the colours. Memory with no non-zero row at all, which was never written, is no scan: it counts under `empty` only and adds nothing to `sus_rows`. The count is summed over reads, so memory read twice counts twice. A scan counted under `unexp` adds nothing to `sus_rows`. The `points` column counts the rows that were kept.
 - `suspect` (JSON `suspect.readings`): streamed readings dropped whole. Nothing of such a reading is used or counted under `polls`, `empty`, `new` or `bytes`. Its read time still counts. A lidar reading is dropped when its `pointCloud` is not an array of rows with at least 3 columns, when its byte count does not fit 4- or 8-byte floats for its shape, or when a kept value is not finite (`nan` or `inf`). A camera reading is dropped when any image in it is not the configured `resolution`, 640 by 360, or has no size. `suspect.first` holds the first reason, and the `suspect:` line prints it.
-- If a camera `stream()` returns None, the bridge counts it under `empty` and takes it as no frame yet. Whether BeamNGpy ever does this is not known. A camera `stream()` result that is not a dict of images counts under `unexp`, with `first: camera stream() returned <type>, not a dict of images`.
+- If a camera `stream()` returns None, or a dict whose images are all None, the bridge counts it under `empty` and takes it as no frame yet. Whether BeamNGpy ever does this is not known. A camera `stream()` result that is not a dict of images counts under `unexp`, with `first: camera stream() returned <type>, not a dict of images`.
 - A reading whose memory has not changed since the last read is not suspect. It is not new either: `new` compares the content, as before.
 
 What the bridge cannot detect:
@@ -602,7 +602,7 @@ The simulator starts three times, and each case runs 30 simulated seconds. Expec
 ### What to send back
 
 - The full printed output of all three cases.
-- `recordings/multicar.json`.
+- `recordings/multicar.json`. Like `sensors.json`, it has the settings the run passed, under `sensor_settings`.
 - `recordings/raw_gps_imu.json` if you ran with `--dump-raw`.
 - Any error, in full, with the case it happened in.
 
@@ -675,17 +675,18 @@ With `--mode lockstep`, these lines appear only when they apply:
 - `other cars not logged (...)`, with the error, when the script cannot read the traffic cars' positions. It keeps running without them. It prints during the run, before `logged N steps`.
 - `lidar gave no reading on N of M steps; no lidar was logged for them`, after `logged N steps`.
 - `camera gave no reading on N of M steps; no image was logged for them`, after `logged N steps`.
+- `unexp: lidar read raised on N of M steps, first: <type>: <message>; nothing was logged for them`, and the same for the camera, after `logged N steps`. A read that raises counts here and not as no reading, and the run goes on. A timeout stops the run instead.
 
 In both modes, `traffic not spawned (...)` appears as above. With `--save`, a successful run ends with `wrote recordings\demo.rrd` and the two lines described under "What the size line measures" in Run 4. With `--live-stride N` above 1, the run prints `the live viewer showed 1 of every N lidar points`.
 
-In free mode, a lidar or camera reading that is empty, unexpected or suspect is not logged. The tables count it under `empty`, `unexp` or `suspect`. The script also skips two kinds of reading that the tables count as readings. It prints how many new ones it skipped after the `logged ...` line, and the run goes on:
+In free mode, a lidar or camera read that raises counts under `unexp` in the tables and the run goes on; a timeout stops it. A lidar or camera reading that is empty, unexpected or suspect is not logged. The tables count it under `empty`, `unexp` or `suspect`. The script also skips two kinds of reading that the tables count as readings. It prints how many new ones it skipped after the `logged ...` line, and the run goes on:
 
 - A lidar scan with a point whose x, y or z is not finite (nan or inf): `lidar gave N new scans with a non-finite point; not logged`. The stream check already drops such a streamed scan as `suspect`, so this happens only with `--no-stream`, where the lidar is polled and its scans skip the stream check. With `--mode lockstep`, such a scan still stops the run with an error.
-- A camera reading that has no colour image: `camera gave N new readings without a colour image; not logged`. That reading passes the stream check.
+- A camera reading that has no colour image (a polled dict, or a streamed one with another image): `camera gave N new readings without a colour image; not logged`. That reading passes the stream check. A streamed camera dict whose images are all None is an `empty` reading, and this line does not count it.
 
 When new GPS polls carry no x and y in their latest reading, the script prints `gps gave N new polls without a position in their latest reading; world/ego did not move for them`. N counts polls, not readings, because `world/ego` moves at most once per poll, to the position of the poll's latest reading. N matches the `new` column of the gps row only when each GPS poll carries one reading (`per_poll` 1). A GPS that buffers several readings between polls has a larger `new`.
 
-On the fake simulator with `--save demo.rrd`, the script writes no file and prints `--fake keeps nothing; the recording would have gone to scratch\R27\out\demo.rrd` instead.
+On the fake simulator with `--save demo.rrd`, the script writes no file and prints `--fake keeps nothing; the recording would have gone to scratch\example\demo.rrd` instead.
 
 ### How long it takes
 

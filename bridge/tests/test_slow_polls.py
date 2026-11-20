@@ -12,8 +12,9 @@ from unittest import mock
 from tests.test_free_running import SENSOR_RATES, BoundedClock
 from tests.test_scripts import run_script
 from kite_bridge import common, rates
-from kite_bridge.fake_sim import FakeSim
+from kite_bridge.fake_sim import FakeImage, FakeSim
 from kite_bridge.rerun_view import CAMERA_PATH, EGO_PATH, GROUND_ORIGIN, GROUND_TRUTH_PATH, LIDAR_PATH
+from kite_bridge.sensor_settings import SENSOR_SETTINGS
 from kite_bridge.stream_check import reading_from_stream
 
 # Evan's real runs: a poll costs about 20 ms, a streamed read about 1 ms.
@@ -209,7 +210,11 @@ class RawRecorder:
 
 
 class NoColourCamera(Timed):
-    """Its streamed camera gives a dict whose only image is None, which passes stream_check."""
+    """Its streamed camera gives a dict with no colour image but a depth image of the configured
+    size, which passes stream_check as a reading. With `depth` False the dict has only None
+    values, which stream_check counts as an empty reading."""
+
+    depth = True
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -219,7 +224,12 @@ class NoColourCamera(Timed):
         if kind != "camera":
             return super().stream(car, kind)
         self.camera_reads += 1
-        return reading_from_stream(kind, {"colour": None}, self.sim_time)
+        depth = FakeImage(SENSOR_SETTINGS["camera"]["resolution"], 0) if self.depth else None
+        return reading_from_stream(kind, {"colour": None, "depth": depth}, self.sim_time)
+
+
+class AllNoneCamera(NoColourCamera):
+    depth = False
 
 
 class LiveViewerDefaultTest(unittest.TestCase):
@@ -286,6 +296,17 @@ class LiveViewerDefaultTest(unittest.TestCase):
         self.assertEqual(sim.camera_reads, 41)
         self.assertIn("logged 11 lidar scans and 0 camera images at Timer times", stdout)
         self.assertIn("camera gave 1 new readings without a colour image; not logged", stdout)
+        self.assertRegex(stdout, r"(?m)^kite1\s+camera\s+41\s.*\s0\s+\d+\s+0\s+n/a\s+n/a\s+stream\s+0\s+0$")
+
+    def test_camera_readings_with_every_image_none_are_empty_and_never_reach_the_viewer(self):
+        code, stdout, _, (sim,), recorder = self.run_main(sim_class=AllNoneCamera)
+        self.assertEqual(code, 0)
+        self.assertEqual(sim.camera_reads, 41)
+        self.assertEqual([c for c in recorder.calls if c[0] == "image"], [])
+        # All 41 reads are empty: polls 41, empty 41, unexp 0, and the viewer is told nothing.
+        self.assertRegex(stdout, r"(?m)^kite1\s+camera\s+41\s.*\s+41\s+0\s+0\s+n/a\s+n/a\s+stream\s+0\s+0$")
+        self.assertIn("logged 11 lidar scans and 0 camera images at Timer times", stdout)
+        self.assertNotIn("not logged", stdout)
 
     def test_every_camera_image_logged_prints_no_not_logged_line(self):
         _, stdout, _, _, _ = self.run_main()

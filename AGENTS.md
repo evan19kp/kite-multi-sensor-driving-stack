@@ -435,6 +435,16 @@ Each item that introduces a lasting rule adds a "## Standing rules (R<n>)" secti
 - Counting lidar points on a real scan is one array operation in `rerun_view.NumpyArrays`;
   `ListArrays` is for the fake and tests only.
 
+## Standing rules (R39)
+
+- A streamed reading with nothing in it (all-zero lidar memory, a camera dict whose images are all
+  None) counts under `empty` only. `sus_rows` counts only the all-zero rows cut off a lidar scan
+  that was kept. `stream_check.py` decides this and nothing downstream repeats it.
+- A lidar or camera read that raises counts under `unexp` and the run goes on, in both modes of
+  every script, except a timeout, which stops the run (R29).
+- `common.write_json` refuses a payload with its own `provenance` key; the field comes only from
+  `PROVENANCE`.
+
 ## Simulator files (hard rule)
 
 - Never read, list, search, copy, launch or write about the simulator's install folder, its user

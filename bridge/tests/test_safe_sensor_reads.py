@@ -50,7 +50,7 @@ class ArrayPollTest(unittest.TestCase):
         self.assertEqual(rows["lidar"]["points_mean"], 250)
         self.assertEqual(rows["lidar"]["unexpected"]["count"], 0)
         table = common.format_result(result)
-        self.assertRegex(table, r"(?m)^kite1\s+radar\s.*\s6$")
+        self.assertRegex(table, r"(?m)^kite1\s+radar\s.*\s6\.0$")
         self.assertRegex(table, r"(?m)^kite1\s+lidar\s.*\s250\s+n/a$")
 
     def test_a_radar_array_with_no_rows_is_a_reading_and_a_lidar_scan_with_no_points_is_empty(self):

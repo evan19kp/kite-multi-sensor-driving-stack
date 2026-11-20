@@ -325,7 +325,7 @@ fake.
   per scan, mean and max per run, labelled approximate; `docs/SPIKE-0B.md` height runs. Tests (fake
   only): known points inside and outside the radius; the option reaches the sensor settings;
   non-finite or wrong-count values are usage errors.
-- [ ] **R39 Leftovers from 0B.1 and 0B.2** (fix, Sonnet): streamed all-zero lidar counts under
+- [x] **R39 Leftovers from 0B.1 and 0B.2** (fix, Sonnet): streamed all-zero lidar counts under
   `empty` only; a streamed camera reading with all images None counts as `empty`;
   `spike_lidar_rerun.py` counts a raising lidar or camera read under `unexp` and continues;
   `multicar.json` includes `sensor_settings` and `detect` prints 1 decimal; `--list-models` doesn't

@@ -178,7 +178,7 @@ def parse_args(description, argv=None, extra=None, check=None):
     args = parser.parse_args(argv)
     if not args.fake and not args.home:
         parser.error("--home is required unless --fake is given")
-    refusal = out_refusal(args.out, repo_roots())
+    refusal = None if args.list_models else out_refusal(args.out, repo_roots())
     if refusal:
         parser.error(f"--out {refusal}")
     problem = check(args) if check else None
@@ -832,7 +832,7 @@ def format_result(result):
                      f"{_fmt(lat['mean'], 1000):>9}{_fmt(lat['p50'], 1000):>8}{_fmt(lat['p95'], 1000):>8}"
                      f"{_fmt(lat['max'], 1000):>8}{r['empty']:>7}{r['repeated']:>8}"
                      f"{r['unexpected']['count']:>7}{_fmt(r['points_mean'], digits=0):>8}"
-                     f"{_fmt(r['detections_mean'], digits=0):>8}" + (_stream_columns(r) if stream else ""))
+                     f"{_fmt(r['detections_mean'], digits=1):>8}" + (_stream_columns(r) if stream else ""))
     lines += _timing_lines(result)
     lines += _schedule_lines(result)
     lines += _self_hit_lines(result)
@@ -860,6 +860,10 @@ def format_result(result):
 
 
 def write_json(out, name, data):
+    """Writes `data`, a dict, as `name` in `out`, with the top-level "provenance" field from
+    `PROVENANCE`. Raises ValueError, and writes nothing, when `data` has its own "provenance"."""
+    if "provenance" in data:
+        raise ValueError("write_json: the payload has its own 'provenance' key; it comes only from PROVENANCE")
     folder = Path(out)
     folder.mkdir(parents=True, exist_ok=True)
     path = folder / name

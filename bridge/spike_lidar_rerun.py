@@ -16,7 +16,9 @@ points coloured by distance from our car (near blue, far red), our car's positio
 image. Our car's and the traffic cars' positions come from simulator state, so they are ground
 truth, logged for display only under `ground_truth/`, apart from the sensor layers. A step where
 the lidar or the camera gives no reading logs nothing for that sensor; the run says how many steps
-that was. --mode lockstep polls; it takes neither --stream nor --rates, and it does not count
+that was. A lidar or camera read that raises counts as `unexp` (one line with the count and the
+first error) and the run goes on; a timeout stops the run. --mode lockstep polls; it takes
+neither --stream nor --rates, and it does not count
 self-hits.
 
 --lidar-pos x,y,z sets where the lidar sits on our car (vehicle space, metres), in both modes. In
@@ -165,6 +167,7 @@ def _run_free(sim, car, args, recorder):
 
 def _run_lockstep(sim, car, args, recorder, show_traffic):
     no_lidar = no_image = 0
+    lidar_raised, image_raised = [], []
     sim.attach_sensors(car, lidar_pos=args.lidar_pos)
     steps = common.steps_for(args.seconds)
     for _ in range(steps):
@@ -178,17 +181,38 @@ def _run_lockstep(sim, car, args, recorder, show_traffic):
             except Exception as error:
                 print(f"other cars not logged ({type(error).__name__}: {error})")
                 show_traffic = False
-        lidar = sim.lidar_points(car)
-        image = sim.camera_image(car)
-        no_lidar += lidar is None
-        no_image += image is None
+        lidar, lidar_error = _try_read(sim.lidar_points, car)
+        image, image_error = _try_read(sim.camera_image, car)
+        if lidar_error:
+            lidar_raised.append(lidar_error)
+        else:
+            no_lidar += lidar is None
+        if image_error:
+            image_raised.append(image_error)
+        else:
+            no_image += image is None
         rerun_view.log_step(recorder, sim.sim_time, sim.position(car), lidar, image, others)
     report = [f"logged {steps} steps"]
     if no_lidar:
         report.append(f"lidar gave no reading on {no_lidar} of {steps} steps; no lidar was logged for them")
     if no_image:
         report.append(f"camera gave no reading on {no_image} of {steps} steps; no image was logged for them")
+    for name, raised in (("lidar", lidar_raised), ("camera", image_raised)):
+        if raised:
+            report.append(f"unexp: {name} read raised on {len(raised)} of {steps} steps, first: {raised[0]}; "
+                          f"nothing was logged for them")
     return report, steps / STEP_HZ
+
+
+def _try_read(read, car):
+    """`read(car)` and None, or None and the error as text when it raises. A timeout is never
+    caught (R29): it stops the run."""
+    try:
+        return read(car), None
+    except TimeoutError:
+        raise
+    except Exception as error:
+        return None, f"{type(error).__name__}: {error}"
 
 
 def main(argv=None):
