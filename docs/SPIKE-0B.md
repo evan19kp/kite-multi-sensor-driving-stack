@@ -60,6 +60,8 @@ All four scripts take these options. `--home` is required for a real run.
 
 `spike_sensors.py` and `spike_multicar.py` also take `--rates` (how often each sensor is read, see "Reading each sensor at its own rate" under Run 2), `--dump-raw N` (default 0, which writes nothing; see "The raw GPS and IMU dump" under Run 2), `--stream` (default off; see "Streaming the lidar and camera" under Run 2) and `--mode` (default `lockstep`; see "Letting the simulator run on its own" under Run 2). `spike_lidar_rerun.py` takes `--rates` (reads per wall second; it needs `--mode free`), `--mode` (default `free`) and `--stream` (default on with `--mode free`; `--no-stream` turns it off); see Demo 1.
 
+Every script that creates a lidar (`spike_sensors.py`, `spike_multicar.py` and `spike_lidar_rerun.py`) also takes `--lidar-pos X,Y,Z` (default `0,0,1.7`) and `--ego-radius METRES` (default 2.5); see Run 5. `spike_connect.py` creates no lidar, so it has neither option.
+
 Each script starts BeamNG.tech itself and closes it when the run ends. Close any BeamNG.tech that is already running before you start a script. The bridge connects to the simulator on a fixed local port, so a second copy may block the connection.
 
 Without `--home` and without `--fake`, a script prints a usage error and exits with code 2. If `--home` is not a folder, it prints `error: --home is not a folder` and exits with code 1. Any other failure exits with code 1 too. A failure the script checks for prints `error: <message>`. An unexpected failure prints a traceback, then `error: <type>: <message>`.
@@ -129,6 +131,8 @@ sensor: imu pos=(0, 0, 0.5) dir=(0, -1, 0) up=(0, 0, 1) gfx_update_time=0.01 phy
 ```
 
 The camera renders colour only: `is_render_annotations` and `is_render_depth` are `False`. The lidar and radar values are the BeamNGpy 1.36 defaults, passed explicitly, except `is_360_mode`, `is_using_shared_memory` and the radar `dir` and `up`, which are the bridge's own choices. The camera, GPS and IMU values are the bridge's own choices too. None of these values has run against the real simulator yet, so a rejected setting is a useful result. `spike_sensors.py` also writes the table into `sensors.json` under `sensor_settings`.
+
+`--lidar-pos X,Y,Z` replaces the lidar's `pos` only (vehicle space, metres). The `sensor:` line and `sensors.json` then show the position you gave, and the adapter passes it to BeamNGpy through the same table. The radar's `pos` stays `(0, 0, 1.7)`. See Run 5.
 
 ### How to read the output
 
@@ -768,6 +772,63 @@ PNG encoding: <n> camera images in <s> s
 - Any error, in full.
 
 Do not send the `.rrd` file unless the director asks for it.
+
+## Run 5: where the lidar sits, and how many points hit our own car (`spike_sensors.py --lidar-pos`)
+
+With the lidar at `pos` (0, 0, 1.7) you found that it hits our own car: the whole roof spoiler and the rear part of the roof rails. This run tries other heights and prints how many points land near the car, so the heights can be compared by a number. Nobody has run it against BeamNG.tech yet. No height is claimed to be best until your run prints the numbers.
+
+### What the options do
+
+- `--lidar-pos X,Y,Z` is where the lidar sits on our car, in vehicle space, in metres. The default is `0,0,1.7`, the same as before. In the bridge's settings the car's front is `-y` (the camera at y = -0.5 sits ahead of the lidar), `x` is to one side and `z` is up, so `--lidar-pos 0,0.5,2.1` is 0.5 m behind the middle of the car and 2.1 m up. Three finite numbers separated by commas are required; anything else is a usage error and exits with code 2. Write a negative value with an equals sign, as `--lidar-pos=-0.5,0,1.9`. The `sensor:` lidar line and `sensor_settings` in `sensors.json` show it. Only the lidar moves: the radar keeps `pos=(0, 0, 1.7)`.
+- `--ego-radius METRES` (default 2.5, above 0) is the radius of the self-hit count below.
+
+### What the self-hit line measures
+
+After the tables, the run prints one line of explanation and one line per car:
+
+```
+self hits (approximate): lidar points within 2.5 m of our car in x and y, measured from the latest GPS position; a vertical cylinder, not the car's shape, so ground points inside it count and the count falls short when the GPS position is older than the scan. Per new scan.
+self hits (approximate): kite1 lidar at (0, 0, 2.1): <n> scans counted, mean <m> points, max <k>
+```
+
+`sensors.json` has the same numbers on the lidar row under `self_hits_approx`, and `multicar.json` has them per car and case.
+
+Every new lidar scan (a repeat of the previous scan is not counted again) is counted as the number of points whose horizontal distance, in x and y, from the car is at most `--ego-radius`. The mean and the maximum are over the scans counted in the run. Time spent counting is part of `our processing`. On the real simulator the count is one array operation per scan, with no Python loop over points.
+
+Which position the count uses, and why:
+
+- It uses the x and y of the latest GPS reading of our car. The GPS is already one of the polls of the run, so the count adds no request. It never asks the simulator for our car's position, and no ground truth is involved. The same rule applies in `--mode lockstep` and `--mode free`. In `--mode free` a position request would be an extra blocking poll, which the one-slow-poll-per-pass rule forbids.
+- It is a score of the sensor mount, printed and written to the JSON only. It is never logged to Rerun, never put under `world/` and never fed to anything that drives.
+
+What the number cannot tell you:
+
+- It is not the shape of the car. It is a vertical cylinder, so it cannot tell a hit on the roof from a point on the ground, and ground points inside the radius count. The lowest beams reach the ground at a distance that grows with the lidar's height, so a radius below that distance keeps the ground out. The proper filter, an oriented box around the car, comes with perception.
+- The GPS sits at its own mount, `(0, 1.5, 2.0)` in `sensor_settings.py`, which is about 1.5 m behind the car's origin, so the cylinder is centred about there and not on the middle of the car.
+- The GPS is read less often than the lidar (10 times per wall second against 20 by default in free mode), so its position can be older than the scan. A car that drives at speed v moves v times that age in between: about 1.5 m for 0.1 s at 15 m/s (worked out, not measured). Points of the car then fall outside the cylinder and the count is lower than the true number. A higher `--rates gps=...` shortens the age; the `schedule` table shows whether those reads came late.
+- It takes the lidar points and the GPS x and y to be in one frame, the world frame (see "Limits of `world/ego`"). If the GPS gives no x and y, no scan is counted and the run prints `kite1 lidar: <n> new scans had no GPS position yet and were not counted`. If the two frames differ, the counts mean nothing. Tell the director.
+- Two runs of one height differ because the car drives through different traffic. Run each height twice. If two runs of the same height differ by more than two heights differ from each other, the numbers cannot rank the heights.
+
+### Commands
+
+Run each height for 10 simulated seconds, twice, into its own folder so that `sensors.json` is not overwritten:
+
+```powershell
+python bridge/spike_sensors.py --home "<your BeamNG.tech folder>" --mode free --stream --seconds 10 --lidar-pos 0,0,1.7 --out recordings/height-1.7-a
+python bridge/spike_sensors.py --home "<your BeamNG.tech folder>" --mode free --stream --seconds 10 --lidar-pos 0,0,1.9 --out recordings/height-1.9-a
+python bridge/spike_sensors.py --home "<your BeamNG.tech folder>" --mode free --stream --seconds 10 --lidar-pos 0,0,2.1 --out recordings/height-2.1-a
+python bridge/spike_sensors.py --home "<your BeamNG.tech folder>" --mode free --stream --seconds 10 --lidar-pos 0,0,2.3 --out recordings/height-2.3-a
+```
+
+Then the same four with `-b` in the folder names. To look at the points instead of counting them, run `python bridge/spike_lidar_rerun.py --home "<your BeamNG.tech folder>" --seconds 10 --lidar-pos 0,0,2.1`; its table ends with the same self-hit lines.
+
+### What to send back
+
+- For every run: the `sensor: lidar` line and the `self hits (approximate)` lines, with the `scans counted`, `mean` and `max`.
+- The lidar row's `points` column, so the counts can be compared with the size of a scan.
+- The `real-time factor` and the gps and lidar rows of the `schedule` table (`late`, `worst_ms`, `skipped`).
+- Whether `new scans had no GPS position yet` was printed, and how many.
+- Whether, in the Rerun view, points still sit on the car at any of the heights.
+- Any error, in full.
 
 ## If a call fails
 

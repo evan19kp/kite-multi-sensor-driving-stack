@@ -59,17 +59,24 @@ SENSOR_SETTINGS = {
 STREAM_SETTINGS = {"is_streaming": True}
 
 
-def settings_for(kind, stream=False):
+DEFAULT_LIDAR_POS = SENSOR_SETTINGS["lidar"]["pos"]
+
+
+def settings_for(kind, stream=False, lidar_pos=None):
     """What the adapter passes to a `kind` sensor: SENSOR_SETTINGS[kind], and with `stream` also
-    STREAM_SETTINGS for the streamed sensors (lidar and camera). Without `stream` it is
-    SENSOR_SETTINGS[kind] itself."""
+    STREAM_SETTINGS for the streamed sensors (lidar and camera). A `lidar_pos` (x, y, z in
+    vehicle space, metres) replaces the lidar's `pos`; it changes no other sensor. Without
+    `stream` and `lidar_pos` it is SENSOR_SETTINGS[kind] itself."""
+    settings = SENSOR_SETTINGS[kind]
+    if lidar_pos is not None and kind == "lidar":
+        settings = {**settings, "pos": lidar_pos}
     if stream and kind in STREAMED_KINDS:
-        return {**SENSOR_SETTINGS[kind], **STREAM_SETTINGS}
-    return SENSOR_SETTINGS[kind]
+        return {**settings, **STREAM_SETTINGS}
+    return settings
 
 
-def settings_table(stream=False):
-    return {kind: settings_for(kind, stream) for kind in SENSOR_SETTINGS}
+def settings_table(stream=False, lidar_pos=None):
+    return {kind: settings_for(kind, stream, lidar_pos) for kind in SENSOR_SETTINGS}
 
 
 def requested_update_hz(kind):
@@ -79,6 +86,6 @@ def requested_update_hz(kind):
     return None if interval is None else 1 / interval
 
 
-def settings_lines(stream=False):
+def settings_lines(stream=False, lidar_pos=None):
     return [f"sensor: {kind} " + " ".join(f"{name}={value}" for name, value in settings.items())
-            for kind, settings in settings_table(stream).items()]
+            for kind, settings in settings_table(stream, lidar_pos).items()]

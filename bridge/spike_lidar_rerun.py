@@ -16,7 +16,13 @@ points coloured by distance from our car (near blue, far red), our car's positio
 image. Our car's and the traffic cars' positions come from simulator state, so they are ground
 truth, logged for display only under `ground_truth/`, apart from the sensor layers. A step where
 the lidar or the camera gives no reading logs nothing for that sensor; the run says how many steps
-that was. --mode lockstep polls; it takes neither --stream nor --rates.
+that was. --mode lockstep polls; it takes neither --stream nor --rates, and it does not count
+self-hits.
+
+--lidar-pos x,y,z sets where the lidar sits on our car (vehicle space, metres), in both modes. In
+free mode the measuring table is followed by an approximate self-hit count: the lidar points
+within --ego-radius metres of our car in x and y, measured from the GPS position, per new scan.
+It is printed only, never logged to Rerun.
 
 --save <name.rrd> writes the recording to that file inside --out and does not open a viewer;
 open it later with `rerun <file>`. It keeps every lidar point and stores each camera image as a
@@ -65,6 +71,8 @@ def _add_options(parser):
 def _check(args):
     if args.mode == common.LOCKSTEP and (args.stream or args.rates is not None):
         return "--stream and --rates need --mode free; --mode lockstep polls the lidar and camera after every step"
+    if args.mode == common.LOCKSTEP and args.ego_radius is not None:
+        return "--ego-radius needs --mode free; --mode lockstep does not count self-hits"
     if args.save and args.live_stride != 1:
         return "--live-stride thins the live viewer only; a --save recording keeps every lidar point"
     return None
@@ -78,7 +86,7 @@ def make_recorder(save_path, fake, live_stride):
 
 def run(args):
     save_path = rerun_view.recording_path(args.out, args.save) if args.save else None
-    common.print_sensor_settings(args.stream)
+    common.print_sensor_settings(args.stream, args.lidar_pos)
     with common.session(args) as sim:
         car = common.spawn(sim, args, 1)[0]
         show_traffic = common.start_traffic(sim, args.traffic)
@@ -138,7 +146,8 @@ def _run_free(sim, car, args, recorder):
                 not_logged[kind] += 1
 
     result = common.measure_sensors(sim, [car], args.seconds, poll_rates=args.rates, stream=args.stream,
-                                    mode=common.FREE, on_reading=log)
+                                    mode=common.FREE, on_reading=log, lidar_pos=args.lidar_pos,
+                                    self_hits=common.make_self_hits(args))
     print(common.format_result(result))
     report = [f"logged {logged['lidar']} lidar scans and {logged['camera']} camera images at Timer times, "
               "each only when its content was new"]
@@ -156,7 +165,7 @@ def _run_free(sim, car, args, recorder):
 
 def _run_lockstep(sim, car, args, recorder, show_traffic):
     no_lidar = no_image = 0
-    sim.attach_sensors(car)
+    sim.attach_sensors(car, lidar_pos=args.lidar_pos)
     steps = common.steps_for(args.seconds)
     for _ in range(steps):
         sim.step(1)

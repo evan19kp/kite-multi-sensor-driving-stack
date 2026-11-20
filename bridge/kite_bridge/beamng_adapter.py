@@ -86,13 +86,13 @@ class BeamNGAdapter(Simulator):
     def spawn_traffic(self, n):
         self._bng.traffic.spawn(max_amount=n)  # ASSUMPTION: not verified for 1.36
 
-    def attach_sensors(self, car, stream=False):
+    def attach_sensors(self, car, stream=False, lidar_pos=None):
         from beamngpy.sensors import GPS, AdvancedIMU, Camera, Lidar, Radar
 
         bng, vehicle = self._bng, self._vehicles[car]
         classes = {"lidar": Lidar, "camera": Camera, "radar": Radar, "gps": GPS, "imu": AdvancedIMU}
         self._sensors.update({
-            (car, kind): sensor_class(f"{kind}_{car}", bng, vehicle, **settings_for(kind, stream))
+            (car, kind): sensor_class(f"{kind}_{car}", bng, vehicle, **settings_for(kind, stream, lidar_pos))
             for kind, sensor_class in classes.items()
         })
 

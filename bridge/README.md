@@ -21,6 +21,10 @@ the spikes on it, and nothing here has run against an installed Rerun yet.
 - `kite_bridge/sensor_settings.py`: the one table of every setting the adapter passes to a
   sensor, including `is_streaming=True` for lidar and camera with `--stream`, and the `sensor:`
   lines the scripts print from it. It imports only `sim_api`.
+- `kite_bridge/self_hits.py`: the approximate self-hit count: lidar points within `--ego-radius`
+  of our car in x and y, from the latest GPS reading's x and y, per new scan. Its docstring says
+  what it measures and what it cannot. It imports no numpy; the real run's array work is
+  `rerun_view.NumpyArrays.count_within`.
 - `kite_bridge/stream_check.py`: the one place that checks a streamed lidar or camera reading
   and decides what is dropped and counted under `suspect`. Standard library only.
 - `kite_bridge/fake_sim.py`: a seeded synthetic simulator with configurable sensor rates,
@@ -66,6 +70,27 @@ with `--mode free` reads per wall second, default `lidar=20,camera=40,radar=10,g
 `lidar=20,camera=40,radar=10,gps=10,imu=10`; it needs `--mode free`), `--mode` (default `free`),
 `--stream`/`--no-stream` (default on with `--mode free`), `--save NAME.rrd` and `--live-stride N`
 (default 1); see "Rerun lidar demo".
+
+The three scripts that create a lidar (`spike_sensors.py`, `spike_multicar.py` and
+`spike_lidar_rerun.py`) also take `--lidar-pos X,Y,Z` (where the lidar sits, vehicle space,
+metres, default `0,0,1.7`; shown on the `sensor:` line) and `--ego-radius METRES` (default 2.5).
+`spike_connect.py` creates no lidar and has neither. A value that is not three finite numbers
+(for `--lidar-pos`) or not above 0 (for `--ego-radius`) is a usage error (exit code 2). Write a
+negative position as `--lidar-pos=-0.5,0,1.9`. `--lidar-pos` replaces only the lidar's `pos` in
+`sensor_settings.py`, which is the only place the adapter takes settings from.
+
+Each run of `spike_sensors.py`, `spike_multicar.py` and the free-mode `spike_lidar_rerun.py`
+prints, after the tables, an approximate self-hit count: per new lidar scan, the points within
+`--ego-radius` metres of our car in x and y, with their mean and maximum over the run (`scans
+counted`, `mean`, `max`), and writes it as `self_hits_approx` on the lidar row of the JSON. It
+is approximate: a vertical cylinder around the x and y of the latest GPS reading, not the car's
+shape. The GPS is already polled, so the count adds no request and uses no simulator state or
+ground truth, in lock-step and free mode alike; it is printed and written to the JSON only, never
+logged to Rerun and never fed to anything that drives. A scan read before the GPS gave an x and y
+is not counted and is reported. The count assumes the lidar points and the GPS x, y are in one
+(world) frame. It has not run against BeamNG.tech; see `docs/SPIKE-0B.md`, Run 5, for how to
+read it. `spike_lidar_rerun.py --mode lockstep` counts nothing, so `--ego-radius` there is a
+usage error.
 
 `--timeout` is the longest wait in seconds for any one simulator call, map loading included; it
 must be above 0. Every run ends BeamNG.tech through one shutdown path. After a normal run or an

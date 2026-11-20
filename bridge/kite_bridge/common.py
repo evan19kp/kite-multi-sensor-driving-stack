@@ -11,11 +11,12 @@ import typing
 from fractions import Fraction
 from pathlib import Path
 
-from kite_bridge import measure, raw_data, rates
+from kite_bridge import measure, raw_data, rates, rerun_view
 from kite_bridge.fake_sim import FakeSim
 from kite_bridge.output_guard import PROVENANCE, out_refusal, repo_roots
 from kite_bridge.readings import readings_in
-from kite_bridge.sensor_settings import requested_update_hz, settings_lines
+from kite_bridge.self_hits import DEFAULT_EGO_RADIUS_M, SelfHits
+from kite_bridge.sensor_settings import DEFAULT_LIDAR_POS, requested_update_hz, settings_lines
 from kite_bridge.sim_api import (BUFFERED_KINDS, POLL_TIME, SENSOR_KINDS, STEP_HZ, STREAMED_KINDS, TIMER,
                                  TIMER_TIME, Reading)
 
@@ -72,6 +73,33 @@ def _count(text):
     return value
 
 
+def _lidar_pos(text):
+    try:
+        values = tuple(float(part) for part in text.split(","))
+    except ValueError:
+        values = ()
+    if len(values) != 3 or not all(math.isfinite(value) for value in values):
+        raise argparse.ArgumentTypeError(f"must be three finite numbers x,y,z in metres, got {text!r}")
+    return values
+
+
+def _add_lidar_options(parser):
+    default = ",".join(f"{value:g}" for value in DEFAULT_LIDAR_POS)
+    parser.add_argument("--lidar-pos", type=_lidar_pos, default=DEFAULT_LIDAR_POS, metavar="X,Y,Z",
+                        help=f"where the lidar sits on our car, x,y,z in vehicle space in metres (default {default}); "
+                             "write a negative value as --lidar-pos=-0.5,0,1.9")
+    parser.add_argument("--ego-radius", type=_positive_float, metavar="METRES",
+                        help=f"count a lidar point as a self-hit, approximately, when it is within this many metres "
+                             f"of our car in x and y, measured from the GPS position (default {DEFAULT_EGO_RADIUS_M:g})")
+
+
+def make_self_hits(args):
+    """The self-hit counter for a run: a pure-Python count for the fake, one array operation per
+    scan for the real simulator."""
+    arrays = rerun_view.ListArrays() if args.fake else rerun_view.NumpyArrays()
+    return SelfHits(args.ego_radius, args.lidar_pos, arrays)
+
+
 def _rates_option(text):
     try:
         rates.parse_rates(text)
@@ -106,6 +134,7 @@ def add_measure_options(parser):
                              "memory with stream() instead of poll(); readings that fail the checks in "
                              "kite_bridge/stream_check.py are dropped and counted under suspect "
                              "(default off: every sensor is polled)")
+    _add_lidar_options(parser)
 
 
 def add_live_options(parser):
@@ -114,13 +143,15 @@ def add_live_options(parser):
     parser.add_argument("--stream", action=argparse.BooleanOptionalAction,
                         help="read the lidar and camera from shared memory with stream(), checked by "
                              "kite_bridge/stream_check.py (default: on with --mode free; --no-stream polls them)")
+    _add_lidar_options(parser)
 
 
 def parse_args(description, argv=None, extra=None, check=None):
     """`check(args)`, if given, returns a usage error message or None. It sees `--rates` as the
-    text given (None without it) and `--stream` as given (None without it, when the script's
-    option has no default). After it, `--rates` becomes the rates of the chosen mode and an
-    unset `--stream` becomes on in free mode and off in lock-step."""
+    text given (None without it), `--ego-radius` as given (None without it) and `--stream` as
+    given (None without it, when the script's option has no default). After it, `--rates`
+    becomes the rates of the chosen mode, an unset `--ego-radius` becomes DEFAULT_EGO_RADIUS_M
+    and an unset `--stream` becomes on in free mode and off in lock-step."""
     parser = argparse.ArgumentParser(description=description)
     parser.add_argument("--home", help="the simulator's folder (required unless --fake)")
     parser.add_argument("--headless", action="store_true", help="run the simulator without a window")
@@ -158,6 +189,8 @@ def parse_args(description, argv=None, extra=None, check=None):
         args.rates = rates.parse_rates(args.rates, defaults)
     if hasattr(args, "stream") and args.stream is None:
         args.stream = args.mode == FREE
+    if hasattr(args, "ego_radius") and args.ego_radius is None:
+        args.ego_radius = DEFAULT_EGO_RADIUS_M
     args.config = args.config or None
     return args
 
@@ -283,8 +316,8 @@ def version_report(sim):
     return {**sim.versions(), "BeamNG.tech version": TECH_VERSION_TEXT}
 
 
-def print_sensor_settings(stream=False):
-    print("\n".join(settings_lines(stream)))
+def print_sensor_settings(stream=False, lidar_pos=None):
+    print("\n".join(settings_lines(stream, lidar_pos)))
 
 
 def spawn(sim, args, n_cars):
@@ -344,7 +377,7 @@ def write_raw_dump(out, per_sensor, cases):
 
 
 def measure_sensors(sim, cars, seconds, clock=None, dump=None, poll_rates=None, stream=False, mode=LOCKSTEP,
-                    sleep=None, on_reading=None):
+                    sleep=None, on_reading=None, lidar_pos=None, self_hits=None):
     """Steps the simulator for `seconds` of simulator time and polls each sensor at its rate in
     `poll_rates`, a dict by sensor kind of polls per simulated second (see `rates` for the
     schedule). By default every sensor is polled once after each step, STEP_HZ per simulator
@@ -398,6 +431,12 @@ def measure_sensors(sim, cars, seconds, clock=None, dump=None, poll_rates=None, 
     those calls, which includes sizing and fingerprinting each poll's raw data. `real_time_factor`
     is simulated seconds over wall seconds.
 
+    `lidar_pos` is where each car's lidar is attached (None: the position in
+    `sensor_settings.py`). The time spent counting is part of `processing_s`. With `self_hits`, a `self_hits.SelfHits`, each lidar row has
+    `self_hits_approx`, its summary for that car, from every new scan and the car's latest GPS
+    position (see `self_hits` for what that does and does not measure); without it the rows
+    have no such key.
+
     A row's `rate_hz` is the rate of distinct reading timestamps seen at poll time. It counts
     at most one new reading per poll, so it is limited to about the poll rate.
     `readings_per_poll_max` is the most readings one poll returned; above 1, the sensor
@@ -412,10 +451,10 @@ def measure_sensors(sim, cars, seconds, clock=None, dump=None, poll_rates=None, 
     clock = clock or wall_clock
     poll_rates = rates.every_step() if poll_rates is None else poll_rates
     for car in cars:
-        sim.attach_sensors(car, stream=stream)
+        sim.attach_sensors(car, stream=stream, lidar_pos=lidar_pos)
     keys = [(car, kind) for car in cars for kind in SENSOR_KINDS]
     streamed = {key for key in keys if stream and key[1] in STREAMED_KINDS}
-    tally = _Tally(keys, streamed, dump, on_reading)
+    tally = _Tally(keys, streamed, dump, on_reading, self_hits)
     if mode == FREE:
         run = _run_free(sim, tally, cars[0], seconds, poll_rates, clock, sleep or wall_sleep)
     else:
@@ -452,6 +491,8 @@ def measure_sensors(sim, cars, seconds, clock=None, dump=None, poll_rates=None, 
             "bytes_per_simulated_s": measure.per_simulated_second(sizes[car, kind], simulated)})
         if run.lags is not None:
             rows[-1]["schedule"] = run.lags[car, kind].summary()
+        if self_hits is not None and kind == "lidar":
+            rows[-1]["self_hits_approx"] = self_hits.summary(car)
         if stream:
             dropped = suspect[car, kind]
             rows[-1]["read"] = "stream" if (car, kind) in streamed else "poll"
@@ -587,8 +628,9 @@ class _Lag:
 
 
 class _Tally:
-    def __init__(self, keys, streamed, dump, on_reading):
+    def __init__(self, keys, streamed, dump, on_reading, self_hits=None):
         self.keys, self.streamed, self.dump, self.on_reading = keys, streamed, dump, on_reading
+        self.self_hits = self_hits
         self.suspect = {key: [] for key in keys}
         self.suspect_rows = {key: 0 for key in keys}
         self.series = {key: [] for key in keys}
@@ -645,8 +687,11 @@ class _Tally:
             self.points[key].append(reading.points)
         if reading.detections is not None:
             self.detections[key].append(reading.detections)
-        if self.fresh[key].is_new(stats.keys or None) and self.on_reading is not None:
-            self.on_reading(key, reading)
+        if self.fresh[key].is_new(stats.keys or None):
+            if self.self_hits is not None:
+                self.self_hits.observe(key[0], key[1], reading.raw)
+            if self.on_reading is not None:
+                self.on_reading(key, reading)
 
 
 def _fmt(value, scale=1.0, digits=2):
@@ -713,6 +758,29 @@ def _loss_lines(result):
     return lines
 
 
+def _self_hit_lines(result):
+    rows = [r for r in result["sensors"] if "self_hits_approx" in r]
+    if not rows:
+        return []
+    radius = rows[0]["self_hits_approx"]["radius_m"]
+    lines = [f"self hits (approximate): lidar points within {radius:g} m of our car in x and y, measured from the "
+             "latest GPS position; a vertical cylinder, not the car's shape, so ground points inside it count and "
+             "the count falls short when the GPS position is older than the scan. Per new scan."]
+    for r in rows:
+        s = r["self_hits_approx"]
+        mount = "(" + ", ".join(f"{value:g}" for value in s["lidar_pos"]) + ")"
+        counted = (f"{s['scans_counted']} scans counted, mean {_fmt(s['mean'], digits=1)} points, "
+                   f"max {_fmt(s['max'], digits=0)}")
+        lines.append(f"self hits (approximate): {r['car']} lidar at {mount}: {counted}")
+        if s["scans_without_position"]:
+            lines.append(f"{r['car']} lidar: {s['scans_without_position']} new scans had no GPS position yet "
+                         "and were not counted")
+        if s["scans_unreadable"]:
+            lines.append(f"{r['car']} lidar: {s['scans_unreadable']} new scans could not be read as x, y, z "
+                         "points and were not counted")
+    return lines
+
+
 def _stream_columns(r):
     s = r["suspect"]
     return f"{r['read']:>8}{s['readings'] if s else 'n/a':>9}{s['rows'] if s else 'n/a':>10}"
@@ -767,6 +835,7 @@ def format_result(result):
                      f"{_fmt(r['detections_mean'], digits=0):>8}" + (_stream_columns(r) if stream else ""))
     lines += _timing_lines(result)
     lines += _schedule_lines(result)
+    lines += _self_hit_lines(result)
     if stream:
         lines += _suspect_lines(result)
     lines.append("rate_hz: distinct reading timestamps per simulator second. It counts at most one "

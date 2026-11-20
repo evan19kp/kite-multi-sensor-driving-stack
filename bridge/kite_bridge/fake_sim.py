@@ -4,7 +4,7 @@ import random
 import time
 
 from kite_bridge.readings import reading_from_raw, timer_value
-from kite_bridge.sensor_settings import SENSOR_SETTINGS
+from kite_bridge.sensor_settings import SENSOR_SETTINGS, settings_for
 from kite_bridge.sim_api import BUFFERED_KINDS, SENSOR_KINDS, STEP_HZ, STREAMED_KINDS, TIMER, Simulator
 from kite_bridge.stream_check import reading_from_stream
 
@@ -41,13 +41,17 @@ class FakeClock:
 
 class FakeCloud:
     """Stands in for a numpy array of float32 rows: it has `len()` and `tobytes()`, and its truth
-    value raises, like numpy's. Its content depends on `tick` alone."""
+    value raises, like numpy's. Its content depends on `tick` alone. Iterating gives row r as the
+    point (tick + 1, r + 1, 2), the point the streamed lidar's row r holds (see `FakeSim`)."""
 
     def __init__(self, rows, tick, columns):
         self._rows, self._tick, self._columns = rows, tick, columns
 
     def __len__(self):
         return self._rows
+
+    def __iter__(self):
+        return ((self._tick + 1.0, row + 1.0, 2.0) for row in range(self._rows))
 
     def __bool__(self):
         raise ValueError("The truth value of an array with more than one element is ambiguous")
@@ -107,6 +111,9 @@ class FakeSim(Simulator):
     point count, or, as a tuple, gives sample `tick` the count `lidar_rows[tick % len(lidar_rows)]`;
     by default it varies between 900 and 1099 with the sample.
 
+    `lidar_settings` has, per car, the settings the real adapter would pass its lidar (what
+    `attach_sensors` was given, through `sensor_settings.settings_for`).
+
     Streaming (`attach_sensors(car, stream=True)`, then `stream`) sends no request and costs
     `stream_cost` fake seconds per read (0 by default). The lidar's shared memory is a block of `stream_rows` float32 rows of x, y, z, all
     zero at first. Every sample, read or not, writes its scan over the start of the block and
@@ -156,6 +163,7 @@ class FakeSim(Simulator):
         self._last = {}
         self._last_tick = {}
         self.injected = {}
+        self.lidar_settings = {}
         self.traffic_requested = None
         self.spawned_model = None
         self.spawned_config = None
@@ -196,7 +204,8 @@ class FakeSim(Simulator):
     def spawn_traffic(self, n):
         self.traffic_requested = n
 
-    def attach_sensors(self, car, stream=False):
+    def attach_sensors(self, car, stream=False, lidar_pos=None):
+        self.lidar_settings[car] = settings_for("lidar", stream, lidar_pos)
         self._attached.update((car, kind) for kind in SENSOR_KINDS)
         if stream:
             self._streamed.update((car, kind) for kind in STREAMED_KINDS)

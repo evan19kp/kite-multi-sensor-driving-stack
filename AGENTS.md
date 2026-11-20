@@ -423,6 +423,18 @@ Each item that introduces a lasting rule adds a "## Standing rules (R<n>)" secti
   GPS polls lacked one. This adds to R19: simulator positions stay under `ground_truth/`.
   `--live-stride` thins the live viewer only; a recording keeps every lidar point.
 
+## Standing rules (R38)
+
+- The lidar's mount reaches the adapter only as `lidar_pos` through
+  `sensor_settings.settings_for`; a script that creates a lidar takes `--lidar-pos`, and the
+  `sensor:` line prints it.
+- The self-hit count (`bridge/kite_bridge/self_hits.py`) uses only the x and y of a GPS reading,
+  never simulator state or ground truth, so it adds no request in either mode. It is labelled
+  approximate wherever it is printed or documented, and it is printed and written to JSON only:
+  never logged under `world/` or `ground_truth/`, and never an input to anything that drives.
+- Counting lidar points on a real scan is one array operation in `rerun_view.NumpyArrays`;
+  `ListArrays` is for the fake and tests only.
+
 ## Simulator files (hard rule)
 
 - Never read, list, search, copy, launch or write about the simulator's install folder, its user
