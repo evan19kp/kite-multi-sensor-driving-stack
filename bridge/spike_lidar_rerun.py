@@ -4,10 +4,10 @@ By default (--mode free --stream) the simulator runs on its own. The lidar and c
 from shared memory with stream() and the radar, GPS, IMU and a Timer are polled, on the free-mode
 wall-clock schedule. Each pass reads the due streamed sensors first, then at most one due poll.
 A lidar scan or camera image is logged at its Timer time only when its content is new. The
-points are coloured by distance from world/ego, our car at the position the IMU reports (the
-origin until it reports one), and the default layout's 3D view follows world/ego. No ground truth
-is logged, because reading our car's position from the simulator is a request that would hold
-up the lidar. The run then prints the measuring table of spike_sensors.py --mode free, which
+points are coloured by distance in x and y from world/ego, our car at the x, y the GPS
+measures (the origin until it gives one), and the default layout's 3D view follows world/ego.
+No ground truth is logged, because reading our car's position from the simulator is a request
+that would hold up the lidar. The run then prints the measuring table of spike_sensors.py --mode free, which
 says how late each sensor's reads came. --no-stream polls the lidar and camera too. --rates sets
 the reads per wall second. --live-stride N shows every Nth lidar point in the live viewer.
 
@@ -124,8 +124,8 @@ def _run_free(sim, car, args, recorder):
     def log(key, reading):
         nonlocal ego, no_colour, no_position
         kind = key[1]
-        if kind == "imu":
-            position = rerun_view.imu_position(reading.raw)
+        if kind == "gps":
+            position = rerun_view.gps_position(reading.raw)
             if position is None:
                 no_position += 1
             else:
@@ -144,7 +144,7 @@ def _run_free(sim, car, args, recorder):
     if no_colour:
         report.append(f"camera gave {no_colour} new readings without a colour image; not logged")
     if no_position:
-        report.append(f"imu gave {no_position} new readings without a position; "
+        report.append(f"gps gave {no_position} new readings without a position; "
                       f"{rerun_view.EGO_FRAME_PATH} did not move for them")
     report.append("no ground truth logged in free mode, because reading our car's or the other cars' positions "
                   "is a request that would hold up the lidar")

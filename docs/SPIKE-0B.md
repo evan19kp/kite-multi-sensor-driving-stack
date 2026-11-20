@@ -652,11 +652,11 @@ By default: the five `sensor:` lines (lidar and camera end in `is_streaming=True
 spawned kite1 (model: vivace, config: vehicles/vivace/tograc_qE.pc)
 ...
 logged 21 lidar scans and 41 camera images at Timer times, each only when its content was new
-imu gave 20 new readings without a position; world/ego did not move for them
+gps gave 20 new readings without a position; world/ego did not move for them
 no ground truth logged in free mode, because reading our car's or the other cars' positions is a request that would hold up the lidar
 ```
 
-The fake reads the lidar 41 times in 2 wall seconds, 20 per second and once more at 2.0 s, but its lidar updates only 10 times per simulated second. Each update is read twice and logged once: 21 scans. The counts match the `new` column of the tables. The fake IMU reports no position, so the `imu gave ...` line appears; see Run 4.
+The fake reads the lidar 41 times in 2 wall seconds, 20 per second and once more at 2.0 s, but its lidar updates only 10 times per simulated second. Each update is read twice and logged once: 21 scans. The counts match the `new` column of the tables. The fake GPS gives no x and y, so the `gps gave ...` line appears; see Run 4. Its 20 matches the `new` column of the gps row.
 
 With `--mode lockstep`: the five `sensor:` lines, a `spawned` line, then a count of the logged steps. With `--seconds 2`:
 
@@ -674,7 +674,7 @@ With `--mode lockstep`, these lines appear only when they apply:
 
 In both modes, `traffic not spawned (...)` appears as above. With `--save`, a successful run ends with `wrote recordings\demo.rrd` and the two lines described under "What the size line measures" in Run 4. With `--live-stride N` above 1, the run prints `the live viewer showed 1 of every N lidar points`.
 
-In free mode, a lidar or camera reading that is empty, unexpected or suspect is not logged. The tables count it under `empty`, `unexp` or `suspect`. The script does not log a camera reading that has no colour image either. That reading passes the stream check and the tables count it as a reading, so the script prints `camera gave N new readings without a colour image; not logged` after the `logged ...` line. When new IMU readings carry no position, it prints `imu gave N new readings without a position; world/ego did not move for them`.
+In free mode, a lidar or camera reading that is empty, unexpected or suspect is not logged. The tables count it under `empty`, `unexp` or `suspect`. The script does not log a camera reading that has no colour image either. That reading passes the stream check and the tables count it as a reading, so the script prints `camera gave N new readings without a colour image; not logged` after the `logged ...` line. When new GPS readings carry no x and y, it prints `gps gave N new readings without a position; world/ego did not move for them`.
 
 On the fake simulator with `--save demo.rrd`, the script writes no file and prints `--fake keeps nothing; the recording would have gone to scratch\R27\out\demo.rrd` instead.
 
@@ -708,15 +708,16 @@ This run checks the Sprint 0B.3 changes to Demo 1 with its default `--mode free 
 - Only new data is logged. A lidar scan or camera image goes to Rerun only when its content differs from the previous one, by the rule behind the `new` column of the tables. BeamNG's per-point `colours` are never logged.
 - `--save` keeps every lidar point and stores each camera image as a PNG through Pillow, which BeamNGpy installs. PNG is lossless, so the file holds exactly the pixels the camera gave. The live viewer gets the images as they are, without encoding.
 - `--live-stride N` shows every Nth lidar point in the live viewer (default 1, every point). It does not change what is measured, and a `--save` recording always keeps every point, so `--live-stride` with `--save` is a usage error.
-- `world/ego` is our car as the sensors place it, with the lidar under it. The script reads its position from the IMU readings it already polls, so it adds no request. Until the IMU reports a position, `world/ego` stays at the origin. Simulator state never goes under `world/`; the free mode logs no ground truth.
+- `world/ego` is our car as the sensors place it, with the lidar under it. The script reads its position from the GPS readings it already polls, so it adds no request. A GPS measures position, as on a real car. Until the GPS gives an x and y in metres, `world/ego` stays at the origin. Simulator state never goes under `world/`; the free mode logs no ground truth.
+- The lidar points are coloured by their distance from `world/ego` in x and y only, because a GPS reading gives no height.
 - The script sends a default layout: a 3D view whose origin is `world/ego`, so the view moves with our car, beside the camera image and the provenance text.
 
 ### Limits of `world/ego`
 
-- It is a guess that BeamNG's IMU reading carries its position under `pos`. If it does not, every run prints `imu gave N new readings without a position; world/ego did not move for them`, and the view stays at the origin.
-- A real IMU does not measure position. BeamNG's IMU reports where the sensor is, so this is a simulator convenience. It is used for display only, never by anything that drives.
-- It is the IMU's position only: the view follows where the car is, not which way it faces.
-- The IMU is read 10 times per wall second and the lidar 20 times, so `world/ego` can be up to one IMU read (about 0.1 s) older than a scan. In the 3D view that follows `world/ego`, the points can then sit off by the distance the car drove in that time: about 1.5 m at 15 m/s. In a view with the origin `/`, the points stay where the lidar saw them.
+- It is a guess that BeamNG's GPS reading carries its position in metres under `x` and `y`, in the same world frame as the lidar points. If it gives only latitude and longitude, the script does not convert them, every run prints `gps gave N new readings without a position; world/ego did not move for them`, and the view stays at the origin. Then follow the car by hand as described below; it does not follow on its own.
+- A GPS gives no height, so `world/ego` sits at height 0. Where the road is not at height 0, the points sit above or below the centre of the following view.
+- It is the GPS's position only: the view follows where the car is, not which way it faces.
+- The GPS is read 10 times per wall second and the lidar 20 times, so `world/ego` can be up to one GPS read (about 0.1 s) older than a scan. In the 3D view that follows `world/ego`, the points can then sit off by the distance the car drove in that time: about 1.5 m at 15 m/s. In a view with the origin `/`, the points stay where the lidar saw them.
 - The script takes the lidar points to be in world space, as `bridge/kite_bridge/readings.py` assumes. If the points move with the car in a view with the origin `/`, or the scan is not centred on the car in the following view, the points are relative to the sensor instead. Tell the director.
 
 ### The layout, and following the car by hand
@@ -744,7 +745,7 @@ PNG encoding: <n> camera images in <s> s
 ```
 
 - `recording:` is the size of the `.rrd` file on disk, read after the recording is closed, divided by the simulated seconds of the run. Those are Timer seconds in free mode, and steps / 60 in lock-step. 1 MB is 1,000,000 bytes, so the 354 MiB of the 0B.2 recording is about 371 MB.
-- It counts everything in the file: the provenance text, the layout, the `world/ego` positions, the lidar points and their colours, and the PNG images. Before Rerun's own encoding, a lidar point is 15 bytes: three 4-byte floats and three 1-byte colours. A 640 x 360 colour image is 691,200 bytes before PNG. How much smaller the PNG is depends on the picture.
+- It counts everything in the file: the provenance text, the layout, the `world/ego` positions, the lidar points and their colours, and the PNG images. Before Rerun's own encoding, a lidar point is 15 bytes: three 4-byte floats and three 1-byte colours. A 640 x 360 colour image is 691,200 bytes before PNG if it has three channels (RGB), and 921,600 bytes if it has four (RGBA); the first real run shows which. How much smaller the PNG is depends on the picture.
 - If closing did not write everything to the file, the number is too low. Check that the file opens and plays to the end.
 - `PNG encoding:` is the wall time spent in Pillow's PNG encoder, summed over the images, by the same clock as the tables. It is part of `our processing` in the timing block, so it holds up the reads after it. Compare the `schedule` table of the save run with the live run.
 - A live run prints neither line, because nothing measures what the viewer receives.
@@ -757,7 +758,7 @@ PNG encoding: <n> camera images in <s> s
 - From the `--save` run: the `recording:` and `PNG encoding:` lines.
 - Whether the 3D view follows the car as it drives, and whether the view feels live or jumps. Say whether `default layout not sent` was printed, and whether you set the origin by hand.
 - Whether the lidar points sit around the car in the following view.
-- Whether `imu gave N new readings without a position` was printed.
+- Whether `gps gave N new readings without a position` was printed. If it was, also send a `raw_gps_imu.json` (see "The raw GPS and IMU dump"), so the director can see which fields the GPS gives.
 - A screenshot of the viewer, if it works. Check that no folder path from your machine is visible in it first.
 - Any error, in full.
 

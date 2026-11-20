@@ -545,12 +545,13 @@ class RerunRecorderTest(unittest.TestCase):
     def test_a_scan_is_one_points_call_with_its_xyz_and_distance_colours_and_never_beamng_colours(self):
         recorder, fake = self.recorder()
         fake.log.reset_mock()
-        cloud = [(3.0, 4.0, 0.0, 7.0), (0.0, 0.0, 50.0, 7.0), (6.0, 8.0, 0.0, 7.0)]
+        cloud = [(3.0, 4.0, 0.0, 7.0), (30.0, 40.0, 9.0, 7.0), (6.0, 8.0, 0.0, 7.0)]
         raw = {"pointCloud": cloud, "colours": [(9, 9, 9)] * 3}
         self.assertTrue(rerun_view.log_reading(recorder, "lidar", Reading(2.0, 3, raw=raw)))
-        # Without an ego the distance is from the origin: 5 m, 50 m and 10 m. Blue 255 at 0 m and red
-        # 255 at 50 m, linear between: 5 m is red 25.5, which rounds to the even 26, and 10 m red 51.
-        fake.Points3D.assert_called_once_with([(3.0, 4.0, 0.0), (0.0, 0.0, 50.0), (6.0, 8.0, 0.0)],
+        # Without an ego the distance is from the origin in x and y, the height left out: 5 m, 50 m
+        # and 10 m. Blue 255 at 0 m and red 255 at 50 m, linear between: 5 m is red 25.5, which
+        # rounds to the even 26, and 10 m red 51.
+        fake.Points3D.assert_called_once_with([(3.0, 4.0, 0.0), (30.0, 40.0, 9.0), (6.0, 8.0, 0.0)],
                                               colors=[(26, 0, 229), (255, 0, 0), (51, 0, 204)])
         self.assertEqual([call.args for call in fake.log.call_args_list], [(LIDAR_PATH, fake.Points3D.return_value)])
         fake.Transform3D.assert_not_called()
@@ -558,23 +559,31 @@ class RerunRecorderTest(unittest.TestCase):
     def test_with_an_ego_world_ego_moves_to_it_and_the_lidar_points_stay_where_they_were_seen(self):
         recorder, fake = self.recorder()
         fake.log.reset_mock()
-        ego = (100.0, 200.0, 3.0)
-        cloud = [(103.0, 204.0, 3.0)]
+        ego = (100.0, 200.0)
+        cloud = [(103.0, 204.0, 40.0)]
         rerun_view.log_reading(recorder, "lidar", Reading(2.0, 1, raw={"pointCloud": cloud}), ego)
+        # A GPS reading gives no height, so world/ego sits at height 0.
         self.assertEqual(fake.Transform3D.call_args_list,
-                         [mock.call(translation=ego), mock.call(translation=(-100.0, -200.0, -3.0))])
+                         [mock.call(translation=(100.0, 200.0, 0.0)), mock.call(translation=(-100.0, -200.0, 0.0))])
         self.assertEqual([call.args[0] for call in fake.log.call_args_list], [EGO_FRAME_PATH, LIDAR_PATH, LIDAR_PATH])
-        # 3 m and 4 m from the ego: 5 m.
+        # 3 m and 4 m from the ego in x and y: 5 m. Its 40 m of height is left out.
         fake.Points3D.assert_called_once_with(cloud, colors=[distance_colour(5.0)])
+
+    def test_a_point_whose_distance_is_not_finite_is_an_error_not_a_colour(self):
+        recorder, fake = self.recorder()
+        for bad in (float("nan"), float("inf")):
+            with self.assertRaises(ValueError):
+                recorder.log_lidar(LIDAR_PATH, [(1.0, 0.0, 0.0), (bad, 0.0, 0.0)], rerun_view.GROUND_ORIGIN)
+        fake.Points3D.assert_not_called()
 
     def test_live_stride_thins_the_live_view_and_a_recording_keeps_every_point(self):
         cloud = [(float(i), 0.0, 0.0) for i in range(10)]
         live, live_fake = self.recorder(live_stride=3)
-        live.log_lidar(LIDAR_PATH, cloud, rerun_view.ORIGIN)
+        live.log_lidar(LIDAR_PATH, cloud, rerun_view.GROUND_ORIGIN)
         self.assertEqual(live_fake.Points3D.call_args.args[0], [cloud[0], cloud[3], cloud[6], cloud[9]])
         with tempfile.TemporaryDirectory() as tmp:
             saved, saved_fake = self.recorder(Path(tmp) / "demo.rrd", live_stride=3, encoder=FakePng())
-        saved.log_lidar(LIDAR_PATH, cloud, rerun_view.ORIGIN)
+        saved.log_lidar(LIDAR_PATH, cloud, rerun_view.GROUND_ORIGIN)
         self.assertEqual(saved_fake.Points3D.call_args.args[0], cloud)
 
     def test_a_recording_stores_each_image_through_the_lossless_encoder_never_raw_or_lossy(self):
@@ -617,20 +626,23 @@ class RerunRecorderTest(unittest.TestCase):
         fake.send_blueprint.assert_not_called()
         self.assertIn("default layout not sent", stdout.getvalue())
         self.assertIn("set the 3D view's origin to /world/ego", stdout.getvalue())
-        recorder.log_lidar(LIDAR_PATH, [(1.0, 0.0, 0.0)], rerun_view.ORIGIN)
+        recorder.log_lidar(LIDAR_PATH, [(1.0, 0.0, 0.0)], rerun_view.GROUND_ORIGIN)
         fake.Points3D.assert_called_once()
 
 
-class ImuPositionTest(unittest.TestCase):
-    def test_the_latest_reading_gives_the_position(self):
-        poll = [{"time": 0.1, "pos": (1, 2, 3)}, {"time": 0.2, "pos": [4.0, 5.0, 6.0]}]
-        self.assertEqual(rerun_view.imu_position(poll), (4.0, 5.0, 6.0))
-        self.assertEqual(rerun_view.imu_position({"time": 0.1, "pos": (1, 2, 3)}), (1.0, 2.0, 3.0))
+class GpsPositionTest(unittest.TestCase):
+    def test_the_latest_reading_gives_the_position_in_metres(self):
+        poll = [{"time": 0.1, "x": 1, "y": 2}, {"time": 0.2, "x": 4.5, "y": -5.0, "lat": 0.1, "lon": 0.2}]
+        self.assertEqual(rerun_view.gps_position(poll), (4.5, -5.0))
+        self.assertEqual(rerun_view.gps_position({"time": 0.1, "x": 1, "y": 2}), (1.0, 2.0))
 
-    def test_a_reading_without_three_finite_numbers_gives_no_position(self):
-        for pos in (None, (1.0, 2.0), (1.0, 2.0, float("nan")), "123", {"x": 1, "y": 2, "z": 3}, ("a", "b", "c")):
-            self.assertIsNone(rerun_view.imu_position([{"time": 0.1, "pos": pos}]), pos)
-        self.assertIsNone(rerun_view.imu_position([{"time": 0.1}]))
+    def test_latitude_and_longitude_alone_give_no_position(self):
+        self.assertIsNone(rerun_view.gps_position([{"time": 0.1, "lat": 1.5, "lon": 2.5}]))
+
+    def test_a_reading_without_finite_numbers_x_and_y_gives_no_position(self):
+        for x, y in ((1.0, None), (float("nan"), 2.0), (1.0, float("inf")), ("1", 2.0), (True, 2.0), ((1.0,), 2.0)):
+            self.assertIsNone(rerun_view.gps_position([{"time": 0.1, "x": x, "y": y}]), (x, y))
+        self.assertIsNone(rerun_view.gps_position(["not a dict"]))
 
 
 class RealRecorderTest(unittest.TestCase):
@@ -714,6 +726,14 @@ class RealRecorderTest(unittest.TestCase):
         # 3,000,000 bytes over 2 simulated s is 1.50 MB per simulated s.
         self.assertIn("3.00 MB (1 MB = 10^6 bytes) over 2.000 simulated s: 1.50 MB per simulated s", stdout)
 
+    def test_a_recording_over_0_simulated_seconds_has_no_rate(self):
+        import spike_lidar_rerun
+
+        # R32: a rate over 0 seconds is n/a, never a division by zero or a made-up number.
+        lines = spike_lidar_rerun.recording_lines(1_000_000, 0.0, 0, 0.0)
+        self.assertEqual(lines[0], "recording: 1000000 bytes on disk after close, 1.00 MB (1 MB = 10^6 bytes) "
+                                   "over 0.000 simulated s: n/a MB per simulated s")
+
     def test_a_recording_missing_after_close_is_an_error(self):
         import spike_lidar_rerun
 
@@ -754,29 +774,35 @@ class FreeModeViewTest(unittest.TestCase):
         self.assertEqual(code, 0)
         return stdout.getvalue(), sims[0], recorder
 
-    def test_world_ego_follows_the_imu_position_and_nothing_comes_from_ground_truth(self):
-        stdout, sim, recorder = self.run_free(ImuWithPosition)
+    def test_world_ego_follows_the_gps_position_and_nothing_comes_from_ground_truth(self):
+        stdout, sim, recorder = self.run_free(GpsWithPosition)
         moves = [c for c in recorder.calls if c[0] == "translation"]
         ego_moves = [c[2] for c in moves if c[1] == EGO_FRAME_PATH]
         self.assertGreater(len(ego_moves), 0)
         for position in ego_moves:
-            self.assertEqual(position[1:], (200.0, 3.0))
-            self.assertIn(position[0] - 100.0, sim.imu_ticks)
+            self.assertEqual(position[1:], (200.0, 0.0))
+            self.assertIn(position[0] - 100.0, sim.gps_ticks)
             self.assertNotEqual(position, sim.position("kite1"))
         self.assertEqual([c[2] for c in moves if c[1] == LIDAR_PATH],
-                         [tuple(-v for v in position) for position in ego_moves])
+                         [(-x, -y, 0.0) for x, y, _ in ego_moves])
         self.assertEqual({c[1] for c in moves}, {EGO_FRAME_PATH, LIDAR_PATH})
         logged = [c[1] for c in recorder.calls if c[0] != "time"]
         self.assertFalse([path for path in logged if path.startswith("ground_truth/")])
         self.assertNotIn("without a position", stdout)
 
-    def test_an_imu_without_a_position_leaves_world_ego_at_the_origin_and_the_run_says_so(self):
+    def test_an_imu_position_is_never_used_for_world_ego(self):
+        _, _, recorder = self.run_free(ImuWithPosition)
+        self.assertEqual([c for c in recorder.calls if c[0] == "translation"], [])
+
+    def test_a_gps_without_a_position_leaves_world_ego_at_the_origin_and_the_run_says_so(self):
         stdout, sim, recorder = self.run_free()
         self.assertEqual([c for c in recorder.calls if c[0] == "translation"], [])
-        # The fake IMU makes 100 samples per simulated second (DEFAULT_RATES) and is polled 10
-        # times per wall second at k / 10 for k = 0 to 9, before the Timer reading at 1 s ends
-        # the run. Every poll holds new samples, and none has a position.
-        self.assertIn("imu gave 10 new readings without a position; world/ego did not move for them", stdout)
+        # The fake GPS makes 10 samples per simulated second (DEFAULT_RATES) and is polled 10
+        # times per wall second, due at k / 10 for k = 0 to 9, before the Timer reading at 1 s
+        # ends the run. A poll waits at most for the Timer, radar and IMU polls due at the same
+        # time, one per pass, and passes come every 0.025 s (the camera's 40 reads per second), so
+        # each poll lands before the next sample: 10 new readings, none with a position.
+        self.assertIn("gps gave 10 new readings without a position; world/ego did not move for them", stdout)
 
     def test_only_readings_with_new_content_are_logged(self):
         stdout, sim, recorder = self.run_free()
@@ -790,19 +816,31 @@ class FreeModeViewTest(unittest.TestCase):
                       "was new", stdout)
 
 
-class ImuWithPosition(FakeSim):
-    """Its IMU readings also carry "pos": (100 + sample tick, 200, 3)."""
+class GpsWithPosition(FakeSim):
+    """Its GPS readings also carry "x": 100 + sample tick and "y": 200, in metres."""
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        self.imu_ticks = set()
+        self.gps_ticks = set()
+
+    def poll(self, car, kind):
+        reading = super().poll(car, kind)
+        if kind != "gps" or reading.raw is None:
+            return reading
+        self.gps_ticks.update(float(sample["tick"]) for sample in reading.raw)
+        raw = [dict(sample, x=100.0 + sample["tick"], y=200.0) for sample in reading.raw]
+        return reading_from_raw("gps", raw, self.sim_time)
+
+
+class ImuWithPosition(FakeSim):
+    """Its IMU readings carry a position under "pos" and under "x" and "y". Only a GPS reading
+    may place world/ego, so these must not move it."""
 
     def poll(self, car, kind):
         reading = super().poll(car, kind)
         if kind != "imu" or reading.raw is None:
             return reading
-        self.imu_ticks.update(float(sample["tick"]) for sample in reading.raw)
-        raw = [dict(sample, pos=(100.0 + sample["tick"], 200.0, 3.0)) for sample in reading.raw]
+        raw = [dict(sample, pos=(1.0, 2.0, 3.0), x=1.0, y=2.0) for sample in reading.raw]
         return reading_from_raw("imu", raw, self.sim_time)
 
 

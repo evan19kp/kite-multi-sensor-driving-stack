@@ -3,8 +3,8 @@ and the other cars' positions come from simulator state, so they are ground trut
 only and always under `ground_truth/`, which is what separates them from sensor data.
 
 `world/ego` is our car as the sensors place it, with the lidar as its child. In free mode it sits
-at the position the IMU reports; with no such position it stays at the origin. Nothing from
-simulator state goes under `world/`.
+at the x, y the GPS measures, at height 0, because a GPS reading gives no height; with no such
+position it stays at the origin. Nothing from simulator state goes under `world/`.
 
 `RerunRecorder` hands lidar points and camera images to Rerun as numpy arrays (`NumpyArrays`):
 each step is one operation on the whole array, with no Python loop over points or pixels.
@@ -15,7 +15,7 @@ and the fake, whose stand-in for Rerun takes lists and which have no numpy.
 import functools
 import io
 import math
-import time
+import numbers
 from pathlib import Path, PurePosixPath, PureWindowsPath
 
 from kite_bridge.output_guard import PROVENANCE
@@ -29,7 +29,7 @@ EGO_PATH = "ground_truth/ego/position"
 GROUND_TRUTH_PATH = "ground_truth/other_cars"
 TIMELINE = "sim_time"
 FAR_M = 50.0
-ORIGIN = (0.0, 0.0, 0.0)
+GROUND_ORIGIN = (0.0, 0.0)
 EGO_COLOUR = (255, 255, 255)
 GROUND_TRUTH_COLOUR = (255, 165, 0)
 RECORDING_SUFFIX = ".rrd"
@@ -69,19 +69,20 @@ def log_reading(recorder, kind, reading, ego=None):
     it logged the reading. A camera reading without a "colour" image logs nothing and returns
     False.
 
-    The lidar's "pointCloud" goes under LIDAR_PATH, coloured by distance from `ego`, the position
-    the IMU last reported, or from the origin while `ego` is None. Its other arrays, BeamNG's
-    per-point "colours" among them, are never logged. The points are in world space (see
-    `readings.points_from_raw`). With an `ego`, EGO_FRAME_PATH moves to it and LIDAR_PATH moves
-    back by the same amount, so the points stay where the lidar saw them in the world view, and a
-    view whose origin is EGO_FRAME_PATH follows our car."""
+    The lidar's "pointCloud" goes under LIDAR_PATH, coloured by distance on the ground (x and y
+    only) from `ego`, the (x, y) the GPS last measured, or from the origin while `ego` is None.
+    Its other arrays, BeamNG's per-point "colours" among them, are never logged. The points are
+    in world space (see `readings.points_from_raw`). With an `ego`, EGO_FRAME_PATH moves to it at
+    height 0 and LIDAR_PATH moves back by the same amount, so the points stay where the lidar saw
+    them in the world view, and a view whose origin is EGO_FRAME_PATH follows our car."""
     raw = reading.raw
     if kind == "lidar":
         recorder.set_time(reading.timestamp)
         if ego is not None:
-            recorder.log_translation(EGO_FRAME_PATH, ego)
-            recorder.log_translation(LIDAR_PATH, tuple(-value for value in ego))
-        recorder.log_lidar(LIDAR_PATH, raw["pointCloud"], ORIGIN if ego is None else ego)
+            x, y = ego
+            recorder.log_translation(EGO_FRAME_PATH, (x, y, 0.0))
+            recorder.log_translation(LIDAR_PATH, (-x, -y, 0.0))
+        recorder.log_lidar(LIDAR_PATH, raw["pointCloud"], GROUND_ORIGIN if ego is None else ego)
         return True
     image = raw.get("colour") if isinstance(raw, dict) else None
     if image is None:
@@ -91,21 +92,21 @@ def log_reading(recorder, kind, reading, ego=None):
     return True
 
 
-def imu_position(raw):
-    """The position the IMU reports in the latest reading of `raw`, a non-empty IMU poll in the
-    domain of `readings.py`, as an (x, y, z) tuple of floats. None when that reading has no "pos"
-    of three finite numbers."""
+def gps_position(raw):
+    """The position the GPS measured in the latest reading of `raw`, a non-empty GPS poll in the
+    domain of `readings.py`, as an (x, y) tuple of floats in metres. None when that reading has
+    no finite numbers "x" and "y": a reading with latitude and longitude only gives None, because
+    nothing here projects them to metres."""
     latest = readings_in(raw)[-1]
-    # ASSUMPTION: a BeamNGpy 1.36 AdvancedIMU reading has the sensor's world position under "pos"; not
-    # seen in a real run yet
-    position = latest.get("pos") if isinstance(latest, dict) else None
-    if isinstance(position, (str, bytes, dict)) or not hasattr(position, "__len__") or len(position) != 3:
+    if not isinstance(latest, dict):
         return None
-    try:
-        values = tuple(float(value) for value in position)
-    except (TypeError, ValueError):
+    # ASSUMPTION: a BeamNGpy 1.36 GPS reading has the sensor's position in metres under "x" and "y", in the
+    # world frame of the lidar points, beside "lat" and "lon"; not seen in a real run yet
+    position = latest.get("x"), latest.get("y")
+    if not all(isinstance(value, numbers.Real) and not isinstance(value, bool) for value in position):
         return None
-    return values if all(map(math.isfinite, values)) else None
+    x, y = (float(value) for value in position)
+    return (x, y) if math.isfinite(x) and math.isfinite(y) else None
 
 
 def recording_name(text):
@@ -139,9 +140,14 @@ class NumpyArrays:
         return rows.reshape(-1, rows.shape[1] if rows.ndim == 2 else 3)[:, :3]
 
     def distance_colours(self, points, centre):
-        """`distance_colour` of every point's distance from `centre`, as an (N, 3) uint8 array."""
+        """`distance_colour` of every point's distance from `centre`, as an (N, 3) uint8 array.
+        A `centre` of two coordinates gives the distance in x and y only. Raises ValueError, as
+        `distance_colour` does, when a distance is not finite."""
         np = self.np
-        distance = np.sqrt(((points - np.asarray(centre, dtype=np.float32)) ** 2).sum(axis=1))
+        offsets = points[:, :len(centre)] - np.asarray(centre, dtype=np.float32)
+        distance = np.sqrt((offsets ** 2).sum(axis=1))
+        if not np.isfinite(distance).all():
+            raise ValueError("a lidar point's distance is not finite (nan or inf)")
         far = np.rint(255 * np.minimum(distance / FAR_M, 1.0)).astype(np.uint8)
         return np.stack([far, np.zeros_like(far), 255 - far], axis=1)
 
@@ -158,7 +164,7 @@ class ListArrays:
         return [tuple(float(value) for value in row[:3]) for row in cloud]
 
     def distance_colours(self, points, centre):
-        return [distance_colour(math.dist(point, centre)) for point in points]
+        return [distance_colour(math.dist(point[:len(centre)], centre)) for point in points]
 
     def image(self, image):
         return image
@@ -181,7 +187,7 @@ class RerunRecorder:
     `clock`, and `encoded` the number of images encoded. `arrays` does the array work
     (NumpyArrays by default)."""
 
-    def __init__(self, save_path=None, live_stride=1, arrays=None, encode_png=None, clock=time.perf_counter):
+    def __init__(self, save_path=None, live_stride=1, *, clock, arrays=None, encode_png=None):
         import rerun
 
         self._rr = rerun

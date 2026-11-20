@@ -44,7 +44,7 @@ the spikes on it, and nothing here has run against an installed Rerun yet.
   check. It imports nothing outside the standard library.
 - `kite_bridge/rerun_view.py`: the only module that imports `rerun`, numpy and Pillow, each
   only inside a method. It holds the entity paths, the pure distance-to-colour function,
-  `log_step` (lock-step), `log_reading` (free mode), `imu_position` and the recorders. The real
+  `log_step` (lock-step), `log_reading` (free mode), `gps_position` and the recorders. The real
   recorder hands lidar points and camera images to Rerun as numpy arrays (`NumpyArrays`), with no
   Python loop over points or pixels. `ListArrays` does the same work on plain lists, only for
   tests and the fake. Its Rerun calls are guesses until the first real run and carry
@@ -197,15 +197,16 @@ By default it runs `--mode free --stream`. `common.measure_sensors` reads the se
 free-mode schedule, with the streamed lidar and camera first, at most one poll per pass and the
 free-mode default rates. It passes each reading whose content is new (the `new` rule of the
 measuring table) to the script, so a scan or image read twice is logged once. Each new lidar
-scan's x, y, z go under `world/ego/lidar`, coloured by distance from `world/ego`, and each new
-camera `colour` image under `camera/image`, at its Timer time. BeamNG's per-point `colours` are
-never logged. `world/ego` is our car as the sensors place it: the position in the IMU's latest
-new reading (`rerun_view.imu_position`), or the origin until the IMU gives one. It never comes
-from simulator state. The script logs no ground truth in free mode, because reading a position
-from the simulator is a request that would hold up the lidar. It then prints the measuring
+scan's x, y, z go under `world/ego/lidar`, coloured by distance in x and y from `world/ego`, and
+each new camera `colour` image under `camera/image`, at its Timer time. BeamNG's per-point
+`colours` are never logged. `world/ego` is our car as the sensors place it: the x and y in
+metres of the GPS's latest new reading (`rerun_view.gps_position`), at height 0 because GPS gives
+no height, or the origin until the GPS gives an x and y. It never comes from simulator state.
+The script logs no ground truth in free mode, because reading a position from the simulator is
+a request that would hold up the lidar. It then prints the measuring
 tables, the `schedule` table included, and how many scans and images it logged. It does not log
 a camera reading with no colour image, and prints how many new ones there were. It prints how
-many new IMU readings had no position. `--no-stream` polls the lidar and camera too.
+many new GPS readings had no position. `--no-stream` polls the lidar and camera too.
 
 The recorder sends a default layout: a 3D view whose origin is `world/ego`, so it follows our
 car, beside the camera image and the provenance text. If the installed Rerun cannot take it, the

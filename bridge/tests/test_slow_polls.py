@@ -13,7 +13,7 @@ from tests.test_free_running import SENSOR_RATES, BoundedClock
 from tests.test_scripts import run_script
 from kite_bridge import common, rates
 from kite_bridge.fake_sim import FakeSim
-from kite_bridge.rerun_view import CAMERA_PATH, EGO_PATH, GROUND_TRUTH_PATH, LIDAR_PATH, ORIGIN
+from kite_bridge.rerun_view import CAMERA_PATH, EGO_PATH, GROUND_ORIGIN, GROUND_TRUTH_PATH, LIDAR_PATH
 from kite_bridge.stream_check import reading_from_stream
 
 # Evan's real runs: a poll costs about 20 ms, a streamed read about 1 ms.
@@ -262,7 +262,7 @@ class LiveViewerDefaultTest(unittest.TestCase):
         self.assertEqual(len(sim.lidar_reads), 21)
         self.assertEqual(len(lidar), len({update for _, update in sim.lidar_reads}))
         self.assertEqual(len(lidar), 11)
-        self.assertEqual({(c[1], c[3]) for c in lidar}, {(LIDAR_PATH, ORIGIN)})
+        self.assertEqual({(c[1], c[3]) for c in lidar}, {(LIDAR_PATH, GROUND_ORIGIN)})
         self.assertEqual({c[1] for c in images}, {CAMERA_PATH})
         self.assertIn(f"logged 11 lidar scans and {len(images)} camera images at Timer times", stdout)
         self.assertNotIn(EGO_PATH, [c[1] for c in recorder.calls if c[0] != "time"])
