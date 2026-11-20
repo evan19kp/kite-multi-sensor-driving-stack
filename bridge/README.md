@@ -111,7 +111,8 @@ python bridge/spike_sensors.py --fake --seconds 2 --out scratch/example
 The car is the Cherrier Tograc qE by default: `--model vivace --config
 vehicles/vivace/tograc_qE.pc`. `--config=` (nothing after the equals sign) spawns the model's default configuration instead.
 The `spawned` line prints the model and the configuration. `--list-models` prints the
-simulator's vehicle model names, sorted, one per line, and exits without spawning anything.
+simulator's vehicle model names, sorted, one per line, and exits without spawning anything. It
+writes nothing, so it does not check `--out`.
 
 `spike_connect.py` prints three version lines: the BeamNGpy package version, the BeamNGpy
 protocol version and `BeamNG.tech version: not reported by BeamNGpy 1.36`.
@@ -126,14 +127,14 @@ without `pointCloud` is counted under `unexp` and printed with its keys, not as 
 poll that raises, or returns a type outside the input domain in `readings.py`, is counted under
 `unexp` for that sensor, with the first message printed in the footer; the run goes on with the
 other sensors. A radar poll that returns an array is one reading, and the `detect` column is the
-mean row count over those arrays, including arrays with 0 rows. The bridge does not read the
+mean row count over those arrays, with one decimal, including arrays with 0 rows. The bridge does not read the
 columns. A radar that returned no array shows `n/a`. A lidar scan with no points counts under
 `empty`, like any poll that returned None or an empty dict, list or bytes. A radar array with
 zero rows does not count under `empty`. It is one reading with 0 detections.
 
 Before the run every script prints one `sensor:` line per sensor with every setting the adapter
 passes, taken from `kite_bridge/sensor_settings.py`. `spike_sensors.py` writes the same table
-into `sensors.json` as `sensor_settings`. The camera renders colour only.
+into `sensors.json`, and `spike_multicar.py` into `multicar.json`, as `sensor_settings`. The camera renders colour only.
 
 The two measuring scripts poll each sensor at its `--rates` rate, in polls per simulated second,
 at most 60 (the step rate). `--rates all=60` polls every sensor after every step; `all=RATE` sets
@@ -164,7 +165,9 @@ its poll's wall time and step count. `docs/SPIKE-0B.md` explains each number.
 `--stream` on the two measuring scripts creates the lidar and camera with `is_streaming=True` and
 reads them from shared memory with `stream()`, which sends no request; radar, GPS and IMU are
 still polled, at the same `--rates`. Every streamed reading goes through `stream_check.py` first.
-All-zero rows after the last non-zero row of a lidar scan are cut and counted under `sus_rows`.
+All-zero rows after the last non-zero row of a lidar scan are cut and counted under `sus_rows`;
+memory with no non-zero row at all is no scan and counts under `empty` only, as does a camera
+dict whose images are all None.
 A lidar reading of the wrong shape or with a value that is not finite, and a camera reading with
 an image that is not the configured resolution, are dropped whole and counted under `suspect`,
 with the first reason printed. A camera `stream()` result that is not None and not a dict counts
@@ -230,8 +233,8 @@ no height, or the origin until the GPS gives an x and y. It never comes from sim
 The script logs no ground truth in free mode, because reading a position from the simulator is
 a request that would hold up the lidar. It then prints the measuring
 tables, the `schedule` table included, and how many scans and images it logged. It does not log
-a lidar scan with a point whose x, y or z is not finite, or a camera reading with no colour
-image, and prints how many new ones there were; the run goes on. It prints how many new GPS polls
+a lidar scan with a point whose x, y or z is not finite, or a camera reading
+with no colour image (a streamed camera dict whose images are all None is `empty` instead), and prints how many new ones there were; the run goes on. It prints how many new GPS polls
 had no position in their latest reading. `--no-stream` polls the lidar and camera too.
 
 The recorder sends a default layout: a 3D view whose origin is `world/ego`, so it follows our
@@ -246,7 +249,9 @@ exit code 2). Once per simulator step it logs lidar points coloured by distance 
 are ground truth, shown for display only under `ground_truth/ego/position` and
 `ground_truth/other_cars`; hide the `ground_truth/` root in the viewer to see sensor data alone.
 When the lidar or the camera gives no reading on a step, nothing is logged for that sensor and the
-script prints how many steps that was.
+script prints how many steps that was. A lidar or camera read that raises counts under `unexp`
+(one `unexp:` line with the count and the first error) and the run goes on, as in free mode; a
+timeout stops the run in both modes.
 
 - Without `--save` it spawns a Rerun viewer and passes camera images as they are.
   `--live-stride N` (a whole number, default 1) shows every Nth lidar point.
