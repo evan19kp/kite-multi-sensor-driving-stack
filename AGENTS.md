@@ -475,6 +475,16 @@ Each item that introduces a lasting rule adds a "## Standing rules (R<n>)" secti
 - Tests of the encoder thread use fake encoders with fake costs on a FakeClock and decide when a
   frame is encoded with threading primitives; they never sleep or assert on real time.
 
+## Standing rules (R43)
+
+- Sensors are created with BeamNG's drawing off: `is_visualised` is in every entry of
+  `bridge/kite_bridge/sensor_settings.py` and is `False` unless `--visualise-sensors` is given,
+  which sets it `True` only for the lidar, radar, GPS and IMU. The camera stays `False`. The
+  value reaches the adapter only through `settings_for`; no script or the adapter sets it
+  anywhere else.
+- No doc or PR claims the drawing is gone from the real simulator's window or camera frames until
+  Evan's run shows it.
+
 ## Simulator files (hard rule)
 
 - Never read, list, search, copy, launch or write about the simulator's install folder, its user

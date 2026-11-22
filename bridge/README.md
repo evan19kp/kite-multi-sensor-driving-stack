@@ -84,6 +84,13 @@ roof rails, and 0 at 1.9, 2.1 and 2.3 m; 1.9 m is the lowest of the clean height
 negative position as `--lidar-pos=-0.5,0,1.9`. `--lidar-pos` replaces only the lidar's `pos` in
 `sensor_settings.py`, which is the only place the adapter takes settings from.
 
+Those three scripts also take `--visualise-sensors` (default off). Every sensor is created with
+`is_visualised=False`, shown on every `sensor:` line and in `sensor_settings` in the JSON, so
+BeamNG draws none of them into the 3D world. The lidar's dots then no longer appear in the BeamNG
+window or in the camera frames by default, and Rerun shows the lidar. The flag turns the drawing
+back on, for debugging, for the lidar, radar, GPS and IMU; the camera stays `False`. This has not
+run on the real simulator yet; Evan's next run checks it.
+
 Each run of `spike_sensors.py`, `spike_multicar.py` and the free-mode `spike_lidar_rerun.py`
 prints, after the tables, an approximate self-hit count: per new lidar scan, the points within
 `--ego-radius` metres of our car in x and y, with their mean and maximum over the run (`scans

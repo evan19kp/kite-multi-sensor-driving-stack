@@ -114,7 +114,8 @@ class FakeSim(Simulator):
     by default it varies between 900 and 1099 with the sample.
 
     `lidar_settings` has, per car, the settings the real adapter would pass its lidar (what
-    `attach_sensors` was given, through `sensor_settings.settings_for`).
+    `attach_sensors` was given, through `sensor_settings.settings_for`); `sensor_settings` has the
+    same for all five sensors.
 
     Streaming (`attach_sensors(car, stream=True)`, then `stream`) sends no request and costs
     `stream_cost` fake seconds per read (0 by default). The lidar's shared memory is a block of `stream_rows` float32 rows of x, y, z, all
@@ -168,6 +169,7 @@ class FakeSim(Simulator):
         self._last_tick = {}
         self.injected = {}
         self.lidar_settings = {}
+        self.sensor_settings = {}
         self.traffic_requested = None
         self.spawned_model = None
         self.spawned_config = None
@@ -208,8 +210,10 @@ class FakeSim(Simulator):
     def spawn_traffic(self, n):
         self.traffic_requested = n
 
-    def attach_sensors(self, car, stream=False, lidar_pos=None):
-        self.lidar_settings[car] = settings_for("lidar", stream, lidar_pos)
+    def attach_sensors(self, car, stream=False, lidar_pos=None, visualise=False):
+        self.sensor_settings[car] = {kind: settings_for(kind, stream, lidar_pos, visualise)
+                                     for kind in SENSOR_KINDS}
+        self.lidar_settings[car] = self.sensor_settings[car]["lidar"]
         self._attached.update((car, kind) for kind in SENSOR_KINDS)
         if stream:
             self._streamed.update((car, kind) for kind in STREAMED_KINDS)
