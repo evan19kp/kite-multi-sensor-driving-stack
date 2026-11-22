@@ -338,7 +338,7 @@ fake.
 The free-mode loop keeps up with real time with slack, measured. This sprint measures; it claims
 nothing until Evan's run prints it. Agents never run the real simulator; every test uses the fake.
 
-- [ ] **R40 Fewer, staggered slow polls** (perf, Opus builder): free-mode defaults `gps=5,imu=5`,
+- [x] **R40 Fewer, staggered slow polls** (perf, Opus builder): free-mode defaults `gps=5,imu=5`,
   Timer 5, radar 10 (lidar 20, camera 40 unchanged); each slow sensor gets a fixed phase so their
   due times spread evenly across a period, printed in the run's settings; `--rates` still overrides
   any rate; per buffered sensor the most readings any poll returned and new readings per simulated

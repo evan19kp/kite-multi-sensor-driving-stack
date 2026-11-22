@@ -86,6 +86,16 @@ def requested_update_hz(kind):
     return None if interval is None else 1 / interval
 
 
+def buffered_update_hz(kind):
+    """How many readings a buffered sensor (GPS, IMU) makes per simulated second, 1 /
+    physics_update_time, the setting the adapter passes for how often it measures: 100 for the IMU.
+    None for the GPS, which is passed no such setting, so its own rate is not known.
+    ASSUMPTION: the IMU buffers one reading per physics_update_time; its gfx_update_time is the
+    same 0.01 s, so either setting gives 100."""
+    interval = SENSOR_SETTINGS[kind].get("physics_update_time")
+    return None if interval is None else 1 / interval
+
+
 def settings_lines(stream=False, lidar_pos=None):
     return [f"sensor: {kind} " + " ".join(f"{name}={value}" for name, value in settings.items())
             for kind, settings in settings_table(stream, lidar_pos).items()]

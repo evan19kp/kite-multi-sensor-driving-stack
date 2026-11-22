@@ -33,7 +33,7 @@ def run(args):
         dump = common.RawDump(args.dump_raw)
         result = common.measure_sensors(sim, cars, args.seconds, dump=dump, poll_rates=args.rates,
                                         stream=args.stream, mode=args.mode, lidar_pos=args.lidar_pos,
-                                        self_hits=common.make_self_hits(args))
+                                        self_hits=common.make_self_hits(args), stagger=True)
         sim.set_ai_mode(cars[0], "disabled")
         print(common.format_result(result))
         common.write_json(args.out, "sensors.json", {

@@ -16,7 +16,8 @@ from kite_bridge.fake_sim import FakeSim
 from kite_bridge.output_guard import PROVENANCE, out_refusal, repo_roots
 from kite_bridge.readings import readings_in
 from kite_bridge.self_hits import DEFAULT_EGO_RADIUS_M, SelfHits
-from kite_bridge.sensor_settings import DEFAULT_LIDAR_POS, requested_update_hz, settings_lines
+from kite_bridge.sensor_settings import (DEFAULT_LIDAR_POS, buffered_update_hz, requested_update_hz,
+                                         settings_lines)
 from kite_bridge.sim_api import (BUFFERED_KINDS, POLL_TIME, SENSOR_KINDS, STEP_HZ, STREAMED_KINDS, TIMER,
                                  TIMER_TIME, Reading)
 
@@ -377,7 +378,7 @@ def write_raw_dump(out, per_sensor, cases):
 
 
 def measure_sensors(sim, cars, seconds, clock=None, dump=None, poll_rates=None, stream=False, mode=LOCKSTEP,
-                    sleep=None, on_reading=None, lidar_pos=None, self_hits=None):
+                    sleep=None, on_reading=None, lidar_pos=None, self_hits=None, stagger=False):
     """Steps the simulator for `seconds` of simulator time and polls each sensor at its rate in
     `poll_rates`, a dict by sensor kind of polls per simulated second (see `rates` for the
     schedule). By default every sensor is polled once after each step, STEP_HZ per simulator
@@ -404,7 +405,10 @@ def measure_sensors(sim, cars, seconds, clock=None, dump=None, poll_rates=None, 
     count and rate. Each row and `timer` have `schedule`: `late` (reads that started
     `rates.LATE_S` or more after their due time), `worst_late_ms` (the latest start after a due
     time, None without reads) and `skipped` (due times passed over with no read). Every sensor
-    counts as polled slower than every step for `possible_loss`. `mode` is in the result.
+    counts as polled slower than every step for `possible_loss`. `mode` is in the result. With
+    `stagger` the slow polls get the phases of `rates.phases`, so they are not all due at once;
+    without it every phase is 0. A free result has `phases`: `staggered`, `period_ms` (1 / the
+    highest slow rate) and `slow`, each slow poll's car, sensor and `phase_ms`, in phase order.
 
     With `stream`, the STREAMED_KINDS sensors (lidar, camera) are attached streaming and read
     with `sim.stream` instead of `sim.poll`, on the same schedule; everything below that says
@@ -420,8 +424,12 @@ def measure_sensors(sim, cars, seconds, clock=None, dump=None, poll_rates=None, 
     A row's `configured_rate_hz` is the poll rate and `requested_update_hz` the update rate the
     adapter asks of the sensor (None for GPS and IMU). `possible_loss` is True only when the
     sensor is polled slower than every step, has a requested rate, and gave fewer new readings
-    than it (see `measure.possible_loss`). For GPS and IMU it is always False: their buffer size
-    is not known, so one run cannot say; compare `new_readings` with a run at every step.
+    than it (see `measure.possible_loss`). For GPS and IMU it is always False: they have no
+    requested rate. Their rows have `buffer` instead: `readings_per_poll_max`,
+    `new_per_simulated_s_between_polls` (`measure.buffered_rate`, over the time between the first
+    and last poll's latest readings), `own_rate_hz` (`sensor_settings.buffered_update_hz`: 100
+    for the IMU, None for the GPS) and `possible_buffer_loss` (`measure.possible_buffer_loss`,
+    never True without an own rate).
 
     The wall time is the stepping and polling loop only, not the scenario load or the sensor
     set-up. `timing` splits it into `step_wait_s` (inside `sim.step`), `sensor_reads_s` and
@@ -456,7 +464,7 @@ def measure_sensors(sim, cars, seconds, clock=None, dump=None, poll_rates=None, 
     streamed = {key for key in keys if stream and key[1] in STREAMED_KINDS}
     tally = _Tally(keys, streamed, dump, on_reading, self_hits)
     if mode == FREE:
-        run = _run_free(sim, tally, cars[0], seconds, poll_rates, clock, sleep or wall_sleep)
+        run = _run_free(sim, tally, cars[0], seconds, poll_rates, clock, sleep or wall_sleep, stagger)
     else:
         run = _run_lockstep(sim, tally, seconds, poll_rates, clock)
     steps, simulated, wall, waits = run.steps, run.simulated_s, run.wall_s, run.waits
@@ -489,6 +497,12 @@ def measure_sensors(sim, cars, seconds, clock=None, dump=None, poll_rates=None, 
             "new_per_simulated_s": measure.per_simulated_second(new, simulated),
             "bytes_read": sizes[car, kind],
             "bytes_per_simulated_s": measure.per_simulated_second(sizes[car, kind], simulated)})
+        if kind in BUFFERED_KINDS:
+            own = buffered_update_hz(kind)
+            between = measure.buffered_rate(tally.buffer_polls[car, kind])
+            rows[-1]["buffer"] = {"readings_per_poll_max": rows[-1]["readings_per_poll_max"],
+                                  "new_per_simulated_s_between_polls": between, "own_rate_hz": own,
+                                  "possible_buffer_loss": measure.possible_buffer_loss(between, own)}
         if run.lags is not None:
             rows[-1]["schedule"] = run.lags[car, kind].summary()
         if self_hits is not None and kind == "lidar":
@@ -536,24 +550,29 @@ def _run_lockstep(sim, tally, seconds, poll_rates, clock):
                 {"step_wait_s": step_time}, {})
 
 
-def _run_free(sim, tally, timer_car, seconds, poll_rates, clock, sleep):
+def _run_free(sim, tally, timer_car, seconds, poll_rates, clock, sleep, stagger):
     timer_key = (timer_car, TIMER)
     rate = {key: poll_rates[key[1]] for key in tally.keys}
     rate[timer_key] = max(poll_rates["gps"], poll_rates["imu"])
     streamed = [key for key in tally.keys if key in tally.streamed]
     slow = [timer_key, *(key for key in tally.keys if key not in tally.streamed)]
+    phase = dict.fromkeys(rate, Fraction(0))
+    if stagger:
+        phase.update(rates.phases(slow, rate))
+    phases = {"staggered": stagger, "period_ms": float(1000 / max(rate[key] for key in slow)),
+              "slow": [{"car": car, "sensor": kind, "phase_ms": float(phase[car, kind] * 1000)} for car, kind in slow]}
     limit = Fraction(seconds) * WALL_LIMIT_FACTOR
     sim.start_free_running(timer_car)
     timer = _Timer(sim)
-    due = dict.fromkeys(rate, 0)
+    due = dict(phase)
     lags = {key: _Lag() for key in rate}
     idle = 0.0
     loop_started = clock()
 
     def read(key):
         at = clock() - loop_started
-        lags[key].add(at - due[key], rates.skipped(due[key], at, rate[key]))
-        due[key] = rates.next_due(at, rate[key])
+        lags[key].add(at - due[key], rates.skipped(due[key], at, rate[key], phase[key]))
+        due[key] = rates.next_due(at, rate[key], phase[key])
         if key == timer_key:
             timer.read(clock)
             return
@@ -581,10 +600,10 @@ def _run_free(sim, tally, timer_car, seconds, poll_rates, clock, sleep):
             idle += clock() - started
     wall = clock() - loop_started
     for key in tally.keys:
-        lags[key].skipped += rates.skipped(due[key], now, rate[key])
+        lags[key].skipped += rates.skipped(due[key], now, rate[key], phase[key])
     return _Run(None, None, timer.latest - timer.first, wall, {"idle_s": idle, "timer_reads_s": timer.read_s},
                 {"timer": {"polls": timer.polls, "rate_hz": float(rate[timer_key]),
-                           "schedule": lags.pop(timer_key).summary()}}, lags)
+                           "schedule": lags.pop(timer_key).summary()}, "phases": phases}, lags)
 
 
 class _Timer:
@@ -643,6 +662,7 @@ class _Tally:
         self.sizes = {key: 0 for key in keys}
         self.poll_keys = {key: [] for key in keys}
         self.reading_keys = {key: [] for key in keys}
+        self.buffer_polls = {key: [] for key in keys}
         self.fresh = {key: measure.Freshness() for key in keys}
 
     def read(self, sim, key, clock, loop_started, step, timer_s=None):
@@ -680,6 +700,8 @@ class _Tally:
         if reading.timestamp is not None:
             self.sources[key].add(reading.time_source)
             self.per_poll[key].append(reading.count)
+            if key[1] in BUFFERED_KINDS:
+                self.buffer_polls[key].append((reading.timestamp, stats.keys))
             if self.dump is not None and key[1] in BUFFERED_KINDS:
                 self.dump.add(key[0], key[1], step, finished - loop_started,
                               finished - started, readings_in(reading.raw))
@@ -751,10 +773,30 @@ def _loss_lines(result):
                          f"fewer than the {r['requested_update_hz']:g} Hz requested. "
                          f"Compare with a run at --rates all={STEP_HZ}.")
     buffered = sorted({r["sensor"] for r in result["sensors"]
-                       if r["sensor"] in BUFFERED_KINDS and _can_miss_updates(result["mode"], r["configured_rate_hz"])})
+                       if r["sensor"] in BUFFERED_KINDS and r["buffer"]["own_rate_hz"] is None
+                       and _can_miss_updates(result["mode"], r["configured_rate_hz"])})
     if buffered:
         lines.append(f"loss not checkable for {', '.join(buffered)}: a buffered sensor's capacity is not "
                      f"known, so compare its new readings with a run at --rates all={STEP_HZ}.")
+    return lines + _buffer_lines(result)
+
+
+def _buffer_lines(result):
+    lines = []
+    for r in result["sensors"]:
+        if r["sensor"] not in BUFFERED_KINDS:
+            continue
+        b = r["buffer"]
+        own = ("own rate not known: the adapter passes it no physics_update_time" if b["own_rate_hz"] is None
+               else f"own rate {b['own_rate_hz']:g} Hz from its physics_update_time")
+        lines.append(f"buffer: {r['car']} {r['sensor']} returned up to {b['readings_per_poll_max'] or 'n/a'} readings "
+                     f"in one poll and {_fmt(b['new_per_simulated_s_between_polls'])} new readings per simulated "
+                     f"second between its first and last poll; {own}")
+        if b["possible_buffer_loss"]:
+            lines.append(f"possible buffer loss: {r['car']} {r['sensor']} gave "
+                         f"{b['new_per_simulated_s_between_polls']:.2f} new readings per simulated second, more than "
+                         f"{measure.BUFFER_LOSS_SHARE:.0%} below its own {b['own_rate_hz']:g} Hz, so some polls found "
+                         f"its buffer full. Poll it more often with --rates.")
     return lines
 
 
@@ -803,8 +845,16 @@ def _summary_line(result):
     if result["mode"] == FREE:
         timer = result["timer"]
         return (f"cars: {result['cars']}  mode: free, the Timer polled {timer['polls']} times at "
-                f"{timer['rate_hz']:g} per wall second")
+                f"{timer['rate_hz']:g} per wall second\n{_phases_line(result['phases'])}")
     return f"cars: {result['cars']}  steps per second: {_fmt(result['steps_per_second'], digits=1)}"
+
+
+def _phases_line(phases):
+    if not phases["staggered"]:
+        return "phases: not staggered; every slow poll is first due when the run starts"
+    listed = ", ".join(f"{p['car']} {p['sensor']} {p['phase_ms']:.2f}" for p in phases["slow"])
+    return (f"phases: ms after the run starts that each slow poll is first due, spread evenly over "
+            f"{phases['period_ms']:.2f} ms (1 / the highest slow rate), then once per its own period: {listed}")
 
 
 def _free_lines(result):

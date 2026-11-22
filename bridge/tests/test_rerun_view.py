@@ -812,21 +812,20 @@ class FreeModeViewTest(unittest.TestCase):
     def test_a_gps_without_a_position_leaves_world_ego_at_the_origin_and_the_run_says_so(self):
         stdout, sim, recorder = self.run_free()
         self.assertEqual([c for c in recorder.calls if c[0] == "translation"], [])
-        # The fake GPS makes 10 samples per simulated second (DEFAULT_RATES) and is polled 10
-        # times per wall second, due at k / 10 for k = 0 to 9, before the Timer reading at 1 s
-        # ends the run. A poll waits at most for the Timer, radar and IMU polls due at the same
-        # time, one per pass, and passes come every 0.025 s (the camera's 40 reads per second), so
-        # each poll lands before the next sample: 10 new polls, none with a position.
-        self.assertIn("gps gave 10 new polls without a position in their latest reading; world/ego did not move "
+        # The fake GPS makes 10 samples per simulated second (DEFAULT_RATES) and is polled 5
+        # times per wall second, staggered to 50 ms: due at 0.05 + k / 5 for k = 0 to 4, before
+        # the Timer reading at 1 s ends the run. The polls cost nothing, so each lands on its due
+        # time and sees a new sample: 5 new polls, none with a position.
+        self.assertIn("gps gave 5 new polls without a position in their latest reading; world/ego did not move "
                       "for them", stdout)
 
     def test_the_gps_line_counts_polls_even_when_a_poll_carries_several_readings(self):
         stdout, sim, _ = self.run_free(GpsAt20Hz)
-        # The same 10 polls as above, due at k / 10 for k = 0 to 9. At 20 samples per simulated
+        # The same 5 polls as above, due at 0.05 + k / 5 for k = 0 to 4. At 20 samples per simulated
         # second every poll after the first carries the samples made since the one before it.
         self.assertGreater(max(sim.gps_readings_per_poll), 1)
-        self.assertEqual(len(sim.gps_readings_per_poll), 10)
-        self.assertIn("gps gave 10 new polls without a position in their latest reading", stdout)
+        self.assertEqual(len(sim.gps_readings_per_poll), 5)
+        self.assertIn("gps gave 5 new polls without a position in their latest reading", stdout)
 
     def test_a_polled_scan_with_a_non_finite_point_is_counted_and_not_logged_and_the_run_goes_on(self):
         stdout, sim, recorder = self.run_free(LidarWithNonFinitePoints, "--no-stream")

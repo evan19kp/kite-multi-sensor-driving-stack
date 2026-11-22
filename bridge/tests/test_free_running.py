@@ -287,9 +287,10 @@ class FreeLossTest(unittest.TestCase):
         self.assertIn("possible loss: kite1 lidar gave 5.00 new readings per simulated second at 5 polls per wall "
                       "second, fewer than the 10 Hz requested.", common.format_result(result))
 
-    def test_gps_and_imu_loss_is_never_checkable_in_free_mode_even_at_60(self):
+    def test_gps_loss_is_never_checkable_in_free_mode_even_at_60(self):
         result, rows, _ = free_run(rates.parse_rates("all=60"))
-        self.assertIn("loss not checkable for gps, imu", common.format_result(result))
+        # The IMU's own rate is known (its physics_update_time), so only the GPS is left.
+        self.assertIn("loss not checkable for gps:", common.format_result(result))
         self.assertFalse(rows["lidar"]["possible_loss"])
 
 
@@ -433,15 +434,17 @@ class ScriptTest(unittest.TestCase):
         self.assertEqual(saved["mode"], "free")
         self.assertIsNone(saved["steps"])
         self.assertEqual(set(saved["timer"]), {"polls", "rate_hz", "schedule"})
-        self.assertEqual((saved["timer"]["polls"], saved["timer"]["rate_hz"]), (11, 10.0))
+        self.assertEqual((saved["timer"]["polls"], saved["timer"]["rate_hz"]), (6, 5.0))
         self.assertEqual(set(saved["timing"]), TIMING_KEYS_FREE | {"stream_reads_s"})
         # The free-mode defaults: lidar 20 and camera 40 per wall second, streamed, so the pass at
         # 1.0 s reads them before the Timer ends the run (k / 20 for k = 0 to 20, k / 40 for k = 0
-        # to 40); radar, GPS and IMU at 10 are polled at 0 to 0.9 s.
+        # to 40). The Timer at 5 reads at 0, 0.2, ..., 1.0. Radar at 10 and GPS and IMU at 5 are
+        # staggered by 25, 50 and 75 ms: radar at 0.025 to 0.925 s, GPS at 0.05 to 0.85, IMU at
+        # 0.075 to 0.875.
         self.assertEqual({r["sensor"]: r["polls"] for r in saved["sensors"]},
-                         {"lidar": 21, "camera": 41, "radar": 10, "gps": 10, "imu": 10})
+                         {"lidar": 21, "camera": 41, "radar": 10, "gps": 5, "imu": 5})
         self.assertEqual({r["sensor"]: r["configured_rate_hz"] for r in saved["sensors"]},
-                         {"lidar": 20.0, "camera": 40.0, "radar": 10.0, "gps": 10.0, "imu": 10.0})
+                         {"lidar": 20.0, "camera": 40.0, "radar": 10.0, "gps": 5.0, "imu": 5.0})
         self.assertEqual({(r["schedule"]["late"], r["schedule"]["skipped"]) for r in saved["sensors"]}, {(0, 0)})
         dump = self.saved("raw_gps_imu.json")
         self.assertIn("provenance", dump)
@@ -479,8 +482,13 @@ class ScriptTest(unittest.TestCase):
     def test_ctrl_c_while_waiting_between_polls_closes_cleanly_and_exits_130(self):
         clock = BoundedClock()
 
+        # The six slow polls (Timer, then lidar, camera, radar, GPS and IMU, none streamed) are
+        # staggered over 1 / 40 s, the camera's period: the IMU is first due at 5 / 6 of 25 ms,
+        # 20.83 ms. Waits before 50 ms pass, so the IMU has been polled when Ctrl+C comes.
         def interrupted(seconds):
-            raise KeyboardInterrupt
+            if clock.now() >= 0.05:
+                raise KeyboardInterrupt
+            clock.advance(seconds)
 
         clock.sleep = interrupted
         code, _, stderr, (sim,) = self.run_main("--mode", "free", clock=clock)
