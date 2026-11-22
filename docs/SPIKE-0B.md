@@ -681,7 +681,7 @@ You ran free mode with streaming on the real simulator in Sprints 0B.2, 0B.3 and
 python bridge/spike_lidar_rerun.py --home "<your BeamNG.tech folder>"
 ```
 
-The script opens a Rerun viewer window and streams into it. This guide records no result for the live viewer, only for a saved recording (Run 4). Tell the director what you see.
+The script is written to open a Rerun viewer window and stream into it, but the viewer may not open. This guide records no result for the live viewer. Only a saved recording has opened in Rerun (0B rerun, Run 4b). Tell the director what you see.
 
 ### Save a recording instead
 
@@ -904,7 +904,7 @@ Then the same four with `-b` in the folder names. To look at the points instead 
 
 ## If a call fails
 
-Many BeamNGpy calls are marked as unverified for BeamNGpy 1.36, and the Rerun calls are unverified against the installed `rerun-sdk`, so failures are expected.
+Many BeamNGpy calls are marked as unverified for BeamNGpy 1.36, and two Rerun cases are still unverified against the installed `rerun-sdk`: the live viewer and a run that ends with Ctrl+C. A saved `--save` recording with lidar and camera did open in an installed Rerun on 2026-11-19 (0B rerun, Run 4b). Failures are still expected.
 
 1. Copy the whole output, including the traceback above the last line if there is one. Do not shorten it.
 2. Copy the exact command you ran, with the placeholder in place of your real folder.

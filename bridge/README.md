@@ -195,7 +195,7 @@ Streamed reads are timed as `in stream reads`, apart from `in sensor polls`. Tha
 the bridge's check, which reads every byte of a lidar scan; the bridge does not time it alone. The
 JSON records `"stream"`, `timing.stream_reads_s` and each row's `read` and `suspect`. Without
 `--stream` the output is as before. Evan ran streaming on the real simulator in Sprints 0B.2,
-0B.3 and 0B.4; a streamed lidar or camera read took 0.75 to 1.02 ms.
+0B.3 and 0B.4. A streamed lidar or camera read took 0.75 to 1.02 ms in the 0B.3 and 0B.4 runs.
 
 `--mode free` on the two measuring scripts lets the simulator run on its own instead of in
 lock-step. The adapter attaches a `Timer` sensor to the first car, switches the simulator to
