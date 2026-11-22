@@ -796,25 +796,30 @@ If the first run does not look smooth, run it again with `--live-stride 4` and s
 
 ### What the size line measures
 
-After a `--save` run that ends normally, the script prints these two lines after `wrote ...`:
+After a `--save` run that ends normally, the script prints these three lines after `wrote ...`:
 
 ```
 recording: <bytes> bytes on disk after close, <MB> MB (1 MB = 10^6 bytes) over <s> simulated s: <MB/s> MB per simulated s
-PNG encoding: <n> camera images in <s> s
+PNG encoding: <n> camera images in <s> s on the encoder thread
+PNG backlog: the loop found the queue of 8 frames full <k> times and waited <s> s in all for space; no frame was dropped
 ```
 
 - `recording:` is the size of the `.rrd` file on disk, read after the recording is closed, divided by the simulated seconds of the run. Those are Timer seconds in free mode, and steps / 60 in lock-step. 1 MB is 1,000,000 bytes, so the 354 MiB of the 0B.2 recording is about 371 MB.
 - It counts everything in the file: the provenance text, the layout, the `world/ego` positions, the lidar points and their colours, and the PNG images. Before Rerun's own encoding, a lidar point is 15 bytes: three 4-byte floats and three 1-byte colours. A 640 x 360 colour image is 691,200 bytes before PNG if it has three channels (RGB), and 921,600 bytes if it has four (RGBA); the first real run shows which. How much smaller the PNG is depends on the picture.
 - If closing did not write everything to the file, the number is too low. Check that the file opens and plays to the end.
-- `PNG encoding:` is the wall time spent in Pillow's PNG encoder, summed over the images, by the same clock as the tables. It is part of `our processing` in the timing block, so it holds up the reads after it. Compare the `schedule` table of the save run with the live run.
-- A live run prints neither line, because nothing measures what the viewer receives.
-- After Ctrl+C neither line is printed.
+- Since Sprint 0B.4 the PNGs are encoded on one thread of their own, beside the loop that reads the sensors. The loop only copies each new camera image into a queue that holds 8 images and goes on with its reads. The encoder thread takes the images in order, and the loop logs each encoded image to the recording at the Timer time it was read. The encoder thread runs only Pillow; every BeamNGpy and Rerun call stays on the loop's thread.
+- `PNG encoding:` is the wall time on the encoder thread from the start to the end of each encode, summed over the images, by the same clock as the tables. It is no longer a part of `our processing`. The two threads share one Python interpreter, so the encoder can be held up while the loop runs Python code, and this time can be more than Pillow's own work. The other way round, the encoder's Python steps can still slow the loop a little.
+- `PNG backlog:` says how often the loop found the queue full and how long it waited, in all, for the encoder to make space. A full queue means the encoder fell behind the camera. The loop then waits; it never drops or shrinks an image. That wait is part of `our processing` and holds up the reads after it, as the encoding did before. `0 times` means the encoding never held up the loop. Compare the `schedule` table of the save run with the live run.
+- Why 8 images: the camera makes at most 20 images per simulated second (`requested_update_time=0.05`), so 8 is 0.4 s of camera. A 640 x 360 image of four channels is 921,600 bytes, so a full queue holds under 7.4 MB. Closing the recording waits for at most the 8 queued encodes before BeamNG.tech is closed.
+- A live run prints none of these lines, because nothing measures what the viewer receives. It shows the images as before, without encoding.
+- After Ctrl+C no line is printed. Every image already in the queue is still encoded and logged, then the recording is closed, then BeamNG.tech. If Ctrl+C comes while an image is logged, that one image can be logged twice, at the same time with the same picture.
+- If Pillow fails on an image, the run stops with `error: EncodeError: PNG encoding failed on the camera frame at <s> s (<error>); <n> camera frames were not recorded: that one and every frame after it`, after a traceback. The images encoded before it are in the recording, and BeamNG.tech is closed as after any other error. If Ctrl+C or a timeout stops the run before the loop sees the failure, the script prints the same line without a traceback and then ends as after any Ctrl+C or timeout.
 
 ### What to send back
 
 - The full printed output of both runs.
 - From the live run: the `real-time factor`, the lidar's `new_per_s` beside its `req_hz`, and the lidar's `worst_ms` and `skipped` in the `schedule` table.
-- From the `--save` run: the `recording:` and `PNG encoding:` lines.
+- From the `--save` run: the `recording:`, `PNG encoding:` and `PNG backlog:` lines.
 - Whether the 3D view follows the car as it drives, and whether the view feels live or jumps. Say whether `default layout not sent` was printed, and whether you set the origin by hand.
 - Whether the lidar points sit around the car in the following view.
 - Whether `gps gave N new polls without a position` was printed, and the gps row's `polls`, `per_poll` and `new`. If it was, also send a `raw_gps_imu.json` (see "The raw GPS and IMU dump"), so the director can see which fields the GPS gives.
