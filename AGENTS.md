@@ -485,6 +485,18 @@ Each item that introduces a lasting rule adds a "## Standing rules (R<n>)" secti
 - No doc or PR claims the drawing is gone from the real simulator's window or camera frames until
   Evan's run shows it.
 
+## Standing rules (R44)
+
+- A camera frame handed to the recorder is saved exactly once, or counted in a printed line as not
+  saved; never dropped or doubled silently. `PngWorker.put` queues the frame before it waits for
+  space, and a frame's Rerun log and its release from the queue run with Ctrl+C held back
+  (`rerun_view._ctrl_c_held`), so a Ctrl+C lands before or after both, never between them.
+- A log call that raises is taken to have stored nothing: the frame stays queued, is logged
+  again, and the run prints a line saying so. A close that ends early, for example on a second
+  Ctrl+C, prints how many camera frames were not saved.
+- Tests send a Ctrl+C from inside a fake Rerun call with `signal.raise_signal(signal.SIGINT)`,
+  never by sleeping or timing.
+
 ## Simulator files (hard rule)
 
 - Never read, list, search, copy, launch or write about the simulator's install folder, its user

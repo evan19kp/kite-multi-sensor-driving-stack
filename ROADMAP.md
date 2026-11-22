@@ -373,7 +373,7 @@ never run the real simulator; every test uses the fake.
   debugging; `docs/SPIKE-0B.md`, `bridge/README.md` updated. Tests (fake only): the settings table
   and `sensor:` lines show `is_visualised=False` for all five by default and `True` for the four
   that support it with the flag; the fake adapter receives the value.
-- [ ] **R44 No frame lost or doubled on Ctrl+C** (fix, Opus builder; needs R43): in `--save` runs a
+- [x] **R44 No frame lost or doubled on Ctrl+C** (fix, Opus builder; needs R43): in `--save` runs a
   frame waiting for space in the PNG queue when Ctrl+C (or any stop) arrives is still queued,
   encoded and saved; no frame is ever saved twice; normal endings unchanged; shutdown stays bounded
   (R29) and a second Ctrl+C still skips to ending the process, then says how many frames were not
