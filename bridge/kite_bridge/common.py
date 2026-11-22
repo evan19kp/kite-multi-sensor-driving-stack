@@ -94,6 +94,13 @@ def _add_lidar_options(parser):
                              f"of our car in x and y, measured from the GPS position (default {DEFAULT_EGO_RADIUS_M:g})")
 
 
+def _add_visualise_option(parser):
+    parser.add_argument("--visualise-sensors", action="store_true",
+                        help="let BeamNG draw the lidar, radar, IMU and GPS into the 3D world, for debugging; "
+                             "the camera is never drawn (default off: sensors are created with is_visualised=False, "
+                             "so the camera frames show only the world)")
+
+
 def make_self_hits(args):
     """The self-hit counter for a run: a pure-Python count for the fake, one array operation per
     scan for the real simulator."""
@@ -136,6 +143,7 @@ def add_measure_options(parser):
                              "kite_bridge/stream_check.py are dropped and counted under suspect "
                              "(default off: every sensor is polled)")
     _add_lidar_options(parser)
+    _add_visualise_option(parser)
 
 
 def add_live_options(parser):
@@ -145,6 +153,7 @@ def add_live_options(parser):
                         help="read the lidar and camera from shared memory with stream(), checked by "
                              "kite_bridge/stream_check.py (default: on with --mode free; --no-stream polls them)")
     _add_lidar_options(parser)
+    _add_visualise_option(parser)
 
 
 def parse_args(description, argv=None, extra=None, check=None):
@@ -317,8 +326,8 @@ def version_report(sim):
     return {**sim.versions(), "BeamNG.tech version": TECH_VERSION_TEXT}
 
 
-def print_sensor_settings(stream=False, lidar_pos=None):
-    print("\n".join(settings_lines(stream, lidar_pos)))
+def print_sensor_settings(stream=False, lidar_pos=None, visualise=False):
+    print("\n".join(settings_lines(stream, lidar_pos, visualise)))
 
 
 def spawn(sim, args, n_cars):
@@ -378,7 +387,8 @@ def write_raw_dump(out, per_sensor, cases):
 
 
 def measure_sensors(sim, cars, seconds, clock=None, dump=None, poll_rates=None, stream=False, mode=LOCKSTEP,
-                    sleep=None, on_reading=None, lidar_pos=None, self_hits=None, stagger=False):
+                    sleep=None, on_reading=None, lidar_pos=None, self_hits=None, stagger=False,
+                    visualise=False):
     """Steps the simulator for `seconds` of simulator time and polls each sensor at its rate in
     `poll_rates`, a dict by sensor kind of polls per simulated second (see `rates` for the
     schedule). By default every sensor is polled once after each step, STEP_HZ per simulator
@@ -440,7 +450,7 @@ def measure_sensors(sim, cars, seconds, clock=None, dump=None, poll_rates=None, 
     is simulated seconds over wall seconds.
 
     `lidar_pos` is where each car's lidar is attached (None: the position in
-    `sensor_settings.py`). The time spent counting is part of `processing_s`. With `self_hits`, a `self_hits.SelfHits`, each lidar row has
+    `sensor_settings.py`). `visualise` turns BeamNG's drawing of the sensors on (default off). The time spent counting is part of `processing_s`. With `self_hits`, a `self_hits.SelfHits`, each lidar row has
     `self_hits_approx`, its summary for that car, from every new scan and the car's latest GPS
     position (see `self_hits` for what that does and does not measure); without it the rows
     have no such key.
@@ -459,7 +469,7 @@ def measure_sensors(sim, cars, seconds, clock=None, dump=None, poll_rates=None, 
     clock = clock or wall_clock
     poll_rates = rates.every_step() if poll_rates is None else poll_rates
     for car in cars:
-        sim.attach_sensors(car, stream=stream, lidar_pos=lidar_pos)
+        sim.attach_sensors(car, stream=stream, lidar_pos=lidar_pos, visualise=visualise)
     keys = [(car, kind) for car in cars for kind in SENSOR_KINDS]
     streamed = {key for key in keys if stream and key[1] in STREAMED_KINDS}
     tally = _Tally(keys, streamed, dump, on_reading, self_hits)

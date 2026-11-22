@@ -26,6 +26,10 @@ free mode the measuring table is followed by an approximate self-hit count: the 
 within --ego-radius metres of our car in x and y, measured from the GPS position, per new scan.
 It is printed only, never logged to Rerun.
 
+Sensors are created with is_visualised=False, so the lidar's dots are not drawn in the BeamNG
+window or the camera frames; Rerun shows the lidar. --visualise-sensors turns BeamNG's drawing of
+the lidar, radar, IMU and GPS back on, for debugging; the camera is never drawn.
+
 --save <name.rrd> writes the recording to that file inside --out and does not open a viewer;
 open it later with `rerun <file>`. It keeps every lidar point and stores each camera image as a
 PNG, which is lossless. The PNGs are encoded on one thread beside the loop, through a queue of
@@ -92,7 +96,7 @@ def make_recorder(save_path, fake, live_stride):
 
 def run(args):
     save_path = rerun_view.recording_path(args.out, args.save) if args.save else None
-    common.print_sensor_settings(args.stream, args.lidar_pos)
+    common.print_sensor_settings(args.stream, args.lidar_pos, args.visualise_sensors)
     with common.session(args) as sim:
         car = common.spawn(sim, args, 1)[0]
         show_traffic = common.start_traffic(sim, args.traffic)
@@ -169,7 +173,8 @@ def _run_free(sim, car, args, recorder):
 
     result = common.measure_sensors(sim, [car], args.seconds, poll_rates=args.rates, stream=args.stream,
                                     mode=common.FREE, on_reading=log, lidar_pos=args.lidar_pos,
-                                    self_hits=common.make_self_hits(args), stagger=True)
+                                    self_hits=common.make_self_hits(args), stagger=True,
+                                    visualise=args.visualise_sensors)
     print(common.format_result(result))
     report = [f"logged {logged['lidar']} lidar scans and {logged['camera']} camera images at Timer times, "
               "each only when its content was new"]
@@ -188,7 +193,7 @@ def _run_free(sim, car, args, recorder):
 def _run_lockstep(sim, car, args, recorder, show_traffic):
     no_lidar = no_image = 0
     lidar_raised, image_raised = [], []
-    sim.attach_sensors(car, lidar_pos=args.lidar_pos)
+    sim.attach_sensors(car, lidar_pos=args.lidar_pos, visualise=args.visualise_sensors)
     steps = common.steps_for(args.seconds)
     for _ in range(steps):
         sim.step(1)

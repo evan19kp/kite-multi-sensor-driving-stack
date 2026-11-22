@@ -101,11 +101,14 @@ class Simulator(ABC):
 
     @abstractmethod
     def attach_sensors(self, car: str, stream: bool = False,
-                       lidar_pos: tuple[float, float, float] | None = None) -> None:
+                       lidar_pos: tuple[float, float, float] | None = None,
+                       visualise: bool = False) -> None:
         """Attach one sensor of each kind in SENSOR_KINDS to `car`. With `stream`, the
         STREAMED_KINDS sensors are created streaming: they write each reading to shared memory,
         and `stream` reads it. `lidar_pos`, finite x, y, z in vehicle space in metres, is where
-        the lidar sits; None keeps the position in `sensor_settings.py`."""
+        the lidar sits; None keeps the position in `sensor_settings.py`. Sensors are created with
+        BeamNG's drawing off; `visualise` turns it on for the sensors that support it (not the
+        camera)."""
 
     @abstractmethod
     def poll(self, car: str, kind: str) -> Reading:

@@ -9,6 +9,8 @@ shared memory with stream() and counts what it drops under `suspect`. --mode fre
 schedule and reads simulated time from a Timer sensor. --lidar-pos x,y,z sets where each car's
 lidar sits (vehicle space, metres) and --ego-radius the radius of the approximate self-hit count,
 which is printed and written to multicar.json per car and case, as in spike_sensors.py.
+--visualise-sensors turns BeamNG's drawing of the lidar, radar, IMU and GPS back on, for debugging;
+by default no sensor is drawn.
 """
 
 import sys
@@ -20,7 +22,7 @@ CAR_COUNTS = (1, 2, 4)
 
 
 def run(args):
-    common.print_sensor_settings(args.stream, args.lidar_pos)
+    common.print_sensor_settings(args.stream, args.lidar_pos, args.visualise_sensors)
     cases = []
     dumps = []
     for n_cars in CAR_COUNTS:
@@ -32,7 +34,8 @@ def run(args):
             dump = common.RawDump(args.dump_raw)
             result = common.measure_sensors(sim, cars, args.seconds, dump=dump, poll_rates=args.rates,
                                             stream=args.stream, mode=args.mode, lidar_pos=args.lidar_pos,
-                                            self_hits=common.make_self_hits(args), stagger=True)
+                                            self_hits=common.make_self_hits(args), stagger=True,
+                                            visualise=args.visualise_sensors)
             for car in cars:
                 sim.set_ai_mode(car, "disabled")
             print(f"\n{common.format_result(result)}")
@@ -40,7 +43,8 @@ def run(args):
             dumps.append((n_cars, dump))
             common.write_json(args.out, "multicar.json", {
                 "model": args.model, "config": args.config,
-                "sensor_settings": settings_table(args.stream, args.lidar_pos), "cases": cases})
+                "sensor_settings": settings_table(args.stream, args.lidar_pos, args.visualise_sensors),
+                "cases": cases})
             if args.dump_raw:
                 common.write_raw_dump(args.out, args.dump_raw, dumps)
 
