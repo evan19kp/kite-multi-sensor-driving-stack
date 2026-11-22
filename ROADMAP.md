@@ -333,6 +333,34 @@ fake.
   `scratch\R27\out` example in `docs/SPIKE-0B.md` and the unused `FakeSim.sleep` alias removed.
   Tests for each behaviour change; every existing test keeps passing.
 
+## Sprint 0B.4
+
+The free-mode loop keeps up with real time with slack, measured. This sprint measures; it claims
+nothing until Evan's run prints it. Agents never run the real simulator; every test uses the fake.
+
+- [ ] **R40 Fewer, staggered slow polls** (perf, Opus builder): free-mode defaults `gps=5,imu=5`,
+  Timer 5, radar 10 (lidar 20, camera 40 unchanged); each slow sensor gets a fixed phase so their
+  due times spread evenly across a period, printed in the run's settings; `--rates` still overrides
+  any rate; per buffered sensor the most readings any poll returned and new readings per simulated
+  second beside its own rate (IMU 100 Hz from its 0.01 s setting), with `possible buffer loss` when
+  more than 2 % below (GPS: number only); `docs/SPIKE-0B.md` updated. Tests (fake only, fake
+  clock): 23 ms slow polls and four slow sensors give lower lateness staggered than unstaggered
+  (hand-computed); new defaults; a buffered 100 Hz IMU polled at 5 Hz loses nothing at ~20 per
+  poll; a buffer capped at 15 triggers `possible buffer loss`; `--rates` overrides.
+- [ ] **R41 PNG encoding off the main loop** (perf, Opus builder; needs R40): in `--save` runs camera
+  frames are PNG-encoded in one worker thread (Pillow only, never BeamNGpy) fed by a bounded queue;
+  frames reach the recording in order with their Timer times; a full queue makes the loop wait and
+  count (`encode_backlog_waits`, total wait seconds), never drop or degrade; shutdown (normal, error,
+  Ctrl+C) finishes every queued frame and flushes the recording; the run prints encoding time,
+  frames encoded and backlog waits; `docs/SPIKE-0B.md` updated. Tests (fake only, no `PIL`): fake
+  encoder cost, order and times kept, full queue waits and counts, Ctrl+C with frames queued records
+  all, an encoder exception is reported and stops the run cleanly.
+- [ ] **R42 Lidar default at 1.9 m** (feat, Sonnet; needs R40): the lidar's default `pos` becomes
+  (0, 0, 1.9) everywhere (`--lidar-pos` still overrides), shown on the `sensor:` line; the docs say
+  why (Evan's 0B.3 runs: approximate self-hits ≈ 233 per scan at 1.7 m, 0 at 1.9, 2.1 and 2.3 m);
+  `docs/SPIKE-0B.md`, `bridge/README.md` updated. Tests: the default reaches the sensor settings and
+  the JSON; `--lidar-pos` still overrides.
+
 ## Later
 
 Planned, not scheduled. Do not pick these up as roadmap items.
