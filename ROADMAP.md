@@ -361,6 +361,31 @@ nothing until Evan's run prints it. Agents never run the real simulator; every t
   `docs/SPIKE-0B.md`, `bridge/README.md` updated. Tests: the default reaches the sensor settings and
   the JSON; `--lidar-pos` still overrides.
 
+## Sprint 0B.5
+
+Clean camera frames (sensor drawing off), no frame lost on Ctrl+C, docs brought up to date. Agents
+never run the real simulator; every test uses the fake.
+
+- [ ] **R43 Sensor drawing off, so camera frames show only the world** (fix, Sonnet):
+  `beamng_adapter.py` passes `is_visualised=False` to `Lidar`, `Radar`, `AdvancedIMU`, `GPS` and
+  `Camera` through the sensor settings table, so every `sensor:` line and the JSON
+  `sensor_settings` show it; `--visualise-sensors` (default off) turns the drawing back on for
+  debugging; `docs/SPIKE-0B.md`, `bridge/README.md` updated. Tests (fake only): the settings table
+  and `sensor:` lines show `is_visualised=False` for all five by default and `True` for the four
+  that support it with the flag; the fake adapter receives the value.
+- [ ] **R44 No frame lost or doubled on Ctrl+C** (fix, Opus builder; needs R43): in `--save` runs a
+  frame waiting for space in the PNG queue when Ctrl+C (or any stop) arrives is still queued,
+  encoded and saved; no frame is ever saved twice; normal endings unchanged; shutdown stays bounded
+  (R29) and a second Ctrl+C still skips to ending the process, then says how many frames were not
+  saved. Tests (fake only, fake encoder and clock): Ctrl+C while waiting for queue space keeps that
+  frame; Ctrl+C at the hand-off moment gives no duplicate; a second Ctrl+C prints the unsaved count;
+  every existing shutdown test still passes.
+- [ ] **R45 Docs match what Evan has run** (docs, Sonnet; needs R43): `bridge/README.md` and
+  `docs/SPIKE-0B.md` replace "not run yet" wording about streaming and free mode with what Evan ran
+  in 0B.2, 0B.3 and 0B.4, and say exactly what the 233 self-hits were (a per-scan mean at 1.7 m
+  over four runs, max 234–275, approximate count) and that 1.9 m is the default because it was the
+  lowest tested height with 0. Only measured numbers; no new claims.
+
 ## Later
 
 Planned, not scheduled. Do not pick these up as roadmap items.
