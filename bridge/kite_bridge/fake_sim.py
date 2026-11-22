@@ -107,7 +107,9 @@ class FakeSim(Simulator):
     each step by `step_cost`; nothing waits for real. Sensor `kind` produces a new sample
     `rates[kind]` times per simulated second. A poll returns the sample current at its time, so a
     poll between two samples repeats the last one. GPS and IMU keep every sample made since the
-    last poll and return them together, like BeamNGpy's buffer. `lidar_rows` fixes the lidar
+    last poll and return them together, like BeamNGpy's buffer; with a `buffer_cap` (a whole
+    number >= 1) they keep only the latest `buffer_cap` of them, and the older ones are lost.
+    `lidar_rows` fixes the lidar
     point count, or, as a tuple, gives sample `tick` the count `lidar_rows[tick % len(lidar_rows)]`;
     by default it varies between 900 and 1099 with the sample.
 
@@ -130,7 +132,9 @@ class FakeSim(Simulator):
 
     def __init__(self, seed=0, rates=None, dropout=0.0, repeat=0.0, latency=0.0,
                  models=DEFAULT_MODELS, sensor_time=True, clock=None, request_cost=0.0,
-                 step_cost=0.0, lidar_rows=None, stream_rows=FAKE_STREAM_ROWS, free_speed=1.0, stream_cost=0.0):
+                 step_cost=0.0, lidar_rows=None, stream_rows=FAKE_STREAM_ROWS, free_speed=1.0, stream_cost=0.0,
+                 buffer_cap=None):
+        self._buffer_cap = buffer_cap
         self._request_cost = (dict(request_cost) if isinstance(request_cost, dict)
                               else dict.fromkeys((*SENSOR_KINDS, TIMER), request_cost))
         if clock is None and any((step_cost, stream_cost, *self._request_cost.values())):
@@ -254,6 +258,8 @@ class FakeSim(Simulator):
         tick = self._tick(kind)
         made = max(1, tick - self._last_tick.get(key, tick))
         self._last_tick[key] = tick
+        if kind in BUFFERED_KINDS and self._buffer_cap is not None:
+            made = min(made, self._buffer_cap)
         samples = [self._sample(car, kind, t) for t in range(tick - made + 1, tick + 1)]
         last = self._last.get(key)
         if self._sensor_time and last is not None and self._rng.random() < self._repeat:

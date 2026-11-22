@@ -200,7 +200,7 @@ python bridge/spike_sensors.py --home "<your BeamNG.tech folder>" --out recordin
 Look at three things:
 
 - `new` and `new_per_s` for each sensor. If a sensor's count is the same in both runs, reading less lost nothing for that sensor. A lower count in the second run means that sensor missed readings.
-- GPS and IMU above all. The tool cannot tell from one run whether their buffers overflowed, so this comparison is the check for them. The two runs are separate drives in traffic, so their counts can differ a little for reasons that have nothing to do with polling. Judge a gap by its size: a few readings in thousands is probably that, and a large share of the readings is probably loss.
+- GPS and IMU above all. The tool cannot tell from one run whether the GPS's buffer overflowed, so this comparison is the check for it. The IMU also has the one-run check under "The buffer check for GPS and IMU"; compare both. The two runs are separate drives in traffic, so their counts can differ a little for reasons that have nothing to do with polling. Judge a gap by its size: a few readings in thousands is probably that, and a large share of the readings is probably loss.
 - The `polls`, `in sensor reads` and `real-time factor` numbers. Fewer polls should mean less read time and a higher real-time factor. If the factor barely changes, something other than polling limits it, so look at `waiting for steps`.
 
 Send back both printed outputs and both `sensors.json` files.
@@ -234,7 +234,9 @@ kite1  radar       0.000         0.00    20.00     41      20.50   10.00       2
 kite1  gps         0.000         0.00    10.00     21      10.50     n/a         777       0.4
 kite1  imu         0.000         0.00    10.00    200     100.00     n/a        7400       3.7
 rate_hz: distinct reading timestamps per simulator second. It counts at most one new reading per poll, so it is limited to about the sensor's poll rate (poll_hz, at most 60). per_poll shows when a sensor delivered more.
-loss not checkable for gps, imu: a buffered sensor's capacity is not known, so compare its new readings with a run at --rates all=60.
+loss not checkable for gps: a buffered sensor's capacity is not known, so compare its new readings with a run at --rates all=60.
+buffer: kite1 gps returned up to 1 readings in one poll and 10.00 new readings per simulated second between its first and last poll; own rate not known: the adapter passes it no physics_update_time
+buffer: kite1 imu returned up to 10 readings in one poll and 100.00 new readings per simulated second between its first and last poll; own rate 100 Hz from its physics_update_time
 kite1 imu: polls returned up to 10 readings. rate_hz counts at most one per poll, so it undercounts this sensor.
 wrote scratch\example\sensors.json
 ```
@@ -278,7 +280,7 @@ The three parts add up to the wall time by construction. The percentage after ea
 
 | Command | Meaning |
 |---|---|
-| (no `--rates`) | The default: `lidar=20,camera=20,radar=20,gps=10,imu=10`. With `--mode free` the default is `lidar=20,camera=40,radar=10,gps=10,imu=10` (see "Letting the simulator run on its own"). |
+| (no `--rates`) | The default: `lidar=20,camera=20,radar=20,gps=10,imu=10`. With `--mode free` the default is `lidar=20,camera=40,radar=10,gps=5,imu=5` (see "Letting the simulator run on its own"). |
 | `--rates all=60` | Every sensor after every step, the way the scripts read before `--rates` existed. |
 | `--rates all=30` | Every sensor 30 times per simulated second. |
 | `--rates all=60,gps=10` | `all` is the base, and a named sensor overrides it wherever it is written: GPS at 10, the rest at 60. `gps=10,all=60` means the same. |
@@ -303,7 +305,27 @@ possible loss: kite1 lidar gave 6.00 new readings per simulated second at 5 poll
 
 The note means the sensor, at this poll rate, delivered fewer new readings than it was asked to make, so some updates were probably missed between polls. It can also mean the simulator made fewer updates than asked (for example, because the run is slow), which is why it says "possible". Run again with `--rates all=60` and compare.
 
-The note is never printed for GPS and IMU. Their buffer size is not known, so one run cannot say whether a poll returned as many readings as the buffer could hold. When one of them is polled slower than every step, the script prints `loss not checkable for ...` instead. Compare their `new` counts between a run at `--rates all=60` and a run at the rate you want; see "Compare two runs".
+The note is never printed for GPS and IMU, because the adapter passes them no `requested_update_time`. They get the buffer check below instead. The GPS's own rate is not known either, so when it is polled slower than every step the script prints `loss not checkable for gps` instead. Compare its `new` count between a run at `--rates all=60` and a run at the rate you want; see "Compare two runs".
+
+#### The buffer check for GPS and IMU
+
+GPS and IMU keep their readings in a buffer between polls, and a poll returns all of them. If a poll comes after the buffer is full, readings are lost. Every run prints one `buffer:` line per GPS and IMU, in both modes:
+
+```
+buffer: kite1 imu returned up to 20 readings in one poll and 100.00 new readings per simulated second between its first and last poll; own rate 100 Hz from its physics_update_time
+```
+
+- `returned up to N readings in one poll`: the most readings one poll returned (the `per_poll` column).
+- `new readings per simulated second between its first and last poll`: the readings first returned after the sensor's first poll, divided by the simulated time between the first and the last poll's latest readings. Those times are the ones the `time` column names: the readings' own time when they carry one. This is not `new_per_s`, which divides by the whole run: `new_per_s` leaves out the readings made after the last poll, up to one poll interval. At 5 polls per second that is up to 0.2 s, a fifth of a 1-second run. A 2-second free run on the fake at the defaults shows it: the IMU's `new_per_s` reads 90.44, and its `buffer:` line 100.00.
+- `own rate`: for the IMU, 1 / `physics_update_time` from `bridge/kite_bridge/sensor_settings.py`. The adapter passes 0.01 s, so 100 Hz. The GPS gets no `physics_update_time` from the adapter, so its line says `own rate not known` and shows the number only.
+
+When the IMU's number is more than 2 % below its own rate, a second line prints:
+
+```
+possible buffer loss: kite1 imu gave 75.00 new readings per simulated second, more than 2% below its own 100 Hz, so some polls found its buffer full. Poll it more often with --rates.
+```
+
+It is a guess that the IMU makes one reading per `physics_update_time`. Its `gfx_update_time` is also 0.01 s, so either setting gives 100 Hz. If your run shows clearly more than 100 for the IMU, tell the director: then the setting is not the reading interval. The JSON has the same numbers on the GPS and IMU rows under `buffer`: `readings_per_poll_max`, `new_per_simulated_s_between_polls`, `own_rate_hz` (`null` for the GPS) and `possible_buffer_loss`.
 
 `--rates` does not change `--seconds`, which stays in simulated seconds, and it does not change how fast the simulator steps. It changes how many times a sensor is read in each simulated second.
 
@@ -411,8 +433,9 @@ With `--mode free`:
 - The bridge switches the simulator from lock-step to running on its own and resumes it. The script takes no steps.
 - It attaches a `Timer` sensor to our car (`kite1`). The Timer gives simulated seconds since the scenario started and does not advance while the simulator is paused. It is a clock only. Our car's position from the simulator is still ground truth and is still kept apart from sensor data.
 - It reads each sensor at its `--rates` rate per wall second, not per simulated second. The rule is below.
-- Without `--rates`, free mode has its own defaults: `lidar=20,camera=40,radar=10,gps=10,imu=10`. A sensor you do not name keeps its free-mode default, so `--mode free --rates lidar=30` reads the camera at 40. Lock-step mode keeps the defaults in "Reading each sensor at its own rate".
-- It polls the Timer in its own request, at the higher of the GPS and IMU rates. With the default rates that is 10 per wall second.
+- Without `--rates`, free mode has its own defaults: `lidar=20,camera=40,radar=10,gps=5,imu=5`. A sensor you do not name keeps its free-mode default, so `--mode free --rates lidar=30` reads the camera at 40. Lock-step mode keeps the defaults in "Reading each sensor at its own rate".
+- It polls the Timer in its own request, at the higher of the GPS and IMU rates. With the default rates that is 5 per wall second.
+- The polls are staggered: each one is first due at its own phase, so they do not all fall due at once. See "Staggered slow polls".
 - The run ends at the first Timer reading that is at least `--seconds` past the run's first Timer reading. `--seconds` therefore still counts simulated seconds.
 - If that has not happened after `--seconds` × 20 wall seconds, the run stops with an error. For the default of 30 seconds the limit is 600 wall seconds. A Timer that stands still, for example because the simulator is paused, reaches this limit. The run does not hang.
 - A Timer reading that is not a number of seconds from 0 up stops the run with one line, `error: free run: unusable Timer reading: ...`, and exit code 1. A bad sensor reading counts under `unexp` and the run goes on. A bad Timer reading stops the run instead, because the Timer decides when the run ends.
@@ -432,18 +455,40 @@ During the free run, watch the BeamNG.tech window. Say in your report whether it
 
 ##### The wall-clock schedule
 
-A sensor at rate `r` is due at `k / r` wall seconds after the run starts, for k = 0, 1, 2 and so on. The script reads the Timer first, so every reading has a Timer time. Then it works in passes. Each pass reads the wall clock once and makes these reads, in order:
+A sensor at rate `r` with phase `p` is due at `p + k / r` wall seconds after the run starts, for k = 0, 1, 2 and so on. A streamed sensor's phase is 0; the phases of the polls are under "Staggered slow polls". The script reads the Timer first, so every reading has a Timer time. Then it works in passes. Each pass reads the wall clock once and makes these reads, in order:
 
 1. Every streamed sensor that is due (lidar, then camera, with `--stream`). A streamed read sends no request.
 2. At most one poll: of the sensors that are not streamed and the Timer, the one whose due time is earliest. On a tie the Timer goes first, then the sensor that was polled longest ago, so the polled sensors take turns.
 
-When nothing is due, the script sleeps until the next due time. A sensor's next due time is the first `k / r` after the start of its read.
+When nothing is due, the script sleeps until the next due time. A sensor's next due time is the first `p + k / r` after the start of its read.
 
 A poll is a request to the simulator, about 17 to 21 ms each in your runs. A streamed read took about 1 to 2 ms. Before this rule a pass polled every due sensor, so a lidar that came due during a pass waited for all of that pass's polls. Now a due streamed read waits for at most the one poll that is already running. That bound is what the tests check on the fake, with 20 ms polls and 1 ms streamed reads. Whether it holds on BeamNG.tech is for your run to show.
 
 When a read comes late, it covers its own due time, and the due times it passed over are skipped. They are not made up later in a burst. For example, at 20 reads per second a sensor is due every 0.05 s. If a read starts 0.2 s late, the sensor is read once and is next due at the first multiple of 0.05 s after that read started. So `polls` can be lower than the rate times the wall seconds. The `schedule` table below says how many due times each sensor missed.
 
-With reads that take no time, a run of W wall seconds gives each polled sensor `ceil(W × r)` polls. A streamed sensor gets one more read, at W itself, because the pass that ends the run reads the streams before the Timer. On the fake simulator, which runs at real time, a 2-second run at the free-mode defaults without `--stream` gives 40 polls of lidar, 80 of camera and 20 of radar, GPS and IMU. With `--stream` the lidar and camera get 41 and 81 reads. The rule and the exact arithmetic are in `bridge/kite_bridge/rates.py`.
+With reads that take no time, a run of W wall seconds gives each polled sensor `ceil((W - p) × r)` polls. A streamed sensor gets one more read, at W itself, because the pass that ends the run reads the streams before the Timer. On the fake simulator, which runs at real time, a 2-second run at the free-mode defaults without `--stream` gives 40 polls of lidar, 80 of camera, 20 of radar and 10 each of GPS and IMU. With `--stream` the lidar and camera get 41 and 81 reads. The rule and the exact arithmetic are in `bridge/kite_bridge/rates.py`.
+
+##### Staggered slow polls
+
+A poll is a request, about 20 ms each in your runs. Before Sprint 0B.4 the Timer, radar, GPS and IMU were all due together 10 times per wall second, so their polls ran back to back and the last one started about 60 ms after its due time. Now each poll gets a fixed phase. With n polls whose highest rate is r_max, the k-th of them (k = 0 for the Timer, then the other polled sensors in table order) is first due k / n of 1 / r_max after the run starts. Each phase is below one period of its own sensor. The run prints the phases on the line after `cars:`. With the defaults and `--stream`:
+
+```
+phases: ms after the run starts that each slow poll is first due, spread evenly over 100.00 ms (1 / the highest slow rate), then once per its own period: kite1 timer 0.00, kite1 radar 25.00, kite1 gps 50.00, kite1 imu 75.00
+```
+
+So the Timer is due at 0, 200, 400 ms, the radar at 25, 125, 225 ms, the GPS at 50, 250 ms and the IMU at 75, 275 ms. The closest two are 25 ms apart. On the fake with 23 ms polls, the tests show every poll starting on time this way. Without the phases the radar or IMU poll started 69 ms late (`bridge/tests/test_staggered_polls.py`). Whether real polls fit in 25 ms is for your run to show: a streamed lidar or camera read due in the same gap comes first and adds its 1 to 2 ms. Without `--stream` the lidar and camera are polls too, so six polls share 25 ms (1 / 40, the camera's rate) and the phases are about 4 ms apart.
+
+Fewer polls also means less time in requests. At 23 ms per poll, the defaults' 25 polls per wall second (radar 10, GPS, IMU and Timer 5 each) take about 0.58 s of each wall second, against about 0.92 s for the 40 polls before (all four at 10). That is arithmetic, not a measurement. Your run prints the real share under `in sensor polls` and `in Timer polls`.
+
+`--rates` still sets any rate, and the phases follow. To poll the radar 5 times per wall second too:
+
+```powershell
+python bridge/spike_sensors.py --home "<your BeamNG.tech folder>" --mode free --stream --rates radar=5 --out recordings/free-radar5
+```
+
+Then all four polls run at 5, the period is 200 ms and the phases are 0, 50, 100 and 150 ms. The radar asks for 10 updates per second (`req_hz`), so at 5 polls expect a `possible loss` line for the radar. Compare the `schedule` table and `in sensor polls` with the run at the defaults.
+
+The JSON has the phases at the top level under `phases`: `staggered`, `period_ms` and `slow`, a list with `car`, `sensor` and `phase_ms` for each poll.
 
 ##### Late and skipped reads
 
@@ -466,9 +511,9 @@ Look at the `lidar` row first. Its `worst_ms` is the longest a due lidar read wa
 | `wall s`, `mean_ms` to `max_ms`, `read_s`, `per_poll_ms` | Wall seconds. |
 | `real-time factor` | Timer seconds divided by wall seconds. |
 
-The `time` column shows `timer` for a sensor whose readings carry no time of their own. Your earlier runs showed that the lidar, camera and radar readings have no time. Such a reading gets the latest Timer reading as its approximate time. The Timer is polled less often than the lidar, camera and radar, so several of their readings share one Timer value. For those sensors, `rate_hz` follows how often the Timer was polled, and `repeat` counts readings that share a Timer value. Use `new_per_s` for how often their content changed. GPS and IMU keep their own `time`.
+The `time` column shows `timer` for a sensor whose readings carry no time of their own. Your earlier runs showed that the lidar, camera and radar readings have no time. Such a reading gets the latest Timer reading as its approximate time. The Timer is polled less often than the lidar, camera and radar, so several of their readings share one Timer value. At the default 5 Timer polls per wall second, a lidar that updates 10 times per second gives two scans per Timer value. For those sensors, `rate_hz` follows how often the Timer was polled, and `repeat` counts readings that share a Timer value. Use `new_per_s` for how often their content changed. GPS and IMU keep their own `time`.
 
-The `possible loss` note and the `loss not checkable for gps, imu` line work as under "Reading each sensor at its own rate". The difference is that every sensor counts as read slower than every step, because nothing holds the simulator still between polls. The note says `polls per wall second`.
+The `possible loss` note, the `loss not checkable for gps` line and the `buffer:` lines work as under "Reading each sensor at its own rate". The difference is that every sensor counts as read slower than every step, because nothing holds the simulator still between polls. The note says `polls per wall second`.
 
 ##### Where the time goes in free mode
 
@@ -492,27 +537,28 @@ Look at these numbers:
 With `--seconds 2` on the fake simulator, free-mode default rates (the `sensor:` lines are left out, and the second table and the footer are cut):
 
 ```
-cars: 1  mode: free, the Timer polled 21 times at 10 per wall second
+cars: 1  mode: free, the Timer polled 11 times at 5 per wall second
+phases: ms after the run starts that each slow poll is first due, spread evenly over 25.00 ms (1 / the highest slow rate), then once per its own period: kite1 timer 0.00, kite1 lidar 4.17, kite1 camera 8.33, kite1 radar 12.50, kite1 gps 16.67, kite1 imu 20.83
 car    sensor   polls  rate_hz   time  per_poll  mean_ms  p50_ms  p95_ms  max_ms  empty  repeat  unexp  points  detect
-kite1  lidar       40    10.00 sensor         1     0.04    0.04    0.07    0.14      0      20      0    1017     n/a
-kite1  camera      80    20.00 sensor         1     0.02    0.02    0.03    0.09      0      40      0     n/a     n/a
-kite1  radar       20    10.00 sensor         1     0.02    0.02    0.03    0.04      0       0      0     n/a     n/a
-kite1  gps         20    10.00 sensor         1     0.01    0.01    0.01    0.01      0       0      0     n/a     n/a
-kite1  imu         20    10.00 sensor        10     0.01    0.01    0.01    0.02      0       0      0     n/a     n/a
-timing: 2.001 simulated s (Timer) in 2.001 wall s, real-time factor 1.000
-  waiting to poll       1.982 s   99.1%
+kite1  lidar       40    10.00 sensor         1     0.05    0.05    0.08    0.17      0      20      0    1017     n/a
+kite1  camera      80    20.00 sensor         1     0.02    0.02    0.03    0.06      0      40      0     n/a     n/a
+kite1  radar       20    10.00 sensor         1     0.02    0.02    0.04    0.05      0       0      0     n/a     n/a
+kite1  gps         10     5.00 sensor         2     0.02    0.02    0.02    0.02      0       0      0     n/a     n/a
+kite1  imu         10     5.00 sensor        20     0.03    0.02    0.04    0.05      0       0      0     n/a     n/a
+timing: 2.000 simulated s (Timer) in 2.000 wall s, real-time factor 1.000
+  waiting to poll       1.974 s   98.7%
   in Timer polls        0.000 s    0.0%
-  in sensor reads       0.004 s    0.2%
-  our processing        0.014 s    0.7%
+  in sensor reads       0.005 s    0.2%
+  our processing        0.021 s    1.1%
 ...
 schedule: late counts reads that started 2 ms or more after their due time, worst_ms is the latest start, skipped counts due times passed over with no read
 car    sensor     late  worst_ms  skipped
-kite1  lidar         0      1.20        0
-kite1  camera        0      1.28        0
-kite1  radar         0      0.86        0
-kite1  gps           0      0.98        0
-kite1  imu           0      1.05        0
-kite1  timer         0      0.80        0
+kite1  lidar         0      1.07        0
+kite1  camera        0      0.66        0
+kite1  radar         0      0.67        0
+kite1  gps           0      0.51        0
+kite1  imu           0      0.55        0
+kite1  timer         0      0.56        0
 ...
 ```
 
@@ -525,6 +571,7 @@ After the `rate_hz:` footer line, a `mode free:` line says which clock each numb
 - `"mode"`: `"free"`, or `"lockstep"` in a lock-step run.
 - `"steps"` and `"steps_per_second"`: `null`.
 - `"timer"`: `{"polls": ..., "rate_hz": ..., "schedule": {...}}`.
+- `"phases"`: `{"staggered": true, "period_ms": ..., "slow": [{"car": ..., "sensor": ..., "phase_ms": ...}, ...]}` (see "Staggered slow polls").
 - On each sensor row, `schedule`: `{"late": ..., "worst_late_ms": ..., "skipped": ...}` (see "Late and skipped reads"). `worst_late_ms` is `null` for a sensor that was never read. A lock-step run has no `schedule`.
 - Under `timing`: `idle_s` (waiting to poll) and `timer_reads_s` (in Timer polls) in place of `step_wait_s`.
 
@@ -543,9 +590,11 @@ Send that line back. It means the simulator ran at less than 1/20 of real time, 
 The `rate_hz:` explanation line always prints. The other footer lines appear only when they apply:
 
 - `possible loss: <car> <sensor> ...` appears for each lidar, camera or radar row that meets the rule under "Reading each sensor at its own rate".
-- `loss not checkable for ...` appears when GPS or IMU is polled slower than every step.
+- `loss not checkable for gps: ...` appears when the GPS is polled slower than every step. The IMU is not listed: its own rate is known (see "The buffer check for GPS and IMU").
+- `buffer: <car> <sensor> ...` always appears, one line per GPS and IMU, and `possible buffer loss: <car> imu ...` when the IMU's number is more than 2 % below its own rate.
 - `<car> <sensor>: polls returned up to N readings...` appears when `per_poll` is above 1.
 - `no sensor time for <car> <sensor>, <car> <sensor>: rate_hz there is the polling rate, not the sensor's` is one line that lists every affected sensor, separated by commas. It appears when at least one sensor has `time` of `poll`, `timer` or `mixed`.
+- With `--mode free` only: the `phases:` line, right after the `cars:` line. See "Staggered slow polls".
 - With `--mode free` only: the `mode free:` line, which says which clock each number uses and how a pass picks its reads. See "Letting the simulator run on its own".
 - With `--mode free` only: `skipped: <car> <sensor> missed N due reads; ...` for each sensor or Timer row of the `schedule` table with `skipped` above 0. See "Late and skipped reads".
 - `unexpected format: <car> <sensor> N readings, first: ...` appears when `unexp` is above 0. It prints the first message for each sensor, so send those lines back in full. A poll that raised an error reads `first: poll raised <type>: <message>`.
@@ -614,7 +663,7 @@ This script drives our car in traffic mode with AI traffic and sends the lidar p
 
 By default the script runs free with streaming, the same as `--mode free --stream`:
 
-- The simulator runs on its own, as in "Letting the simulator run on its own" under Run 2. The lidar and camera are read from shared memory with `stream()`. The radar, GPS, IMU and the Timer are polled. Every read follows the free-mode schedule: each pass reads the due lidar and camera first, then at most one due poll. The free-mode default rates apply: `lidar=20,camera=40,radar=10,gps=10,imu=10`, and the Timer at 10. `--rates` changes them, in reads per wall second.
+- The simulator runs on its own, as in "Letting the simulator run on its own" under Run 2. The lidar and camera are read from shared memory with `stream()`. The radar, GPS, IMU and the Timer are polled. Every read follows the free-mode schedule: each pass reads the due lidar and camera first, then at most one due poll. The free-mode default rates apply: `lidar=20,camera=40,radar=10,gps=5,imu=5`, and the Timer at 5, with the polls staggered (see "Staggered slow polls"). `--rates` changes them, in reads per wall second.
 - A lidar scan or camera image goes to Rerun at its Timer time only when its content is new, by the same rule as the `new` column of the tables. A scan read twice is logged once. The points are coloured by distance from `world/ego` (see Run 4). BeamNG's own per-point `colours` are never logged. Nothing is logged under `ground_truth/`, because reading our car's or the traffic cars' positions is a request, like a poll, and would hold up the lidar.
 - After the run the script prints the same tables as `spike_sensors.py --mode free --stream`, including the `schedule` table (see "Late and skipped reads"), the real-time factor and, per sensor, `new_per_s` beside `req_hz`.
 
@@ -656,11 +705,11 @@ By default: the five `sensor:` lines (lidar and camera end in `is_streaming=True
 spawned kite1 (model: vivace, config: vehicles/vivace/tograc_qE.pc)
 ...
 logged 21 lidar scans and 41 camera images at Timer times, each only when its content was new
-gps gave 20 new polls without a position in their latest reading; world/ego did not move for them
+gps gave 10 new polls without a position in their latest reading; world/ego did not move for them
 no ground truth logged in free mode, because reading our car's or the other cars' positions is a request that would hold up the lidar
 ```
 
-The fake reads the lidar 41 times in 2 wall seconds, 20 per second and once more at 2.0 s, but its lidar updates only 10 times per simulated second. Each update is read twice and logged once: 21 scans. The counts match the `new` column of the tables. The fake GPS gives no x and y, so the `gps gave ...` line appears; see Run 4. That line counts polls. Here each GPS poll carries one reading (`per_poll` 1), so its 20 matches both the `polls` and the `new` column of the gps row.
+The fake reads the lidar 41 times in 2 wall seconds, 20 per second and once more at 2.0 s, but its lidar updates only 10 times per simulated second. Each update is read twice and logged once: 21 scans. The counts match the `new` column of the tables. The fake GPS gives no x and y, so the `gps gave ...` line appears; see Run 4. That line counts polls: the fake GPS makes 10 readings per simulated second and is polled 5 times per wall second, so each poll carries up to 2 readings (`per_poll` 2). The 10 matches the `polls` column of the gps row, and `new` reads 19.
 
 With `--mode lockstep`: the five `sensor:` lines, a `spawned` line, then a count of the logged steps. With `--seconds 2`:
 
@@ -727,7 +776,7 @@ This run checks the Sprint 0B.3 changes to Demo 1 with its default `--mode free 
 - It is a guess that BeamNG's GPS reading carries its position in metres under `x` and `y`, in the same world frame as the lidar points. If it gives only latitude and longitude, the script does not convert them, every run prints `gps gave N new polls without a position in their latest reading; world/ego did not move for them`, and the view stays at the origin. Then follow the car by hand as described below; it does not follow on its own.
 - A GPS gives no height, so `world/ego` sits at height 0. Where the road is not at height 0, the points sit above or below the centre of the following view.
 - It is the GPS's position only: the view follows where the car is, not which way it faces.
-- The GPS is read 10 times per wall second and the lidar 20 times, so `world/ego` can be up to one GPS read (about 0.1 s) older than a scan. In the 3D view that follows `world/ego`, the points can then sit off by the distance the car drove in that time: about 1.5 m at 15 m/s. In a view with the origin `/`, the points stay where the lidar saw them.
+- The GPS is read 5 times per wall second (10 before Sprint 0B.4) and the lidar 20 times, so `world/ego` can be up to one GPS read (about 0.2 s) older than a scan. In the 3D view that follows `world/ego`, the points can then sit off by the distance the car drove in that time: about 3 m at 15 m/s. `--rates gps=10` halves that, at the cost of 5 more polls per second. In a view with the origin `/`, the points stay where the lidar saw them.
 - The script takes the lidar points to be in world space, as `bridge/kite_bridge/readings.py` assumes. If the points move with the car in a view with the origin `/`, or the scan is not centred on the car in the following view, the points are relative to the sensor instead. Tell the director.
 
 ### The layout, and following the car by hand

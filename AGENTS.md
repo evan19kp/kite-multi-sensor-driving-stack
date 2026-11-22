@@ -445,6 +445,21 @@ Each item that introduces a lasting rule adds a "## Standing rules (R<n>)" secti
 - `common.write_json` refuses a payload with its own `provenance` key; the field comes only from
   `PROVENANCE`.
 
+## Standing rules (R40)
+
+- Free-mode phases come only from `rates.phases` and are applied only through `rates.next_due`
+  and `rates.skipped`, which refuse a phase outside [0, 1 / rate); no script or module keeps a
+  second schedule. The scripts stagger their free runs; `measure_sensors` without `stagger` keeps
+  every phase at 0. Each free run prints its phases and writes them as `phases` in the JSON.
+- A buffered sensor's own rate, for the `possible buffer loss` note, comes only from a
+  `physics_update_time` that `sensor_settings.py` passes (`buffered_update_hz`; today only the
+  IMU's). This narrows R33 for the IMU, whose loss is now checked in one run against that rate. The GPS
+  is passed none, so it gets its number only and its loss is still checked by comparing `new`
+  between two runs.
+- The buffer check counts new readings between a sensor's first and last poll
+  (`measure.buffered_rate`), never over the whole run, whose ends hold up to one poll interval
+  with no poll.
+
 ## Simulator files (hard rule)
 
 - Never read, list, search, copy, launch or write about the simulator's install folder, its user

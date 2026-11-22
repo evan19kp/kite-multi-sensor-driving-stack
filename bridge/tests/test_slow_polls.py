@@ -21,7 +21,9 @@ from kite_bridge.stream_check import reading_from_stream
 SLOW_S = 0.020
 STREAM_S = 0.001
 POLLED = ("radar", "gps", "imu")
-FREE_DEFAULTS = rates.parse_rates(None, rates.FREE_DEFAULT_RATES)
+# The Timer, radar, GPS and IMU all at 10 per wall second. These runs pass no stagger, so those
+# four are all due at 0.1 k s.
+ALL_SLOW_AT_10 = rates.parse_rates("lidar=20,camera=40,radar=10,gps=10,imu=10")
 # The fake lidar updates 10 times per simulated second (SENSOR_RATES). 3 steps before the run put
 # its updates at 0.05, 0.15, 0.25, ... wall s, half way between the Timer's due times, while the
 # polls that start at 0.1 k are still running.
@@ -61,7 +63,7 @@ def free_stream_run(slow_s, seconds=2.0):
                 stream_cost=STREAM_S)
     cars = sim.load_scenario("fake_cherrier_tograc", 1)
     sim.step(STEPS_BEFORE)
-    result = common.measure_sensors(sim, cars, seconds, clock=clock.now, sleep=clock.sleep, poll_rates=FREE_DEFAULTS,
+    result = common.measure_sensors(sim, cars, seconds, clock=clock.now, sleep=clock.sleep, poll_rates=ALL_SLOW_AT_10,
                                     stream=True, mode=common.FREE)
     return result, {r["sensor"]: r for r in result["sensors"]}, sim
 
@@ -167,11 +169,11 @@ class DefaultsTest(unittest.TestCase):
         self.assertEqual(self.configured(), ("lockstep", {"lidar": 20.0, "camera": 20.0, "radar": 20.0,
                                                           "gps": 10.0, "imu": 10.0}))
         self.assertEqual(self.configured("--mode", "free"), ("free", {"lidar": 20.0, "camera": 40.0, "radar": 10.0,
-                                                                      "gps": 10.0, "imu": 10.0}))
+                                                                      "gps": 5.0, "imu": 5.0}))
 
     def test_a_named_rate_in_free_mode_keeps_the_free_defaults_for_the_rest(self):
         _, configured = self.configured("--mode", "free", "--rates", "lidar=30")
-        self.assertEqual(configured, {"lidar": 30.0, "camera": 40.0, "radar": 10.0, "gps": 10.0, "imu": 10.0})
+        self.assertEqual(configured, {"lidar": 30.0, "camera": 40.0, "radar": 10.0, "gps": 5.0, "imu": 5.0})
 
     def test_the_help_names_both_defaults(self):
         _, stdout, _ = run_script("spike_sensors", "--help")
