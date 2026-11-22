@@ -164,7 +164,7 @@ class SettingsLinesTest(unittest.TestCase):
     def test_the_lidar_and_radar_lines_pass_every_listed_setting(self):
         by_kind, _ = self.sensor_lines("spike_sensors")
         for setting in ("vertical_resolution=64", "frequency=20", "horizontal_angle=360", "max_distance=120",
-                        "pos=(0, 0, 1.7)", "requested_update_time=0.1"):
+                        "pos=(0, 0, 1.9)", "requested_update_time=0.1"):
             self.assertIn(f" {setting}", by_kind["lidar"] + " ")
         for setting in ("requested_update_time=0.1", "pos=(0, 0, 1.7)", "range_min=0.1", "range_max=100.0",
                         "half_angle_deg=30.0", "field_of_view_y=70"):

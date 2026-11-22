@@ -17,7 +17,7 @@ from kite_bridge.sensor_settings import SENSOR_SETTINGS
 CAR = "kite1"
 SENSOR_RATES = {"lidar": 10.0, "camera": 20.0, "radar": 10.0, "gps": 10.0, "imu": 100.0}
 ALL_60 = rates.parse_rates("all=60")
-DEFAULT_POS = (0, 0, 1.7)
+DEFAULT_POS = (0, 0, 1.9)
 
 
 def gps_at(x, y):
@@ -187,7 +187,7 @@ class MeasuredSelfHitsTest(unittest.TestCase):
                          (0, 1, 59))
         printed = common.format_result(result).splitlines()
         self.assertIn("kite1 lidar: 59 new scans could not be read as x, y, z points and were not counted", printed)
-        self.assertIn("self hits (approximate): kite1 lidar at (0, 0, 1.7): 0 scans counted, mean n/a points, "
+        self.assertIn("self hits (approximate): kite1 lidar at (0, 0, 1.9): 0 scans counted, mean n/a points, "
                       "max n/a", printed)
 
     def test_without_a_counter_the_output_has_no_self_hits(self):
@@ -264,6 +264,34 @@ class LidarOptionsTest(unittest.TestCase):
             for sim in sims:
                 for settings in sim.lidar_settings.values():
                     self.assertEqual(settings["pos"], DEFAULT_POS, module.__name__)
+            self.assertIn("sensor: lidar requested_update_time=0.1 pos=(0, 0, 1.9) ", stdout, module.__name__)
+
+    def test_the_default_mount_is_1_9_metres_in_the_settings_the_json_and_the_help(self):
+        import spike_multicar
+        import spike_sensors
+
+        code, _, stderr, _, saved = run_script(spike_sensors, "--rates", "all=60")
+        self.assertEqual(code, 0, stderr)
+        data = saved["sensors.json"]
+        self.assertEqual(data["sensor_settings"]["lidar"]["pos"], [0, 0, 1.9])
+        lidar = next(row for row in data["sensors"] if row["sensor"] == "lidar")
+        self.assertEqual(lidar["self_hits_approx"]["lidar_pos"], [0.0, 0.0, 1.9])
+        code, _, stderr, _, saved = run_script(spike_multicar)
+        self.assertEqual(code, 0, stderr)
+        self.assertEqual(saved["multicar.json"]["sensor_settings"]["lidar"]["pos"], [0, 0, 1.9])
+        for module, extra, _ in self.modules():
+            with self.assertRaises(SystemExit) as raised, contextlib.redirect_stdout(io.StringIO()) as shown:
+                module.main(["--help", *extra])
+            self.assertEqual(raised.exception.code, 0, module.__name__)
+            self.assertIn("(default 0,0,1.9)", " ".join(shown.getvalue().split()), module.__name__)
+
+    def test_the_old_1_7_metre_mount_is_still_available_with_the_option(self):
+        for module, extra, free in self.modules():
+            code, stdout, stderr, sims, _ = run_script(module, "--lidar-pos", "0,0,1.7", *extra, free=free)
+            self.assertEqual(code, 0, (module.__name__, stderr))
+            for sim in sims:
+                for settings in sim.lidar_settings.values():
+                    self.assertEqual(settings["pos"], (0, 0, 1.7), module.__name__)
             self.assertIn("sensor: lidar requested_update_time=0.1 pos=(0, 0, 1.7) ", stdout, module.__name__)
 
     def test_the_json_has_the_mount_and_the_self_hit_count(self):
