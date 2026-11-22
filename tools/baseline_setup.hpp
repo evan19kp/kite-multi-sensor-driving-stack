@@ -20,6 +20,7 @@ inline constexpr double kDtS = 0.1;
 inline constexpr double kNoiseM = 1.0;
 inline constexpr double kDetectionProbability = 0.95;
 inline constexpr double kAreaHalfWidthM = 100.0;
+inline constexpr double kBaselineTrackerGateM = 5.0;
 // The sensor's noise spec, which the tracker is given rather than reading it from the scenario.
 inline constexpr double kKalmanMeasurementSigmaM = 1.0;
 inline constexpr double kKalmanQ = 0.01;
