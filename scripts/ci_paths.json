@@ -7,6 +7,7 @@
     {"prefix": "CMakeLists.txt", "jobs": ["app", "app-windows"]},
     {"prefix": "CMakePresets.json", "jobs": ["app", "app-windows"]},
     {"prefix": "cmake/", "jobs": ["app", "app-windows"]},
+    {"prefix": "sim/tests/data/", "jobs": ["app", "app-windows", "python"]},
     {"prefix": "sim/", "jobs": ["app", "app-windows"]},
     {"prefix": "eval/", "jobs": ["app", "app-windows"]},
     {"prefix": "tools/", "jobs": ["app", "app-windows"]},

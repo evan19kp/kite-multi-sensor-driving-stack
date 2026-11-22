@@ -404,7 +404,7 @@ needs the simulator; every acceptance check runs in CI.
   [--out <folder>]` logs `ground_truth/actors`, `measurements`, `tracks` (with `track_id` labels and
   velocity lines) on one timeline `t`; `rerun` imported lazily in one module; tests use a fake
   logger; `viewer/README.md` gives the three commands for Demo 1's second clip.
-- [ ] **R49 CI runs the viewer tests** (ci, Sonnet; needs R48): the `python` job also runs
+- [x] **R49 CI runs the viewer tests** (ci, Sonnet; needs R48): the `python` job also runs
   `python -m unittest discover -s viewer -v`; a test in `scripts/test_ci_changes.py` confirms
   `viewer/` changes select the `python` job.
 - [ ] **R46 Bridge docs and help match the facts** (fix, Sonnet): `docs/SPIKE-0B.md`,
