@@ -193,7 +193,8 @@ class MarkerInRecordingTest(unittest.TestCase):
         for name in ("init", "save", "log"):
             getattr(fake, name).side_effect = lambda *a, _name=name, **k: self.order.append(_name)
         with installed(fake):
-            spike_lidar_rerun.make_recorder(save_path, False, 1)
+            recorder = spike_lidar_rerun.make_recorder(save_path, False, 1)
+        self.addCleanup(recorder.close)
         return fake
 
     def test_a_saved_recording_starts_with_one_provenance_text_entry(self):

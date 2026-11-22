@@ -347,7 +347,7 @@ nothing until Evan's run prints it. Agents never run the real simulator; every t
   clock): 23 ms slow polls and four slow sensors give lower lateness staggered than unstaggered
   (hand-computed); new defaults; a buffered 100 Hz IMU polled at 5 Hz loses nothing at ~20 per
   poll; a buffer capped at 15 triggers `possible buffer loss`; `--rates` overrides.
-- [ ] **R41 PNG encoding off the main loop** (perf, Opus builder; needs R40): in `--save` runs camera
+- [x] **R41 PNG encoding off the main loop** (perf, Opus builder; needs R40): in `--save` runs camera
   frames are PNG-encoded in one worker thread (Pillow only, never BeamNGpy) fed by a bounded queue;
   frames reach the recording in order with their Timer times; a full queue makes the loop wait and
   count (`encode_backlog_waits`, total wait seconds), never drop or degrade; shutdown (normal, error,

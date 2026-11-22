@@ -10,12 +10,22 @@ position it stays at the origin. Nothing from simulator state goes under `world/
 each step is one operation on the whole array, with no Python loop over points or pixels.
 `ListArrays` does the same work on plain lists, one point at a time. It exists only for tests
 and the fake, whose stand-in for Rerun takes lists and which have no numpy.
+
+A saved recording's camera images are PNG-encoded on one thread of their own (`PngWorker`). That
+thread only encodes: it is given the encoder and the clock, never the simulator or Rerun. Every
+Rerun call stays on the run's thread, which logs each encoded image at the time it was read.
 """
 
+import collections
+import dataclasses
+import enum
 import functools
 import io
 import math
 import numbers
+import threading
+import typing
+from copy import deepcopy
 from pathlib import Path, PurePosixPath, PureWindowsPath
 
 from kite_bridge.output_guard import PROVENANCE
@@ -34,6 +44,11 @@ EGO_COLOUR = (255, 255, 255)
 GROUND_TRUTH_COLOUR = (255, 165, 0)
 RECORDING_SUFFIX = ".rrd"
 PNG_MEDIA_TYPE = "image/png"
+# The camera makes at most 20 images per simulated second (requested_update_time 0.05 s), so 8
+# frames are 0.4 s of camera. A 640 x 360 RGBA frame is 921,600 bytes, so a full queue holds
+# under 7.4 MB, and closing waits for at most 8 encodes.
+PNG_QUEUE_FRAMES = 8
+WAIT_SLICE_S = 0.1
 
 
 def distance_colour(distance_m):
@@ -165,10 +180,11 @@ class NumpyArrays:
         offsets = points[:, :2] - np.asarray(centre, dtype=np.float32)
         return int(np.count_nonzero((offsets ** 2).sum(axis=1) <= radius * radius))
 
-    def image(self, image):
-        """A PIL image, an array or rows of pixels as a (height, width, channels) uint8 array."""
+    def image(self, image, copy=False):
+        """A PIL image, an array or rows of pixels as a (height, width, channels) uint8 array. With
+        `copy` the array is always a new one, never a view of the reading's memory."""
         # ASSUMPTION: BeamNGpy's colour image, polled or streamed, holds 8-bit values (0 to 255) per channel
-        return self.np.asarray(image, dtype=self.np.uint8)
+        return (self.np.array if copy else self.np.asarray)(image, dtype=self.np.uint8)
 
 
 class ListArrays:
@@ -187,8 +203,8 @@ class ListArrays:
     def count_within(self, points, centre, radius):
         return sum(math.dist(point[:2], centre) <= radius for point in points)
 
-    def image(self, image):
-        return image
+    def image(self, image, copy=False):
+        return deepcopy(image) if copy else image
 
 
 def pillow_png(pixels):
@@ -200,12 +216,142 @@ def pillow_png(pixels):
     return buffer.getvalue()
 
 
+class Frame(typing.NamedTuple):
+    """A camera image for the recording: its entity path, its time on TIMELINE, and its pixels
+    before encoding or its PNG bytes after."""
+    path: str
+    time: float
+    data: object
+
+
+@dataclasses.dataclass
+class EncodeStats:
+    """`encoded` frames took `encode_s` on the encoder thread, by the clock given, from the start
+    to the end of each encode. The run's loop found the queue full `backlog_waits` times and
+    waited `backlog_wait_s` in all for space."""
+    encoded: int = 0
+    encode_s: float = 0.0
+    backlog_waits: int = 0
+    backlog_wait_s: float = 0.0
+
+
+class EncodeError(RuntimeError):
+    pass
+
+
+class Phase(enum.Enum):
+    """Where a PngWorker is. RUNNING encodes frames as they are put. `finish` moves RUNNING to
+    CLOSING, which encodes the frames already put and stops. An exception from the encoder or the
+    clock moves RUNNING or CLOSING to FAILED, which encodes nothing more. The first `put` or
+    `finish` that finds FAILED raises EncodeError and moves to REPORTED. In REPORTED `put` still
+    raises and `finish` does not. No other move happens."""
+    RUNNING = "running"
+    CLOSING = "closing"
+    FAILED = "failed"
+    REPORTED = "reported"
+
+
+class PngWorker:
+    """Encodes frames with `encode` on one thread of its own, in the order they are put. At most
+    PNG_QUEUE_FRAMES frames wait unencoded, the one being encoded among them. `put` on a full queue
+    waits for space and counts the wait in `stats`; it never drops a frame. `first_encoded` is the
+    oldest encoded frame not yet released, and `release_first` lets it go once it is recorded.
+    `finish` waits until every frame put is encoded and stops the thread.
+
+    When the encoder raises, the thread stops, and Phase says what `put` and `finish` do after.
+    The EncodeError says how many frames were not recorded: the one that failed and every frame
+    after it. The frames encoded before it are still there to be recorded."""
+
+    def __init__(self, encode, clock):
+        self.stats = EncodeStats()
+        self._encode, self._clock = encode, clock
+        self._changed = threading.Condition()
+        self._waiting = collections.deque()
+        self._encoded = collections.deque()
+        self._phase = Phase.RUNNING
+        self._failure = None
+        self._thread = threading.Thread(target=self._work, name="png-encoder", daemon=True)
+        self._thread.start()
+
+    def put(self, frame):
+        with self._changed:
+            if self._full():
+                started = self._clock()
+                self.stats.backlog_waits += 1
+                # Short waits: on Windows a Ctrl+C is not raised until a blocking wait returns.
+                while self._full():
+                    self._changed.wait(WAIT_SLICE_S)
+                self.stats.backlog_wait_s += self._clock() - started
+            if self._phase in (Phase.FAILED, Phase.REPORTED):
+                raise self._report(also_lost=1)
+            self._waiting.append(frame)
+            self._changed.notify_all()
+
+    def first_encoded(self):
+        with self._changed:
+            return self._encoded[0] if self._encoded else None
+
+    def release_first(self):
+        with self._changed:
+            self._encoded.popleft()
+
+    def finish(self):
+        with self._changed:
+            if self._phase is Phase.RUNNING:
+                self._phase = Phase.CLOSING
+                self._changed.notify_all()
+        while self._thread.is_alive():
+            self._thread.join(WAIT_SLICE_S)
+        with self._changed:
+            if self._phase is Phase.FAILED:
+                raise self._report(also_lost=0)
+
+    def _full(self):
+        return len(self._waiting) >= PNG_QUEUE_FRAMES and self._phase in (Phase.RUNNING, Phase.CLOSING)
+
+    def _report(self, also_lost):
+        self._phase = Phase.REPORTED
+        frame, error = self._failure
+        lost = len(self._waiting) + also_lost
+        report = EncodeError(f"PNG encoding failed on the camera frame at {frame.time:.3f} s "
+                             f"({type(error).__name__}: {error}); {lost} camera frames were not recorded: "
+                             f"that one and every frame after it")
+        report.__cause__ = error
+        return report
+
+    def _work(self):
+        while True:
+            with self._changed:
+                while not self._waiting and self._phase is Phase.RUNNING:
+                    self._changed.wait()
+                if not self._waiting:
+                    return
+                frame = self._waiting[0]
+            try:
+                started = self._clock()
+                png = self._encode(frame.data)
+                elapsed = self._clock() - started
+            except BaseException as error:
+                with self._changed:
+                    self._phase, self._failure = Phase.FAILED, (frame, error)
+                    self._changed.notify_all()
+                return
+            with self._changed:
+                self._waiting.popleft()
+                self._encoded.append(frame._replace(data=png))
+                self.stats.encoded += 1
+                self.stats.encode_s += elapsed
+                self._changed.notify_all()
+
+
 class RerunRecorder:
     """Without `save_path`: spawns a live viewer, shows every `live_stride`-th lidar point and
     passes camera images as they are. With `save_path`: the recording goes to that file only,
     with every lidar point, and each camera image is encoded by `encode_png` (lossless,
-    `pillow_png` by default) before it is logged. `encode_s` is the time spent encoding, by
-    `clock`, and `encoded` the number of images encoded. `arrays` does the array work
+    `pillow_png` by default) on a PngWorker thread with a queue of PNG_QUEUE_FRAMES, timed by
+    `clock`. `stats` says what the encoding took. The run's thread logs each encoded image at the
+    time set when it was queued, at the next `set_time` or at `close`, in the order queued. `close`
+    waits for every queued image, logs it and flushes the file. `arrays` does the array work
     (NumpyArrays by default)."""
 
     def __init__(self, save_path=None, live_stride=1, *, clock, arrays=None, encode_png=None):
@@ -214,10 +360,9 @@ class RerunRecorder:
         self._rr = rerun
         self._arrays = arrays or NumpyArrays()
         self._stride = live_stride if save_path is None else 1
-        self._encode_png = None if save_path is None else (encode_png or pillow_png)
-        self._clock = clock
-        self.encode_s = 0.0
-        self.encoded = 0
+        self._time = None
+        self._png = None
+        self.stats = EncodeStats()
         if save_path is None:
             rerun.init("kite_lidar", spawn=True)  # ASSUMPTION: init(app_id, spawn=True) spawns and connects a viewer
         else:
@@ -226,6 +371,9 @@ class RerunRecorder:
             rerun.save(str(save_path))  # ASSUMPTION: save(path) sends the recording to a file instead of a viewer
         rerun.log(PROVENANCE_PATH, rerun.TextLog(PROVENANCE))  # ASSUMPTION: TextLog(text) is a log entry that takes one string
         self._send_layout()
+        if save_path is not None:
+            self._png = PngWorker(encode_png or pillow_png, clock)
+            self.stats = self._png.stats
 
     def _send_layout(self):
         """Sends a layout whose 3D view has EGO_FRAME_PATH as its origin, so that it follows our
@@ -245,6 +393,11 @@ class RerunRecorder:
                   f"3D view's origin to /{EGO_FRAME_PATH} in the viewer")
 
     def set_time(self, seconds):
+        self._log_encoded()
+        self._time = seconds
+        self._set_time(seconds)
+
+    def _set_time(self, seconds):
         if hasattr(self._rr, "set_time"):
             self._rr.set_time(TIMELINE, duration=seconds)  # ASSUMPTION: set_time(name, duration=) in newer SDKs
         else:
@@ -269,19 +422,31 @@ class RerunRecorder:
         self._rr.log(path, self._rr.Transform3D(translation=translation))
 
     def log_image(self, path, image):
-        pixels = self._arrays.image(image)
-        if self._encode_png is None:
-            self._rr.log(path, self._rr.Image(pixels))  # ASSUMPTION: Image takes a (height, width, 3 or 4) uint8 array
+        if self._png is None:
+            # ASSUMPTION: Image takes a (height, width, 3 or 4) uint8 array
+            self._rr.log(path, self._rr.Image(self._arrays.image(image)))
             return
-        started = self._clock()
-        png = self._encode_png(pixels)
-        self.encode_s += self._clock() - started
-        self.encoded += 1
-        # ASSUMPTION: EncodedImage(contents=, media_type=) logs encoded image bytes that the viewer decodes
-        self._rr.log(path, self._rr.EncodedImage(contents=png, media_type=PNG_MEDIA_TYPE))
+        self._png.put(Frame(path, self._time, self._arrays.image(image, copy=True)))
+
+    def _log_encoded(self):
+        if self._png is None:
+            return
+        while (frame := self._png.first_encoded()) is not None:
+            # ASSUMPTION: an image logged after later data, at its own earlier time, sits at that time on the timeline
+            self._set_time(frame.time)
+            # ASSUMPTION: EncodedImage(contents=, media_type=) logs encoded image bytes that the viewer decodes
+            self._rr.log(frame.path, self._rr.EncodedImage(contents=frame.data, media_type=PNG_MEDIA_TYPE))
+            self._png.release_first()
 
     def close(self):
-        self._rr.disconnect()  # ASSUMPTION: disconnect() flushes and closes the file or connection
+        try:
+            if self._png is not None:
+                self._png.finish()
+        finally:
+            try:
+                self._log_encoded()
+            finally:
+                self._rr.disconnect()  # ASSUMPTION: disconnect() flushes and closes the file or connection
 
 
 class NullRecorder:

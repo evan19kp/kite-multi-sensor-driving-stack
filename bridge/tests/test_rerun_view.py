@@ -497,6 +497,8 @@ class RerunRecorderTest(unittest.TestCase):
             recorder = rerun_view.RerunRecorder(save_path, live_stride, arrays=rerun_view.ListArrays(),
                                                 encode_png=encoder, clock=clock or FakeClock().now)
         self.assertNotIn("rerun", sys.modules)
+        if save_path is not None:
+            self.addCleanup(recorder.close)
         return recorder, fake
 
     def test_without_save_it_spawns_a_viewer_and_writes_no_file(self):
@@ -608,12 +610,13 @@ class RerunRecorderTest(unittest.TestCase):
             recorder, fake = self.recorder(Path(tmp) / "demo.rrd", encoder=encoder, clock=clock.now)
         recorder.log_image(CAMERA_PATH, IMAGE)
         recorder.log_image(CAMERA_PATH, IMAGE)
+        recorder.close()
         self.assertEqual(encoder.images, [IMAGE, IMAGE])
         self.assertEqual(fake.EncodedImage.call_args_list, [mock.call(contents=b"png 1", media_type="image/png"),
                                                             mock.call(contents=b"png 2", media_type="image/png")])
         fake.Image.assert_not_called()
-        self.assertEqual(recorder.encoded, 2)
-        self.assertAlmostEqual(recorder.encode_s, 2 * ENCODE_S)
+        self.assertEqual(recorder.stats.encoded, 2)
+        self.assertAlmostEqual(recorder.stats.encode_s, 2 * ENCODE_S)
         sent = " ".join(str(getattr(fake, name).mock_calls) for name in NEW_RERUN).lower()
         for lossy in ("jpeg", "jpg", "webp", "compress"):
             self.assertNotIn(lossy, sent)
@@ -624,7 +627,7 @@ class RerunRecorderTest(unittest.TestCase):
         recorder.log_image(CAMERA_PATH, IMAGE)
         fake.Image.assert_called_once_with(IMAGE)
         fake.EncodedImage.assert_not_called()
-        self.assertEqual((encoder.images, recorder.encoded), ([], 0))
+        self.assertEqual((encoder.images, recorder.stats.encoded), ([], 0))
 
     def test_the_default_layout_has_a_3d_view_that_follows_world_ego_and_keeps_ground_truth_separate(self):
         _, fake = self.recorder()
@@ -671,7 +674,8 @@ class RealRecorderTest(unittest.TestCase):
         import spike_lidar_rerun
 
         with installed(self.fake):
-            spike_lidar_rerun.make_recorder(save_path, False, 1)
+            recorder = spike_lidar_rerun.make_recorder(save_path, False, 1)
+        self.addCleanup(recorder.close)
         self.assertNotIn("rerun", sys.modules)
 
     def test_with_a_save_path_the_recording_goes_to_that_file_and_no_viewer_opens(self):
