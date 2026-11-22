@@ -460,6 +460,19 @@ Each item that introduces a lasting rule adds a "## Standing rules (R<n>)" secti
   (`measure.buffered_rate`), never over the whole run, whose ends hold up to one poll interval
   with no poll.
 
+## Standing rules (R41)
+
+- The PNG encoder thread (`rerun_view.PngWorker`) is the only thread besides the run's thread and
+  R36's bounded close in `common._close_within`. It is given only the encoder and the clock, runs
+  only Pillow, and never touches BeamNGpy or Rerun; every Rerun call stays on the run's thread.
+- A saved recording never drops, reorders or lossily encodes a camera frame. A full queue makes
+  the loop wait, counted as `encode_backlog_waits` and `encode_backlog_wait_s` in the printed
+  `PNG backlog:` line and the JSON. Closing the recorder encodes and logs every queued frame
+  before the file is flushed, after Ctrl+C too, and an encoder failure stops the run with an
+  error that counts the frames not recorded.
+- Tests of the encoder thread use fake encoders with fake costs on a FakeClock and decide when a
+  frame is encoded with threading primitives; they never sleep or assert on real time.
+
 ## Simulator files (hard rule)
 
 - Never read, list, search, copy, launch or write about the simulator's install folder, its user

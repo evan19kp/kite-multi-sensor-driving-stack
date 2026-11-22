@@ -28,8 +28,12 @@ It is printed only, never logged to Rerun.
 
 --save <name.rrd> writes the recording to that file inside --out and does not open a viewer;
 open it later with `rerun <file>`. It keeps every lidar point and stores each camera image as a
-PNG, which is lossless. The run prints the file's size per simulated second and the time spent
-encoding PNGs. After Ctrl+C the file keeps everything logged before it.
+PNG, which is lossless. The PNGs are encoded on one thread beside the loop, through a queue of
+rerun_view.PNG_QUEUE_FRAMES frames; when the queue is full the loop waits for space, and no frame
+is dropped. The run prints the file's size per simulated second, the time spent encoding PNGs and
+how often and how long the loop waited, and writes them to NAME.json beside the recording. After
+Ctrl+C every frame already queued is encoded and logged before the file is closed. If encoding
+fails, the run stops with an error that says how many frames were not recorded.
 --fake uses the fake simulator and a recorder that keeps nothing: it opens no viewer, imports
 no Rerun and writes no file, even with --save.
 """
@@ -113,7 +117,15 @@ def run(args):
     if not save_path.is_file():
         raise common.SpikeError(f"no recording at {save_path} after it was closed")
     print(f"wrote {save_path}")
-    print("\n".join(recording_lines(save_path.stat().st_size, simulated_s, recorder.encoded, recorder.encode_s)))
+    nbytes, stats = save_path.stat().st_size, recorder.stats
+    print("\n".join([*recording_lines(nbytes, simulated_s, stats.encoded, stats.encode_s), backlog_line(stats)]))
+    common.write_json(save_path.parent, save_path.with_suffix(".json").name, {
+        "recording": args.save, "bytes": nbytes, "simulated_s": simulated_s,
+        "mb_per_simulated_s": measure.per_simulated_second(nbytes / BYTES_PER_MB, simulated_s),
+        "png_encoding": {"frames_encoded": stats.encoded, "encode_s": stats.encode_s,
+                         "encode_backlog_waits": stats.backlog_waits,
+                         "encode_backlog_wait_s": stats.backlog_wait_s,
+                         "queue_frames": rerun_view.PNG_QUEUE_FRAMES}})
 
 
 def recording_lines(nbytes, simulated_s, encoded, encode_s):
@@ -123,7 +135,12 @@ def recording_lines(nbytes, simulated_s, encoded, encode_s):
     per_s_text = "n/a" if per_s is None else f"{per_s:.2f}"
     return [f"recording: {nbytes} bytes on disk after close, {nbytes / BYTES_PER_MB:.2f} MB (1 MB = 10^6 bytes) "
             f"over {simulated_s:.3f} simulated s: {per_s_text} MB per simulated s",
-            f"PNG encoding: {encoded} camera images in {encode_s:.3f} s"]
+            f"PNG encoding: {encoded} camera images in {encode_s:.3f} s on the encoder thread"]
+
+
+def backlog_line(stats):
+    return (f"PNG backlog: the loop found the queue of {rerun_view.PNG_QUEUE_FRAMES} frames full {stats.backlog_waits} "
+            f"times and waited {stats.backlog_wait_s:.3f} s in all for space; no frame was dropped")
 
 
 def _run_free(sim, car, args, recorder):

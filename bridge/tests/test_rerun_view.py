@@ -1,5 +1,6 @@
 import contextlib
 import io
+import json
 import math
 import re
 import subprocess
@@ -497,6 +498,8 @@ class RerunRecorderTest(unittest.TestCase):
             recorder = rerun_view.RerunRecorder(save_path, live_stride, arrays=rerun_view.ListArrays(),
                                                 encode_png=encoder, clock=clock or FakeClock().now)
         self.assertNotIn("rerun", sys.modules)
+        if save_path is not None:
+            self.addCleanup(recorder.close)
         return recorder, fake
 
     def test_without_save_it_spawns_a_viewer_and_writes_no_file(self):
@@ -608,12 +611,13 @@ class RerunRecorderTest(unittest.TestCase):
             recorder, fake = self.recorder(Path(tmp) / "demo.rrd", encoder=encoder, clock=clock.now)
         recorder.log_image(CAMERA_PATH, IMAGE)
         recorder.log_image(CAMERA_PATH, IMAGE)
+        recorder.close()
         self.assertEqual(encoder.images, [IMAGE, IMAGE])
         self.assertEqual(fake.EncodedImage.call_args_list, [mock.call(contents=b"png 1", media_type="image/png"),
                                                             mock.call(contents=b"png 2", media_type="image/png")])
         fake.Image.assert_not_called()
-        self.assertEqual(recorder.encoded, 2)
-        self.assertAlmostEqual(recorder.encode_s, 2 * ENCODE_S)
+        self.assertEqual(recorder.stats.encoded, 2)
+        self.assertAlmostEqual(recorder.stats.encode_s, 2 * ENCODE_S)
         sent = " ".join(str(getattr(fake, name).mock_calls) for name in NEW_RERUN).lower()
         for lossy in ("jpeg", "jpg", "webp", "compress"):
             self.assertNotIn(lossy, sent)
@@ -624,7 +628,7 @@ class RerunRecorderTest(unittest.TestCase):
         recorder.log_image(CAMERA_PATH, IMAGE)
         fake.Image.assert_called_once_with(IMAGE)
         fake.EncodedImage.assert_not_called()
-        self.assertEqual((encoder.images, recorder.encoded), ([], 0))
+        self.assertEqual((encoder.images, recorder.stats.encoded), ([], 0))
 
     def test_the_default_layout_has_a_3d_view_that_follows_world_ego_and_keeps_ground_truth_separate(self):
         _, fake = self.recorder()
@@ -671,7 +675,8 @@ class RealRecorderTest(unittest.TestCase):
         import spike_lidar_rerun
 
         with installed(self.fake):
-            spike_lidar_rerun.make_recorder(save_path, False, 1)
+            recorder = spike_lidar_rerun.make_recorder(save_path, False, 1)
+        self.addCleanup(recorder.close)
         self.assertNotIn("rerun", sys.modules)
 
     def test_with_a_save_path_the_recording_goes_to_that_file_and_no_viewer_opens(self):
@@ -722,6 +727,25 @@ class RealRecorderTest(unittest.TestCase):
         self.assertIn("recording: 2500000 bytes on disk after close, 2.50 MB (1 MB = 10^6 bytes) over 1.000 "
                       "simulated s: 2.50 MB per simulated s", stdout)
         self.assertIn("PNG encoding: 60 camera images in 0.600 s", stdout)
+
+    def test_a_saved_run_prints_its_backlog_waits_and_writes_the_numbers_beside_the_recording(self):
+        self.fake = fake_rerun(writes=2_500_000)
+        clock = FakeClock()
+        out, stdout = self.run_saved("--mode", "lockstep", "--seconds", "1", "--save", "day1/demo.rrd",
+                                     encoder=FakePng(clock), clock=clock)
+        saved = json.loads((out / "day1" / "demo.json").read_text(encoding="utf-8"))
+        self.assertIn("provenance", saved)
+        self.assertEqual({key: saved[key] for key in ("recording", "bytes", "simulated_s", "mb_per_simulated_s")},
+                         {"recording": "day1/demo.rrd", "bytes": 2_500_000, "simulated_s": 1.0,
+                          "mb_per_simulated_s": 2.5})
+        png = saved["png_encoding"]
+        # The same 60 images at 0.01 fake s each as above. How often the loop found the queue full
+        # depends on how the two threads ran, so only its printed line is checked against the JSON.
+        self.assertEqual((png["frames_encoded"], png["queue_frames"]), (60, rerun_view.PNG_QUEUE_FRAMES))
+        self.assertAlmostEqual(png["encode_s"], 0.6)
+        self.assertIn(f"PNG backlog: the loop found the queue of 8 frames full {png['encode_backlog_waits']} times "
+                      f"and waited {png['encode_backlog_wait_s']:.3f} s in all for space; no frame was dropped", stdout)
+        self.assertIn(f"wrote {out / 'day1' / 'demo.json'}", stdout)
 
     def test_a_saved_free_run_divides_by_the_simulated_seconds_the_timer_gave(self):
         self.fake = fake_rerun(writes=3_000_000)
