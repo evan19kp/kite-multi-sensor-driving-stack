@@ -31,15 +31,17 @@ class RerunSinkTest(unittest.TestCase):
         fake.init.assert_called_once_with("kite_log", spawn=True)
         fake.save.assert_not_called()
 
-    def test_with_a_save_path_it_records_to_that_file_and_spawns_no_viewer(self):
+    def test_with_a_save_path_it_inits_then_records_to_that_file_and_spawns_no_viewer(self):
         fake = fake_rerun()
+        order = mock.Mock()
+        order.attach_mock(fake.init, "init")
+        order.attach_mock(fake.save, "save")
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "out" / "day1" / "demo.rrd"
             sink_for(fake, path)
             self.assertTrue(path.parent.is_dir())
             self.assertFalse(path.exists())
-        fake.init.assert_called_once_with("kite_log")
-        fake.save.assert_called_once_with(str(path))
+        self.assertEqual(order.mock_calls, [mock.call.init("kite_log"), mock.call.save(str(path))])
 
     def test_these_tests_leave_no_rerun_in_sys_modules(self):
         sink_for(fake_rerun())
