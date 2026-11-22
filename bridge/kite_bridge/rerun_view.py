@@ -17,12 +17,15 @@ Rerun call stays on the run's thread, which logs each encoded image at the time 
 """
 
 import collections
+import contextlib
 import dataclasses
 import enum
 import functools
 import io
 import math
 import numbers
+import signal
+import sys
 import threading
 import typing
 from copy import deepcopy
@@ -46,7 +49,8 @@ RECORDING_SUFFIX = ".rrd"
 PNG_MEDIA_TYPE = "image/png"
 # The camera makes at most 20 images per simulated second (requested_update_time 0.05 s), so 8
 # frames are 0.4 s of camera. A 640 x 360 RGBA frame is 921,600 bytes, so a full queue holds
-# under 7.4 MB, and closing waits for at most 8 encodes.
+# under 7.4 MB. The loop's own frame joins the queue while it waits for space, so closing waits
+# for at most 9 encodes.
 PNG_QUEUE_FRAMES = 8
 WAIT_SLICE_S = 0.1
 
@@ -243,8 +247,8 @@ class Phase(enum.Enum):
     """Where a PngWorker is. RUNNING encodes frames as they are put. `finish` moves RUNNING to
     CLOSING, which encodes the frames already put and stops. An exception from the encoder or the
     clock moves RUNNING or CLOSING to FAILED, which encodes nothing more. The first `put` or
-    `finish` that finds FAILED raises EncodeError and moves to REPORTED. In REPORTED `put` still
-    raises and `finish` does not. No other move happens."""
+    `next_encoded` that finds FAILED raises EncodeError and moves to REPORTED. In REPORTED `put`
+    still raises and `next_encoded` does not. No other move happens."""
     RUNNING = "running"
     CLOSING = "closing"
     FAILED = "failed"
@@ -252,15 +256,17 @@ class Phase(enum.Enum):
 
 
 class PngWorker:
-    """Encodes frames with `encode` on one thread of its own, in the order they are put. At most
-    PNG_QUEUE_FRAMES frames wait unencoded, the one being encoded among them. `put` on a full queue
-    waits for space and counts the wait in `stats`; it never drops a frame. `first_encoded` is the
-    oldest encoded frame not yet released, and `release_first` lets it go once it is recorded.
-    `finish` waits until every frame put is encoded and stops the thread.
+    """Encodes frames with `encode` on one thread of its own, in the order they are put. `put`
+    adds the frame to the queue before anything else, so an interrupted `put` still leaves its
+    frame to be encoded. While more than PNG_QUEUE_FRAMES frames wait unencoded, the one being
+    encoded among them, `put` waits for space and counts the wait in `stats`; it never drops a
+    frame. `first_encoded` is the oldest encoded frame not yet released, and `release_first` lets
+    it go once it is recorded. `finish` lets the thread stop once every frame put is encoded, and
+    `next_encoded` waits for each of them. `unsaved` counts the frames put and not yet released.
 
-    When the encoder raises, the thread stops, and Phase says what `put` and `finish` do after.
-    The EncodeError says how many frames were not recorded: the one that failed and every frame
-    after it. The frames encoded before it are still there to be recorded."""
+    When the encoder raises, the thread stops, and Phase says what `put` and `next_encoded` do
+    after. The EncodeError says how many frames were not recorded: the one that failed and every
+    frame after it. The frames encoded before it are still there to be recorded."""
 
     def __init__(self, encode, clock):
         self.stats = EncodeStats()
@@ -275,17 +281,17 @@ class PngWorker:
 
     def put(self, frame):
         with self._changed:
-            if self._full():
+            self._waiting.append(frame)
+            self._changed.notify_all()
+            if self._over():
                 started = self._clock()
                 self.stats.backlog_waits += 1
                 # Short waits: on Windows a Ctrl+C is not raised until a blocking wait returns.
-                while self._full():
+                while self._over():
                     self._changed.wait(WAIT_SLICE_S)
                 self.stats.backlog_wait_s += self._clock() - started
             if self._phase in (Phase.FAILED, Phase.REPORTED):
-                raise self._report(also_lost=1)
-            self._waiting.append(frame)
-            self._changed.notify_all()
+                raise self._report()
 
     def first_encoded(self):
         with self._changed:
@@ -300,19 +306,32 @@ class PngWorker:
             if self._phase is Phase.RUNNING:
                 self._phase = Phase.CLOSING
                 self._changed.notify_all()
+
+    def next_encoded(self):
+        """After `finish`: the oldest encoded frame not yet released, waiting while the thread
+        encodes the next one. None once the thread has ended with no encoded frame left."""
+        with self._changed:
+            while not self._encoded and self._waiting and self._phase is Phase.CLOSING:
+                self._changed.wait(WAIT_SLICE_S)
+            if self._encoded:
+                return self._encoded[0]
+            if self._phase is Phase.FAILED:
+                raise self._report()
         while self._thread.is_alive():
             self._thread.join(WAIT_SLICE_S)
+        return None
+
+    def unsaved(self):
         with self._changed:
-            if self._phase is Phase.FAILED:
-                raise self._report(also_lost=0)
+            return len(self._waiting) + len(self._encoded)
 
-    def _full(self):
-        return len(self._waiting) >= PNG_QUEUE_FRAMES and self._phase in (Phase.RUNNING, Phase.CLOSING)
+    def _over(self):
+        return len(self._waiting) > PNG_QUEUE_FRAMES and self._phase in (Phase.RUNNING, Phase.CLOSING)
 
-    def _report(self, also_lost):
+    def _report(self):
         self._phase = Phase.REPORTED
         frame, error = self._failure
-        lost = len(self._waiting) + also_lost
+        lost = len(self._waiting)
         report = EncodeError(f"PNG encoding failed on the camera frame at {frame.time:.3f} s "
                              f"({type(error).__name__}: {error}); {lost} camera frames were not recorded: "
                              f"that one and every frame after it")
@@ -342,6 +361,24 @@ class PngWorker:
                 self.stats.encoded += 1
                 self.stats.encode_s += elapsed
                 self._changed.notify_all()
+
+
+@contextlib.contextmanager
+def _ctrl_c_held():
+    """Holds back a Ctrl+C that comes inside the block and raises it as soon as the block ends, so
+    a frame's log and its release from the queue happen together or not at all. Python delivers
+    Ctrl+C only to the main thread, so on any other thread the block just runs."""
+    if threading.current_thread() is not threading.main_thread():
+        yield
+        return
+    held = []
+    previous = signal.signal(signal.SIGINT, lambda signum, frame: held.append(signum))
+    try:
+        yield
+    finally:
+        signal.signal(signal.SIGINT, previous)
+        if held:
+            signal.raise_signal(signal.SIGINT)
 
 
 class RerunRecorder:
@@ -428,25 +465,45 @@ class RerunRecorder:
             return
         self._png.put(Frame(path, self._time, self._arrays.image(image, copy=True)))
 
-    def _log_encoded(self):
+    def _log_encoded(self, wait=False):
         if self._png is None:
             return
-        while (frame := self._png.first_encoded()) is not None:
-            # ASSUMPTION: an image logged after later data, at its own earlier time, sits at that time on the timeline
-            self._set_time(frame.time)
-            # ASSUMPTION: EncodedImage(contents=, media_type=) logs encoded image bytes that the viewer decodes
-            self._rr.log(frame.path, self._rr.EncodedImage(contents=frame.data, media_type=PNG_MEDIA_TYPE))
-            self._png.release_first()
+        take = self._png.next_encoded if wait else self._png.first_encoded
+        while (frame := take()) is not None:
+            with _ctrl_c_held():
+                # ASSUMPTION: an image logged after later data, at its own earlier time, sits at that time on the timeline
+                self._set_time(frame.time)
+                try:
+                    # ASSUMPTION: EncodedImage(contents=, media_type=) logs encoded image bytes that the viewer decodes
+                    self._rr.log(frame.path, self._rr.EncodedImage(contents=frame.data, media_type=PNG_MEDIA_TYPE))
+                except BaseException as error:
+                    # ASSUMPTION: a log call that raises stored nothing, so the frame stays queued and is logged
+                    # again; Ctrl+C is held back here, so only an error of Rerun's own can raise inside it
+                    print(f"camera frame at {frame.time:.3f} s: Rerun's log raised {type(error).__name__}; the frame "
+                          "stays queued and is logged again, on the rule that a log that raises stored nothing",
+                          file=sys.stderr)
+                    raise
+                self._png.release_first()
 
     def close(self):
+        """Waits for every queued image, logs each as it is encoded and flushes the file. If an
+        exception ends that early, a second Ctrl+C for example, prints how many camera frames were
+        not saved. An EncodeError is the exception: its message already counts them."""
         try:
-            if self._png is not None:
-                self._png.finish()
-        finally:
             try:
-                self._log_encoded()
+                if self._png is not None:
+                    self._png.finish()
+                    self._log_encoded(wait=True)
             finally:
                 self._rr.disconnect()  # ASSUMPTION: disconnect() flushes and closes the file or connection
+        except EncodeError:
+            raise
+        except BaseException as error:
+            unsaved = 0 if self._png is None else self._png.unsaved()
+            if unsaved:
+                why = "Ctrl+C" if isinstance(error, KeyboardInterrupt) else type(error).__name__
+                print(f"{unsaved} camera frames were not saved: {why} while the recording closed", file=sys.stderr)
+            raise
 
 
 class NullRecorder:
