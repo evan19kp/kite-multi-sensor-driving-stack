@@ -143,7 +143,7 @@ class FewerPollsNoLossTest(unittest.TestCase):
         self.assertRegex(text, r"(?m)^kite1\s+lidar\s+0\.820\s+20\.00\s+20\.00\s+21\s+10\.50\s+10\.00\s")
         self.assertRegex(text, r"(?m)^kite1\s+gps\s+0\.420\s+20\.00\s+10\.00\s+200\s+100\.00\s+n/a\s")
         self.assertNotIn("possible loss", text)
-        self.assertIn("loss not checkable for gps, imu", text)
+        self.assertIn("loss not checkable for gps:", text)
 
     def test_every_step_prints_no_loss_note_at_all(self):
         result, _ = measure_at(ALL_60, seconds=1.0)

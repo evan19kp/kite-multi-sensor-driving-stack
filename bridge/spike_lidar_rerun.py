@@ -149,7 +149,7 @@ def _run_free(sim, car, args, recorder):
 
     result = common.measure_sensors(sim, [car], args.seconds, poll_rates=args.rates, stream=args.stream,
                                     mode=common.FREE, on_reading=log, lidar_pos=args.lidar_pos,
-                                    self_hits=common.make_self_hits(args))
+                                    self_hits=common.make_self_hits(args), stagger=True)
     print(common.format_result(result))
     report = [f"logged {logged['lidar']} lidar scans and {logged['camera']} camera images at Timer times, "
               "each only when its content was new"]

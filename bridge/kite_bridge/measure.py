@@ -156,6 +156,35 @@ def possible_loss(new_readings, simulated_s, requested_hz):
     return new_readings < requested_hz * simulated_s - 1
 
 
+BUFFER_LOSS_SHARE = 0.02
+
+
+def buffered_rate(polls):
+    """New readings per simulated second of a buffered sensor between its first and last
+    non-empty poll. `polls` has one (time, fingerprints) pair per non-empty poll, in order: the
+    poll's latest reading's time and the fingerprint of every reading in it. The readings first
+    returned after the first poll were made between the two polls, so they are counted over the
+    time between them. Dividing by the whole run instead would leave out the readings made
+    before the first poll and after the last one: up to one poll interval at each end, a fifth
+    of a 1 s run polled 5 times a second. None with fewer than two polls or no time between
+    them."""
+    if len(polls) < 2 or polls[-1][0] <= polls[0][0]:
+        return None
+    first = set(polls[0][1])
+    later = {key for _, keys in polls[1:] for key in keys} - first
+    return per_simulated_second(len(later), polls[-1][0] - polls[0][0])
+
+
+def possible_buffer_loss(rate_hz, own_hz):
+    """Whether a buffered sensor that makes `own_hz` readings per simulated second gave new
+    readings at `rate_hz`, more than BUFFER_LOSS_SHARE (2 %) below it: a poll found the buffer
+    full and readings were lost. False when either is None (not measured, or not known)."""
+    if rate_hz is None or own_hz is None:
+        return False
+    _check([rate_hz, own_hz], "possible_buffer_loss")
+    return rate_hz < own_hz * (1 - BUFFER_LOSS_SHARE)
+
+
 def summarise(series, latencies, points=(), detections=()):
     return {
         "polls": len(series),

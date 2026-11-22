@@ -13,17 +13,25 @@ STEP_HZ, and N for r = STEP_HZ (every step). Example, r = 20: steps 1, 3, 6, 9, 
 21 polls in 60 steps.
 
 In free mode (`--mode free`) the simulator runs on its own and the rates are reads per wall
-second, on a wall-clock schedule: a sensor at rate r is due at k / r wall seconds after the run
-starts, k = 0, 1, 2, ... The loop works in passes. A pass at wall time t (`pass_reads`) reads
+second, in the same domain (above 0, at most STEP_HZ), on a wall-clock schedule: a sensor at rate
+r with phase p is due at p + k / r wall seconds after the run starts, k = 0, 1, 2, ... A phase is
+an exact Fraction with 0 <= p < 1 / r, within one period of its sensor; `next_due` and `skipped`
+raise ValueError for any other. Without staggering every phase is 0. Staggered (`phases`), the n
+slow polls of a run, the Timer first and then the other slow sensors in the order given, get the
+phases k * P / n, k = 0 to n - 1, where P is 1 / the highest of their rates, the shortest period.
+So their first due times spread evenly across P instead of falling due together, and each phase
+is below P, so within its own sensor's period. With the free defaults (radar 10, GPS, IMU and
+Timer 5) P is 100 ms and the phases are Timer 0, radar 25, GPS 50 and IMU 75 ms. The loop works
+in passes. A pass at wall time t (`pass_reads`) reads
 every due streamed sensor (its due time is at most t), then at most one due slow poll: a
 request to the simulator, which is any sensor that is not streamed and the Timer. Of the due
 slow polls it takes the most overdue (the earliest due time; on a tie, the first in the order
 given). The loop keeps that order as the Timer, then the sensors least recently read first, so
 the sensors take turns and a run ends at its Timer reading before a sensor due at the same time. A slow poll costs about 20 ms on the real simulator, so a due streamed read waits for
 at most the one slow poll already running. A read at wall time a moves its sensor's due time to
-the first k / r after a (`next_due`). A read that comes late therefore covers its own due time;
+the first p + k / r after a (`next_due`). A read that comes late therefore covers its own due time;
 the due times it passed over are skipped (`skipped` counts them), never made up in a burst. With
-reads that take no time a run of W wall seconds gives ceil(W * r) reads at times below W. A read
+reads that take no time a run of W wall seconds gives ceil((W - p) * r) reads at times below W. A read
 is late when it starts LATE_S or more after its due time. LATE_S is 2 ms. In three 2-second free
 runs on the fake (real clock, developer machine) the worst start after a due time with no slow
 poll in the way was 1.3 ms of sleep wake-up delay, and one slow poll is about 20 ms. Wall times
@@ -39,7 +47,7 @@ from fractions import Fraction
 from kite_bridge.sim_api import SENSOR_KINDS, STEP_HZ
 
 DEFAULT_RATES = {"lidar": 20, "camera": 20, "radar": 20, "gps": 10, "imu": 10}
-FREE_DEFAULT_RATES = {"lidar": 20, "camera": 40, "radar": 10, "gps": 10, "imu": 10}
+FREE_DEFAULT_RATES = {"lidar": 20, "camera": 40, "radar": 10, "gps": 5, "imu": 5}
 DEFAULT_RATES_TEXT = ",".join(f"{kind}={rate}" for kind, rate in DEFAULT_RATES.items())
 FREE_DEFAULT_RATES_TEXT = ",".join(f"{kind}={rate}" for kind, rate in FREE_DEFAULT_RATES.items())
 ALL = "all"
@@ -90,9 +98,17 @@ def polled(step, rate):
     return step == 1 or _slot(step, rate) > _slot(step - 1, rate)
 
 
-def next_due(now, rate):
-    """The first wall time k / rate strictly after `now` (free mode), as an exact Fraction."""
-    return (math.floor(Fraction(now) * rate) + 1) / rate
+def phases(slow, rate):
+    """{key: phase} for the free-mode slow polls `slow`, in order: the k-th of n gets k * P / n,
+    P being 1 / the highest rate in `rate` among them."""
+    period = 1 / max(rate[key] for key in slow)
+    return {key: period * k / len(slow) for k, key in enumerate(slow)}
+
+
+def next_due(now, rate, phase=0):
+    """The first wall time phase + k / rate strictly after `now` (free mode), as an exact Fraction."""
+    _check_phase(phase, rate)
+    return phase + (math.floor((Fraction(now) - phase) * rate) + 1) / rate
 
 
 def pass_reads(now, due, streamed, slow):
@@ -103,12 +119,18 @@ def pass_reads(now, due, streamed, slow):
     return [key for key in streamed if due[key] <= now] + most_overdue
 
 
-def skipped(due, at, rate):
-    """How many due times k / rate a read at wall time `at` passed over: those after `due`, the
-    due time it served, and at most `at`. At the end of a run, `at` is the start of the last pass
-    and `due` the sensor's next due time, so the count is what a read then would have passed
-    over, and 0 when `due` is after `at`."""
-    return max(0, math.floor(Fraction(at) * rate) - int(due * rate))
+def skipped(due, at, rate, phase=0):
+    """How many due times phase + k / rate a read at wall time `at` passed over: those after
+    `due`, the due time it served, and at most `at`. At the end of a run, `at` is the start of
+    the last pass and `due` the sensor's next due time, so the count is what a read then would
+    have passed over, and 0 when `due` is after `at`."""
+    _check_phase(phase, rate)
+    return max(0, math.floor((Fraction(at) - phase) * rate) - int((due - phase) * rate))
+
+
+def _check_phase(phase, rate):
+    if not 0 <= phase < 1 / rate:
+        raise ValueError(f"a phase must be at least 0 and below one period, 1 / {rate} s; got {phase}")
 
 
 def _slot(step, rate):
