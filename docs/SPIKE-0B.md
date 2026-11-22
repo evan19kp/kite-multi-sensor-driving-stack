@@ -123,16 +123,18 @@ If the listing fails, the script prints the error and exits with code 1. Send th
 Before the run, every script prints one `sensor:` line for each of the five sensors: lidar, camera, radar, GPS and IMU. Each line lists every setting the bridge passes to BeamNGpy for that sensor, as `name=value`. All settings come from one table, `bridge/kite_bridge/sensor_settings.py`, and the adapter passes nothing else, so the lines say what the simulator was asked for. They print with `--fake` too, in the same shape, although the fake simulator ignores them. `spike_connect.py` prints them after its version lines. `spike_multicar.py` prints them once, not once per case.
 
 ```
-sensor: lidar requested_update_time=0.1 pos=(0, 0, 1.9) vertical_resolution=64 frequency=20 horizontal_angle=360 max_distance=120 is_360_mode=True is_using_shared_memory=True
-sensor: camera requested_update_time=0.05 resolution=(640, 360) field_of_view_y=70 pos=(0, -0.5, 1.5) dir=(0, -1, 0) is_render_colours=True is_render_annotations=False is_render_depth=False is_using_shared_memory=True
-sensor: radar requested_update_time=0.1 pos=(0, 0, 1.7) dir=(0, -1, 0) up=(0, 0, 1) range_min=0.1 range_max=100.0 half_angle_deg=30.0 field_of_view_y=70
-sensor: gps pos=(0, 1.5, 2.0) ref_lon=0.0 ref_lat=0.0
-sensor: imu pos=(0, 0, 0.5) dir=(0, -1, 0) up=(0, 0, 1) gfx_update_time=0.01 physics_update_time=0.01
+sensor: lidar requested_update_time=0.1 pos=(0, 0, 1.9) vertical_resolution=64 frequency=20 horizontal_angle=360 max_distance=120 is_360_mode=True is_using_shared_memory=True is_visualised=False
+sensor: camera requested_update_time=0.05 resolution=(640, 360) field_of_view_y=70 pos=(0, -0.5, 1.5) dir=(0, -1, 0) is_render_colours=True is_render_annotations=False is_render_depth=False is_using_shared_memory=True is_visualised=False
+sensor: radar requested_update_time=0.1 pos=(0, 0, 1.7) dir=(0, -1, 0) up=(0, 0, 1) range_min=0.1 range_max=100.0 half_angle_deg=30.0 field_of_view_y=70 is_visualised=False
+sensor: gps pos=(0, 1.5, 2.0) ref_lon=0.0 ref_lat=0.0 is_visualised=False
+sensor: imu pos=(0, 0, 0.5) dir=(0, -1, 0) up=(0, 0, 1) gfx_update_time=0.01 physics_update_time=0.01 is_visualised=False
 ```
 
 The camera renders colour only: `is_render_annotations` and `is_render_depth` are `False`. The lidar and radar values are the BeamNGpy 1.36 defaults, passed explicitly, except `is_360_mode`, `is_using_shared_memory` and the radar `dir` and `up`, which are the bridge's own choices. The camera, GPS and IMU values are the bridge's own choices too. None of these values has run against the real simulator yet, except the lidar's `pos` (see Run 5), so a rejected setting is a useful result. `spike_sensors.py` also writes the table into `sensors.json`, and `spike_multicar.py` into `multicar.json`, under `sensor_settings`.
 
 The lidar's `pos` is `(0, 0, 1.9)` by default; Run 5 says why. `--lidar-pos X,Y,Z` replaces the lidar's `pos` only (vehicle space, metres). The `sensor:` line and `sensors.json` then show the position you gave, and the adapter passes it to BeamNGpy through the same table. The radar's `pos` stays `(0, 0, 1.7)`. See Run 5.
+
+Every sensor is created with `is_visualised=False`, the last setting on each line. BeamNG draws some sensors into the 3D world, and the camera photographs that drawing, so the lidar's coloured dots showed up in the camera frames. With drawing off, the dots no longer appear in the BeamNG window or in the camera frames by default, and Rerun still shows the lidar. This has not run on the real simulator yet; Evan's next run checks it. `--visualise-sensors` turns the drawing back on for debugging. It is off by default and `spike_sensors.py`, `spike_multicar.py` and `spike_lidar_rerun.py` take it. With it, the lidar, radar, GPS and IMU get `is_visualised=True`, and the `sensor:` lines and `sensor_settings` in the JSON show it. The camera stays `is_visualised=False` with the flag. `spike_connect.py` creates no sensors and has no flag.
 
 ### How to read the output
 

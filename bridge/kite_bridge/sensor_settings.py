@@ -19,6 +19,7 @@ SENSOR_SETTINGS = {
         "max_distance": 120,
         "is_360_mode": True,
         "is_using_shared_memory": True,
+        "is_visualised": False,
     },
     "camera": {
         "requested_update_time": 0.05,
@@ -30,6 +31,7 @@ SENSOR_SETTINGS = {
         "is_render_annotations": False,
         "is_render_depth": False,
         "is_using_shared_memory": True,
+        "is_visualised": False,
     },
     "radar": {
         "requested_update_time": 0.1,
@@ -40,11 +42,13 @@ SENSOR_SETTINGS = {
         "range_max": 100.0,
         "half_angle_deg": 30.0,
         "field_of_view_y": 70,
+        "is_visualised": False,
     },
     "gps": {
         "pos": (0, 1.5, 2.0),
         "ref_lon": 0.0,
         "ref_lat": 0.0,
+        "is_visualised": False,
     },
     "imu": {
         "pos": (0, 0, 0.5),
@@ -52,31 +56,38 @@ SENSOR_SETTINGS = {
         "up": UP,
         "gfx_update_time": 0.01,
         "physics_update_time": 0.01,
+        "is_visualised": False,
     },
 }
 
 
 STREAM_SETTINGS = {"is_streaming": True}
 
+DRAWABLE_KINDS = ("lidar", "radar", "gps", "imu")
+
 
 DEFAULT_LIDAR_POS = SENSOR_SETTINGS["lidar"]["pos"]
 
 
-def settings_for(kind, stream=False, lidar_pos=None):
+def settings_for(kind, stream=False, lidar_pos=None, visualise=False):
     """What the adapter passes to a `kind` sensor: SENSOR_SETTINGS[kind], and with `stream` also
     STREAM_SETTINGS for the streamed sensors (lidar and camera). A `lidar_pos` (x, y, z in
-    vehicle space, metres) replaces the lidar's `pos`; it changes no other sensor. Without
-    `stream` and `lidar_pos` it is SENSOR_SETTINGS[kind] itself."""
+    vehicle space, metres) replaces the lidar's `pos`; it changes no other sensor. With
+    `visualise`, `is_visualised` is True for DRAWABLE_KINDS (the sensors BeamNG can draw into
+    the 3D world) and stays False for the camera. Without `stream`, `lidar_pos` and `visualise`
+    it is SENSOR_SETTINGS[kind] itself."""
     settings = SENSOR_SETTINGS[kind]
     if lidar_pos is not None and kind == "lidar":
         settings = {**settings, "pos": lidar_pos}
+    if visualise and kind in DRAWABLE_KINDS:
+        settings = {**settings, "is_visualised": True}
     if stream and kind in STREAMED_KINDS:
         return {**settings, **STREAM_SETTINGS}
     return settings
 
 
-def settings_table(stream=False, lidar_pos=None):
-    return {kind: settings_for(kind, stream, lidar_pos) for kind in SENSOR_SETTINGS}
+def settings_table(stream=False, lidar_pos=None, visualise=False):
+    return {kind: settings_for(kind, stream, lidar_pos, visualise) for kind in SENSOR_SETTINGS}
 
 
 def requested_update_hz(kind):
@@ -96,6 +107,6 @@ def buffered_update_hz(kind):
     return None if interval is None else 1 / interval
 
 
-def settings_lines(stream=False, lidar_pos=None):
+def settings_lines(stream=False, lidar_pos=None, visualise=False):
     return [f"sensor: {kind} " + " ".join(f"{name}={value}" for name, value in settings.items())
-            for kind, settings in settings_table(stream, lidar_pos).items()]
+            for kind, settings in settings_table(stream, lidar_pos, visualise).items()]

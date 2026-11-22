@@ -366,7 +366,7 @@ nothing until Evan's run prints it. Agents never run the real simulator; every t
 Clean camera frames (sensor drawing off), no frame lost on Ctrl+C, docs brought up to date. Agents
 never run the real simulator; every test uses the fake.
 
-- [ ] **R43 Sensor drawing off, so camera frames show only the world** (fix, Sonnet):
+- [x] **R43 Sensor drawing off, so camera frames show only the world** (fix, Sonnet):
   `beamng_adapter.py` passes `is_visualised=False` to `Lidar`, `Radar`, `AdvancedIMU`, `GPS` and
   `Camera` through the sensor settings table, so every `sensor:` line and the JSON
   `sensor_settings` show it; `--visualise-sensors` (default off) turns the drawing back on for
