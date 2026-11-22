@@ -13,11 +13,12 @@ GPS and IMU readings to raw_gps_imu.json. --stream reads the lidar and camera fr
 with stream() and counts what it drops under `suspect`. --mode free lets the simulator run on its
 own, polls on a wall-clock schedule and reads simulated time from a Timer sensor.
 --lidar-pos x,y,z sets where the lidar sits on our car (vehicle space, metres); it shows on the
-`sensor:` line. Every sensor is created with is_visualised=False, so BeamNG draws none of them into
-the world and the camera frames show only the world; --visualise-sensors turns the drawing back on
-for the lidar, radar, IMU and GPS (never the camera), for debugging. Every run counts, approximately, the lidar points within --ego-radius metres of our
-car in x and y, measured from the GPS position, per new scan, and prints their mean and maximum
-and writes them to sensors.json under `self_hits_approx` on the lidar row.
+`sensor:` line. Every sensor is created with is_visualised=False, which should keep BeamNG from
+drawing them into the world and the camera frames. That is unverified until Evan's run on the real
+simulator. --visualise-sensors turns the drawing back on for the lidar, radar, IMU and GPS (never
+the camera), for debugging. Every run counts, approximately, the lidar points within --ego-radius
+metres of our car in x and y, measured from the GPS position, per new scan, and prints their mean
+and maximum and writes them to sensors.json under `self_hits_approx` on the lidar row.
 """
 
 import sys

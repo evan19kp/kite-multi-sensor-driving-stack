@@ -211,9 +211,9 @@ class FakeSim(Simulator):
         self.traffic_requested = n
 
     def attach_sensors(self, car, stream=False, lidar_pos=None, visualise=False):
-        self.lidar_settings[car] = settings_for("lidar", stream, lidar_pos)
         self.sensor_settings[car] = {kind: settings_for(kind, stream, lidar_pos, visualise)
                                      for kind in SENSOR_KINDS}
+        self.lidar_settings[car] = self.sensor_settings[car]["lidar"]
         self._attached.update((car, kind) for kind in SENSOR_KINDS)
         if stream:
             self._streamed.update((car, kind) for kind in STREAMED_KINDS)

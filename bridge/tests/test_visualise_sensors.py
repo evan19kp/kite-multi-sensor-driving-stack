@@ -4,6 +4,7 @@ import io
 import unittest
 
 from tests.test_self_hits import run_script
+from kite_bridge.fake_sim import FakeSim
 from kite_bridge.sensor_settings import settings_for, settings_lines, settings_table
 from kite_bridge.sim_api import SENSOR_KINDS
 
@@ -44,6 +45,23 @@ class SettingsTableTest(unittest.TestCase):
                 self.assertIn(f" is_visualised={drawn}", by_kind[kind], (kind, flag))
         self.assertEqual({kind: s["is_visualised"] for kind, s in settings_table(visualise=True).items()},
                          expected_drawing(True))
+
+
+class FakeRecordsTheLidarDrawingTest(unittest.TestCase):
+    def attach(self, **options):
+        sim = FakeSim()
+        sim.load_scenario("any", 1)
+        sim.attach_sensors("kite1", **options)
+        return sim
+
+    def test_the_fake_records_the_lidar_as_drawn_only_with_the_flag(self):
+        self.assertIs(self.attach(visualise=True).lidar_settings["kite1"]["is_visualised"], True)
+        self.assertIs(self.attach().lidar_settings["kite1"]["is_visualised"], False)
+
+    def test_the_lidar_the_fake_records_is_the_one_in_its_sensor_table(self):
+        for options in ({}, {"visualise": True}, {"stream": True, "lidar_pos": (0, 0, 2.1), "visualise": True}):
+            sim = self.attach(**options)
+            self.assertEqual(sim.lidar_settings["kite1"], sim.sensor_settings["kite1"]["lidar"], options)
 
 
 class ScriptsTest(unittest.TestCase):
