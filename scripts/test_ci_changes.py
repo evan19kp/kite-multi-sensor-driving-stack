@@ -124,6 +124,33 @@ class ClassifyTest(unittest.TestCase):
                 path,
             )
 
+    def test_repo_config_viewer_change_selects_the_python_job_only(self):
+        cfg = ci_changes.load()
+        for path in ["viewer/log_to_rerun.py", "viewer/test_scene.py"]:
+            self.assertEqual(
+                ci_changes.classify([path], cfg),
+                {"app": False, "app-windows": False, "python": True},
+                path,
+            )
+
+    def test_repo_config_golden_log_change_selects_the_cpp_builds_and_the_python_job(self):
+        cfg = ci_changes.load()
+        for path in ["sim/tests/data/seed42.log", "sim/tests/data/seed42_kalman_tracks.log"]:
+            self.assertEqual(
+                ci_changes.classify([path], cfg),
+                {"app": True, "app-windows": True, "python": True},
+                path,
+            )
+
+    def test_repo_config_other_sim_changes_still_skip_the_python_job(self):
+        cfg = ci_changes.load()
+        for path in ["sim/gen.cpp", "sim/tests/gen_test.cpp"]:
+            self.assertEqual(
+                ci_changes.classify([path], cfg),
+                {"app": True, "app-windows": True, "python": False},
+                path,
+            )
+
     def test_repo_config_removed_folders_fall_back_to_every_job(self):
         cfg = ci_changes.load()
         everything = frozenset(cfg["jobs"])
@@ -197,6 +224,11 @@ class WorkflowShapeTest(unittest.TestCase):
     def test_python_job_runs_the_bridge_tests_without_installing_anything(self):
         python_job = job_text(WORKFLOW.read_text(encoding="utf-8"), "python")
         self.assertIn("python -m unittest discover -s bridge -v", python_job)
+        self.assertNotIn("install", python_job)
+
+    def test_python_job_runs_the_viewer_tests_without_installing_anything(self):
+        python_job = job_text(WORKFLOW.read_text(encoding="utf-8"), "python")
+        self.assertIn("python -m unittest discover -s viewer -v", python_job)
         self.assertNotIn("install", python_job)
 
     def test_every_job_has_a_timeout(self):

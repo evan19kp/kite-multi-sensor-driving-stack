@@ -90,3 +90,5 @@ jobs:
         run: python -m unittest discover -s scripts -v
       - name: Bridge tests
         run: python -m unittest discover -s bridge -v
+      - name: Viewer tests
+        run: python -m unittest discover -s viewer -v
