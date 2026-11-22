@@ -19,7 +19,6 @@ NEW_FREE_DEFAULTS = rates.parse_rates(None, rates.FREE_DEFAULT_RATES)
 
 
 def free_run(seconds=1.0, stagger=True, request_cost=0.0, poll_rates=NEW_FREE_DEFAULTS, **sim_args):
-    """A free run with the lidar and camera streamed at no cost, on a fake clock."""
     clock = BoundedClock()
     sim = FakeSim(clock=clock, request_cost=request_cost, **{"rates": SENSOR_RATES, **sim_args})
     cars = sim.load_scenario("fake_cherrier_tograc", 1)

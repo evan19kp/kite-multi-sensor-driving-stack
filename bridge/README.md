@@ -64,10 +64,10 @@ All four take `--home <simulator folder>` (required unless `--fake`), `--headles
 `--config`, `--list-models`, `--timeout` (default 300) and `--fake`. `--fake` runs against the
 fake simulator and needs no simulator. `spike_sensors.py` and `spike_multicar.py` also take
 `--rates` (polls per simulated second for each sensor, default `lidar=20,camera=20,radar=20,gps=10,imu=10`;
-with `--mode free` reads per wall second, default `lidar=20,camera=40,radar=10,gps=10,imu=10`),
+with `--mode free` reads per wall second, default `lidar=20,camera=40,radar=10,gps=5,imu=5`),
 `--dump-raw N` (default 0), `--stream` (default off) and `--mode lockstep|free` (default
 `lockstep`). `spike_lidar_rerun.py` takes `--rates` (reads per wall second, default
-`lidar=20,camera=40,radar=10,gps=10,imu=10`; it needs `--mode free`), `--mode` (default `free`),
+`lidar=20,camera=40,radar=10,gps=5,imu=5`; it needs `--mode free`), `--mode` (default `free`),
 `--stream`/`--no-stream` (default on with `--mode free`), `--save NAME.rrd` and `--live-stride N`
 (default 1); see "Rerun lidar demo".
 
@@ -145,8 +145,12 @@ in `N` steps (`N` at 60); `kite_bridge/rates.py` has the rule and the parsing. E
 `configured_rate_hz` and `requested_update_hz` (1 divided by the `requested_update_time` in
 `sensor_settings.py`, `null` for GPS and IMU, which pass none), and a `possible_loss` note prints
 for a lidar, camera or radar read slower than every step that gave more than one reading fewer
-than its requested rate. GPS and IMU buffer readings and their capacity is not known, so for them
-the check is to compare `new` between two runs (`docs/SPIKE-0B.md`, "Compare two runs"). `rate_hz`
+than its requested rate. GPS and IMU buffer readings and their capacity is not known. Each run
+prints a `buffer:` line for each: the most readings one poll returned and the new readings per
+simulated second between its first and last poll, beside the IMU's own rate (100 Hz, 1 divided by
+the `physics_update_time` the adapter passes), with `possible buffer loss` when the IMU's number
+is more than 2 % below it. The GPS is passed no such setting, so its line gives the number only
+and its check is to compare `new` between two runs (`docs/SPIKE-0B.md`, "Compare two runs"). `rate_hz`
 is the rate of distinct reading timestamps seen at poll time. It counts at most one new reading
 per poll, so it is limited to about the sensor's poll rate, even for a sensor that runs faster. It does not try
 to recover the sensor's own rate. Instead, the `per_poll` column is the most readings one poll
@@ -180,11 +184,14 @@ JSON records `"stream"`, `timing.stream_reads_s` and each row's `read` and `susp
 `--mode free` on the two measuring scripts lets the simulator run on its own instead of in
 lock-step. The adapter attaches a `Timer` sensor to the first car, switches the simulator to
 non-deterministic and resumes it. The script then reads each sensor at its `--rates` rate per
-wall second. A sensor at rate `r` is due at `k / r` wall seconds after the start. Each pass reads
+wall second. A sensor at rate `r` with phase `p` is due at `p + k / r` wall seconds after the
+start. The scripts stagger the polls: the Timer and each polled sensor get phases spread evenly
+over 1 / the highest of their rates (`rates.phases`; with the defaults and `--stream`, Timer 0,
+radar 25, GPS 50 and IMU 75 ms), printed on a `phases:` line and written as `phases` in the JSON. Each pass reads
 every due streamed sensor, then at most one due poll (a sensor that is not streamed, or the
 Timer): the most overdue, the Timer first on a tie, then the sensor polled longest ago
 (`kite_bridge/rates.py`, `pass_reads`). So a due lidar or camera read waits for at most the one
-poll already running. A read moves its sensor to the first `k / r` after the read started, so a
+poll already running. A read moves its sensor to the first `p + k / r` after the read started, so a
 late read skips the times it missed instead of making them up (`next_due`). A `schedule` table
 prints, per sensor and for the Timer, the reads that started 2 ms or more late, the worst
 lateness in ms and the due times skipped; a `skipped:` line names each sensor that missed any.

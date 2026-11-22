@@ -16,14 +16,13 @@ In free mode (`--mode free`) the simulator runs on its own and the rates are rea
 second, in the same domain (above 0, at most STEP_HZ), on a wall-clock schedule: a sensor at rate
 r with phase p is due at p + k / r wall seconds after the run starts, k = 0, 1, 2, ... A phase is
 an exact Fraction with 0 <= p < 1 / r, within one period of its sensor; `next_due` and `skipped`
-raise ValueError for any other. Without staggering every phase is 0. Staggered (`phases`), the n
-slow polls of a run, the Timer first and then the other slow sensors in the order given, get the
-phases k * P / n, k = 0 to n - 1, where P is 1 / the highest of their rates, the shortest period.
-So their first due times spread evenly across P instead of falling due together, and each phase
-is below P, so within its own sensor's period. With the free defaults (radar 10, GPS, IMU and
-Timer 5) P is 100 ms and the phases are Timer 0, radar 25, GPS 50 and IMU 75 ms. The loop works
-in passes. A pass at wall time t (`pass_reads`) reads
-every due streamed sensor (its due time is at most t), then at most one due slow poll: a
+raise ValueError for a phase outside that range. Without staggering every phase is 0. Staggered
+(`phases`), the n slow polls of a run, the Timer first and then the other slow sensors in the order
+given, get the phases k * P / n, k = 0 to n - 1, where P is 1 / the highest of their rates, the
+shortest period. With the free defaults and the lidar and camera streamed (radar 10, GPS, IMU
+and Timer 5), P is 100 ms and the phases are Timer 0, radar 25, GPS 50 and IMU 75 ms.
+
+The loop works in passes. A pass at wall time t (`pass_reads`) reads every due streamed sensor (its due time is at most t), then at most one due slow poll: a
 request to the simulator, which is any sensor that is not streamed and the Timer. Of the due
 slow polls it takes the most overdue (the earliest due time; on a tie, the first in the order
 given). The loop keeps that order as the Timer, then the sensors least recently read first, so

@@ -289,7 +289,7 @@ class FreeLossTest(unittest.TestCase):
 
     def test_gps_loss_is_never_checkable_in_free_mode_even_at_60(self):
         result, rows, _ = free_run(rates.parse_rates("all=60"))
-        # R40: the IMU's own rate is now known (its physics_update_time), so only the GPS is left.
+        # The IMU's own rate is known (its physics_update_time), so only the GPS is left.
         self.assertIn("loss not checkable for gps:", common.format_result(result))
         self.assertFalse(rows["lidar"]["possible_loss"])
 

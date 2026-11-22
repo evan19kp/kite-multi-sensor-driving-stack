@@ -164,10 +164,7 @@ def buffered_rate(polls):
     non-empty poll. `polls` has one (time, fingerprints) pair per non-empty poll, in order: the
     poll's latest reading's time and the fingerprint of every reading in it. The readings first
     returned after the first poll were made between the two polls, so they are counted over the
-    time between them. Dividing by the whole run instead would leave out the readings made
-    before the first poll and after the last one: up to one poll interval at each end, a fifth
-    of a 1 s run polled 5 times a second. None with fewer than two polls or no time between
-    them."""
+    time between them. None with fewer than two polls or no time between them."""
     if len(polls) < 2 or polls[-1][0] <= polls[0][0]:
         return None
     first = set(polls[0][1])
