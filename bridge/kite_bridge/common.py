@@ -97,8 +97,8 @@ def _add_lidar_options(parser):
 def _add_visualise_option(parser):
     parser.add_argument("--visualise-sensors", action="store_true",
                         help="let BeamNG draw the lidar, radar, IMU and GPS into the 3D world, for debugging; "
-                             "the camera is never drawn (default off: sensors are created with is_visualised=False, "
-                             "so the camera frames show only the world)")
+                             "the camera is never drawn (default off: sensors are created with is_visualised=False; "
+                             "that the drawing is then gone is not yet confirmed on the real simulator)")
 
 
 def make_self_hits(args):

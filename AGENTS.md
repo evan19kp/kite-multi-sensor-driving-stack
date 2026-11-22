@@ -526,6 +526,14 @@ Each item that introduces a lasting rule adds a "## Standing rules (R<n>)" secti
   for `sim/tests/data/` as well as the C++ jobs. Its rule stays ahead of the `sim/` rule, because
   the first matching prefix wins.
 
+## Standing rules (R46)
+
+- A measured number in the bridge docs or a script's `--help` names the run it came from; a
+  worked-out number is labelled as worked out, not measured. No sentence says a run has not
+  happened once Evan has run it, and none says more than the measurement shows (R34, R35, R43).
+- A message about a lost camera frame names the cause that is true: an encoder failure is named as
+  that, and Rerun's log call raising is named as that.
+
 ## Simulator files (hard rule)
 
 - Never read, list, search, copy, launch or write about the simulator's install folder, its user
