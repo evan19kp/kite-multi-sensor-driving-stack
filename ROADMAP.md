@@ -357,7 +357,8 @@ nothing until Evan's run prints it. Agents never run the real simulator; every t
   all, an encoder exception is reported and stops the run cleanly.
 - [x] **R42 Lidar default at 1.9 m** (feat, Sonnet; needs R40): the lidar's default `pos` becomes
   (0, 0, 1.9) everywhere (`--lidar-pos` still overrides), shown on the `sensor:` line; the docs say
-  why (Evan's 0B.3 runs: approximate self-hits ≈ 233 per scan at 1.7 m, 0 at 1.9, 2.1 and 2.3 m);
+  why (Evan's 0B.3 runs: approximate self-hits per scan, mean 233.0 in three runs and 233.2 in
+  one at 1.7 m, max 234 to 275; 0 at 1.9, 2.1 and 2.3 m);
   `docs/SPIKE-0B.md`, `bridge/README.md` updated. Tests: the default reaches the sensor settings and
   the JSON; `--lidar-pos` still overrides.
 
@@ -407,7 +408,7 @@ needs the simulator; every acceptance check runs in CI.
 - [x] **R49 CI runs the viewer tests** (ci, Sonnet; needs R48): the `python` job also runs
   `python -m unittest discover -s viewer -v`; a test in `scripts/test_ci_changes.py` confirms
   `viewer/` changes select the `python` job.
-- [ ] **R46 Bridge docs and help match the facts** (fix, Sonnet): `docs/SPIKE-0B.md`,
+- [x] **R46 Bridge docs and help match the facts** (fix, Sonnet): `docs/SPIKE-0B.md`,
   `bridge/README.md`, the R42 line and the scripts' `--help` texts state the measured stream read
   times, recording sizes, the saved Rerun recording, the GPS/IMU free-mode default and the self-hit
   numbers; the stale test comment, a test for `_ctrl_c_held` off the main thread, and two messages

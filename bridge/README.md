@@ -5,8 +5,8 @@ interface, a real adapter, a fake simulator, three spike scripts that measure th
 connection, sensors and multi-car behaviour, and a Rerun lidar demo script. Planned, not built
 yet: the local link to the core. Evan ran streaming and free mode on the real simulator in
 Sprints 0B.2, 0B.3 and 0B.4, and the approximate self-hit count by lidar height in Sprint 0B.3
-(see Scripts). Evan runs the spikes on the real simulator, and nothing here has run against an
-installed Rerun yet.
+(see Scripts). A real `--save` recording with lidar and camera opened in an installed Rerun on
+2026-11-19 (0B rerun, Run 4b). Evan runs the spikes on the real simulator.
 
 ## Layout
 
@@ -91,8 +91,8 @@ Those three scripts also take `--visualise-sensors` (default off). Every sensor 
 `is_visualised=False`, shown on every `sensor:` line and in `sensor_settings` in the JSON, so
 BeamNG draws none of them into the 3D world. The lidar's dots then no longer appear in the BeamNG
 window or in the camera frames by default, and Rerun shows the lidar. The flag turns the drawing
-back on, for debugging, for the lidar, radar, GPS and IMU; the camera stays `False`. This has not
-run on the real simulator yet; Evan's next run checks it.
+back on, for debugging, for the lidar, radar, GPS and IMU; the camera stays `False`. This is not
+yet confirmed on the real simulator; Evan's next run checks it.
 
 Each run of `spike_sensors.py`, `spike_multicar.py` and the free-mode `spike_lidar_rerun.py`
 prints, after the tables, an approximate self-hit count: per new lidar scan, the points within
@@ -195,7 +195,7 @@ Streamed reads are timed as `in stream reads`, apart from `in sensor polls`. Tha
 the bridge's check, which reads every byte of a lidar scan; the bridge does not time it alone. The
 JSON records `"stream"`, `timing.stream_reads_s` and each row's `read` and `suspect`. Without
 `--stream` the output is as before. Evan ran streaming on the real simulator in Sprints 0B.2,
-0B.3 and 0B.4; a streamed read took about 0.75 to 1.0 ms.
+0B.3 and 0B.4; a streamed lidar or camera read took 0.75 to 1.02 ms.
 
 `--mode free` on the two measuring scripts lets the simulator run on its own instead of in
 lock-step. The adapter attaches a `Timer` sensor to the first car, switches the simulator to
@@ -285,13 +285,16 @@ timeout stops the run in both modes.
   `..`), else the script exits with a usage error. The recording keeps every lidar point, so
   `--live-stride` with `--save` is a usage error. Each camera image is stored as a PNG (lossless,
   through Pillow, which BeamNGpy installs), encoded on one thread beside the loop through a queue
-  of 8 images; when the queue is full the loop waits, and no image is dropped. After a run the
+  bounded at 8 images; the loop adds its image before it waits, so a full queue can hold 9. When
+  the queue is full the loop waits, and no image is dropped. After a run the
   script prints the file's size on disk after close, in MB per simulated second, the time spent
   encoding PNGs, and how often and how long the loop waited for the queue. After Ctrl+C every
   queued image, and the one the loop was waiting to queue, is still encoded and logged once, and
   the recording is closed before BeamNG.tech, so the file keeps everything logged until then. A
   second Ctrl+C while the recording closes stops the wait for the encoder and prints how many
-  camera frames were not saved.
+  camera frames were not saved; if the encoder had already failed, the line says how many frames
+  that failure cost and with which error. Evan's 0B.3 and 0B.4 recordings were 6.90 and 6.17 MB per
+  simulated second.
 - With `--fake` it uses the fake simulator and a recorder that keeps nothing: no viewer, no
   Rerun import and no file, even with `--save`.
 
@@ -301,12 +304,12 @@ python bridge/spike_lidar_rerun.py --fake --seconds 2 --out scratch/example
 
 In free mode the fake runs on the real clock, so this takes about 2 wall seconds. Evan ran free
 mode with streaming on the real simulator in Sprints 0B.2, 0B.3 and 0B.4, with a real-time
-factor of 0.86 to 1.05. Nothing here has run against an installed Rerun,
-and the fake's real-time factor is the fake's own speed.
+factor of 0.86 to 1.05. A real `--save` recording with lidar and camera opened in an installed
+Rerun on 2026-11-19 (0B rerun, Run 4b, 354 MiB for about 5 simulated seconds). The fake's
+real-time factor is the fake's own speed.
 
 `.rrd` files are recordings: they go only under `--out` and are never committed. A recording
 logs the same provenance text once as its first entry, as a text log under `meta/provenance`.
-That call has not run against an installed Rerun yet.
 
 ## Tests
 
