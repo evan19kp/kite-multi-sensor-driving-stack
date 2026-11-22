@@ -380,7 +380,7 @@ never run the real simulator; every test uses the fake.
   saved. Tests (fake only, fake encoder and clock): Ctrl+C while waiting for queue space keeps that
   frame; Ctrl+C at the hand-off moment gives no duplicate; a second Ctrl+C prints the unsaved count;
   every existing shutdown test still passes.
-- [ ] **R45 Docs match what Evan has run** (docs, Sonnet; needs R43): `bridge/README.md` and
+- [x] **R45 Docs match what Evan has run** (docs, Sonnet; needs R43): `bridge/README.md` and
   `docs/SPIKE-0B.md` replace "not run yet" wording about streaming and free mode with what Evan ran
   in 0B.2, 0B.3 and 0B.4, and say exactly what the 233 self-hits were (a per-scan mean at 1.7 m
   over four runs, max 234–275, approximate count) and that 1.9 m is the default because it was the
