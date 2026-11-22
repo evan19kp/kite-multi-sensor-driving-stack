@@ -506,6 +506,18 @@ Each item that introduces a lasting rule adds a "## Standing rules (R<n>)" secti
   what `kite_track` writes after a deliberate tracker or setup change; the `kite_track_*_golden`
   tests compare them byte for byte and check the pinned score.
 
+## Standing rules (R48)
+
+- `viewer/rerun_sink.py` is the only module in `viewer/` that imports `rerun`, and only lazily
+  inside `RerunSink.__init__`. Its
+  calls are those of `bridge/kite_bridge/rerun_view.py` plus `labels=` on `Points3D`, each marked
+  `# ASSUMPTION:` until a real run. Viewer tests never import the real `rerun` or `numpy`.
+  `viewer/test_rerun_sink.py` swaps in a fake `rerun` module through `sys.modules`, and the other
+  viewer tests use a fake sink.
+- `viewer/scene.py` logs a log's `gt` records only under `ground_truth/` and never mixes them into
+  `measurements` or `tracks`. `log_to_rerun.py` writes a recording only inside `--out`, which
+  follows R30's folder rule (exit 2 otherwise); `.rrd` files are never committed.
+
 ## Simulator files (hard rule)
 
 - Never read, list, search, copy, launch or write about the simulator's install folder, its user
