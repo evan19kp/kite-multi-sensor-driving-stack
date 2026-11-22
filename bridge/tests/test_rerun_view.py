@@ -1,6 +1,5 @@
 import contextlib
 import io
-import json
 import math
 import re
 import subprocess
@@ -727,25 +726,6 @@ class RealRecorderTest(unittest.TestCase):
         self.assertIn("recording: 2500000 bytes on disk after close, 2.50 MB (1 MB = 10^6 bytes) over 1.000 "
                       "simulated s: 2.50 MB per simulated s", stdout)
         self.assertIn("PNG encoding: 60 camera images in 0.600 s", stdout)
-
-    def test_a_saved_run_prints_its_backlog_waits_and_writes_the_numbers_beside_the_recording(self):
-        self.fake = fake_rerun(writes=2_500_000)
-        clock = FakeClock()
-        out, stdout = self.run_saved("--mode", "lockstep", "--seconds", "1", "--save", "day1/demo.rrd",
-                                     encoder=FakePng(clock), clock=clock)
-        saved = json.loads((out / "day1" / "demo.json").read_text(encoding="utf-8"))
-        self.assertIn("provenance", saved)
-        self.assertEqual({key: saved[key] for key in ("recording", "bytes", "simulated_s", "mb_per_simulated_s")},
-                         {"recording": "day1/demo.rrd", "bytes": 2_500_000, "simulated_s": 1.0,
-                          "mb_per_simulated_s": 2.5})
-        png = saved["png_encoding"]
-        # The same 60 images at 0.01 fake s each as above. How often the loop found the queue full
-        # depends on how the two threads ran, so only its printed line is checked against the JSON.
-        self.assertEqual((png["frames_encoded"], png["queue_frames"]), (60, rerun_view.PNG_QUEUE_FRAMES))
-        self.assertAlmostEqual(png["encode_s"], 0.6)
-        self.assertIn(f"PNG backlog: the loop found the queue of 8 frames full {png['encode_backlog_waits']} times "
-                      f"and waited {png['encode_backlog_wait_s']:.3f} s in all for space; no frame was dropped", stdout)
-        self.assertIn(f"wrote {out / 'day1' / 'demo.json'}", stdout)
 
     def test_a_saved_free_run_divides_by_the_simulated_seconds_the_timer_gave(self):
         self.fake = fake_rerun(writes=3_000_000)

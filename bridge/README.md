@@ -269,8 +269,8 @@ timeout stops the run in both modes.
   through Pillow, which BeamNGpy installs), encoded on one thread beside the loop through a queue
   of 8 images; when the queue is full the loop waits, and no image is dropped. After a run the
   script prints the file's size on disk after close, in MB per simulated second, the time spent
-  encoding PNGs, and how often and how long the loop waited for the queue, and writes those
-  numbers to `<--out>/NAME.json`. After Ctrl+C every queued image is still encoded and logged, and
+  encoding PNGs, and how often and how long the loop waited for the queue. After Ctrl+C every
+  queued image is still encoded and logged, and
   the recording is closed before BeamNG.tech, so the file keeps everything logged until then.
 - With `--fake` it uses the fake simulator and a recorder that keeps nothing: no viewer, no
   Rerun import and no file, even with `--save`.

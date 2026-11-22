@@ -1,6 +1,7 @@
 """The PNG encoder thread of a saved recording, against a fake Rerun and fake encoders. No test
 waits for real: an encoder's cost moves a FakeClock, and a test decides when a frame may be
-encoded with semaphores. A semaphore's timeout only ends a broken test instead of hanging it."""
+encoded with semaphores. A semaphore's or a join's timeout only ends a broken test instead of
+hanging it."""
 
 import contextlib
 import io
@@ -10,7 +11,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from tests.test_rerun_view import ENCODE_S, FakePng, fake_rerun, installed
+from tests.test_rerun_view import ENCODE_S, FakePng, fake_rerun, fake_session, installed, plain_lists
 from kite_bridge import common, rerun_view
 from kite_bridge.fake_sim import FakeClock, FakeSim
 from kite_bridge.rerun_view import CAMERA_PATH, LIDAR_PATH, PNG_QUEUE_FRAMES, RerunRecorder
@@ -50,19 +51,21 @@ class GatedPng:
 
 
 class LoopClock(FakeClock):
-    """A FakeClock that calls `on_loop_read`, once, at the first read by the thread that made it:
-    the run's loop. The encoder thread's reads never call it."""
+    """A FakeClock that runs the next of `hooks` at each read by the thread that made it, the
+    run's loop, after reading the time, so that what a hook lets the encoder do cannot move the
+    time that read returns. The loop reads this clock only when `put` finds the queue full, at
+    the start and at the end of the wait. The encoder thread's reads run no hook."""
 
-    def __init__(self, on_loop_read):
+    def __init__(self, *hooks):
         super().__init__()
         self._loop = threading.get_ident()
-        self._on_loop_read = on_loop_read
+        self._hooks = list(hooks)
 
     def now(self):
-        if self._on_loop_read is not None and threading.get_ident() == self._loop:
-            hook, self._on_loop_read = self._on_loop_read, None
-            hook()
-        return super().now()
+        time = super().now()
+        if self._hooks and threading.get_ident() == self._loop:
+            self._hooks.pop(0)()
+        return time
 
 
 def tracked(fake):
@@ -127,7 +130,7 @@ class PngWorkerTest(unittest.TestCase):
         self.assertEqual([t for t in set(threading.enumerate()) - threads_before if t.is_alive()], [])
 
     def test_a_full_queue_makes_the_loop_wait_and_count_and_drops_nothing(self):
-        clock = LoopClock(on_loop_read=lambda: encoder.allow(1))
+        clock = LoopClock(lambda: encoder.allow(1))
         encoder = GatedPng(clock)
         recorder, _, events = self.recorder(encoder, clock)
         frames = PNG_QUEUE_FRAMES + 1
@@ -138,7 +141,7 @@ class PngWorkerTest(unittest.TestCase):
             recorder.set_time(n / 10)
             recorder.log_image(CAMERA_PATH, image(n))
         # Frame 1 is being encoded and frames 2 to 8 wait behind it: the queue holds 8. Frame 9
-        # finds it full, so the loop starts timing its wait, and that first read lets frame 1
+        # finds it full, so the loop reads 0 s as its wait starts, and only then lets frame 1
         # finish. Frame 1 costs 0.5 fake s, then frame 2 waits for a permit without moving the
         # clock, so the loop waited exactly the 0.5 s of one encode.
         self.assertEqual((recorder.stats.backlog_waits, recorder.stats.backlog_wait_s), (1, COST_S))
@@ -164,6 +167,37 @@ class PngWorkerTest(unittest.TestCase):
                                                 "every frame after it")
         self.assertIsInstance(raised.exception.__cause__, ValueError)
         self.assertEqual(logged_at(events, CAMERA_PATH), [(0.1, png(1))])
+        fake.disconnect.assert_called_once_with()
+
+    def test_ctrl_c_while_encoded_frames_are_logged_leaves_the_rest_for_close(self):
+        clock = FakeClock()
+        encoder = GatedPng(clock)
+        recorder, fake, events = self.recorder(encoder, clock)
+        for n in range(1, 5):
+            recorder.set_time(n / 10)
+            recorder.log_image(CAMERA_PATH, image(n))
+        encoder.allow(3)
+        # The encoder starts frame 4 only after frames 1 to 3 are encoded, so once it has started
+        # four frames, three wait to be logged as one batch at the next set_time.
+        for _ in range(4):
+            encoder.wait_until_encoding()
+        log, camera_logs = fake.log.side_effect, []
+
+        def ctrl_c_at_the_second_camera_log(path, item):
+            if path == CAMERA_PATH:
+                camera_logs.append(item)
+                if len(camera_logs) == 2:
+                    raise KeyboardInterrupt
+            log(path, item)
+
+        fake.log.side_effect = ctrl_c_at_the_second_camera_log
+        with self.assertRaises(KeyboardInterrupt):
+            recorder.set_time(0.5)
+        encoder.allow(1)
+        recorder.close()
+        # Frame 1 was logged before Ctrl+C. Frame 2's log raised, so frames 2 and 3 were still
+        # waiting, and close logged them and frame 4, each at its own time.
+        self.assertEqual(logged_at(events, CAMERA_PATH), [(n / 10, png(n)) for n in range(1, 5)])
         fake.disconnect.assert_called_once_with()
 
 
@@ -220,19 +254,86 @@ class SavedRunTest(unittest.TestCase):
         # step 6. All five reach the recording in order, each at its step's time.
         self.assertEqual(logged_at(events, CAMERA_PATH), [(n / STEP_HZ, png(n)) for n in range(1, queued + 1)])
 
-    def test_an_encoder_exception_is_reported_and_stops_the_run_cleanly(self):
-        clock = LoopClock(on_loop_read=lambda: encoder.allow(3))
-        encoder = GatedPng(clock, fail_at=3)
+    def test_ctrl_c_in_a_put_waiting_on_a_full_queue_records_the_queued_frames_then_shuts_down(self):
+        def ctrl_c():
+            encoder.allow(PNG_QUEUE_FRAMES)
+            raise KeyboardInterrupt
+
+        clock = LoopClock(ctrl_c)
+        encoder = GatedPng(clock)
         code, stderr, events = self.run_main(FakeSim, encoder, clock)
-        # No frame is encoded until the loop finds the queue full: steps 1 to 8 fill it, and step
-        # 9 waits. Its wait lets frames 1 and 2 be encoded and frame 3 fail. The run stops in step
-        # 9 with frames 3 to 8 queued and frame 9 not yet in, 7 frames not recorded. With the 2
-        # recorded, that is all 9 frames of the steps run: none is lost without being counted.
+        self.assertEqual((code, stderr), (130, "interrupted: BeamNG.tech closed\n"))
+        # Steps 1 to 8 fill the queue with frames none of which may be encoded yet. Step 9's put
+        # finds it full, and Ctrl+C comes as its wait starts, so frame 9 never enters the queue.
+        # The 8 queued frames are encoded at close and reach the recording in order, each at its
+        # step's time; run_main checks that the recording closed before the simulator.
+        self.assertEqual(logged_at(events, CAMERA_PATH),
+                         [(n / STEP_HZ, png(n)) for n in range(1, PNG_QUEUE_FRAMES + 1)])
+
+    def test_an_encoder_exception_found_by_a_waiting_put_is_reported_and_stops_the_run_cleanly(self):
+        clock = LoopClock(lambda: encoder.allow(1))
+        encoder = GatedPng(clock, fail_at=1)
+        code, stderr, events = self.run_main(FakeSim, encoder, clock)
+        # Steps 1 to 8 fill the queue with frames none of which may be encoded yet. Step 9's put
+        # finds it full and its wait lets frame 1 be encoded, which fails. A failed frame never
+        # leaves the queue, so the queue stays full until the failure ends the wait. The run
+        # stops in step 9 with frames 1 to 8 queued and frame 9 not yet in: 9 frames not
+        # recorded, which are all 9 frames of the steps run. Frame 1 was read at 1/60 s.
         self.assertEqual(code, 1)
         self.assertEqual(stderr.splitlines()[-1],
-                         "error: EncodeError: PNG encoding failed on the camera frame at 0.050 s (ValueError: bad "
-                         "pixels); 7 camera frames were not recorded: that one and every frame after it")
-        self.assertEqual(logged_at(events, CAMERA_PATH), [(n / STEP_HZ, png(n)) for n in (1, 2)])
+                         "error: EncodeError: PNG encoding failed on the camera frame at 0.017 s (ValueError: bad "
+                         "pixels); 9 camera frames were not recorded: that one and every frame after it")
+        self.assertEqual(logged_at(events, CAMERA_PATH), [])
+
+    def test_an_encoder_exception_found_by_a_put_that_does_not_wait_is_reported_and_stops_the_run_cleanly(self):
+        clock = FakeClock()
+        encoder = GatedPng(clock, fail_at=2)
+        threads_before = set(threading.enumerate())
+
+        class EncoderFailsBeforeStep4(FakeSim):
+            def step(self, n=1):
+                if self._steps == 3:
+                    encoder.allow(2)
+                    for thread in set(threading.enumerate()) - threads_before:
+                        thread.join(GIVE_UP_S)
+                super().step(n)
+
+        code, stderr, events = self.run_main(EncoderFailsBeforeStep4, encoder, clock)
+        # Steps 1 to 3 queue frames 1 to 3. Before step 4 the encoder encodes frame 1, fails on
+        # frame 2 and its thread ends. Step 4 logs frame 1, then its put finds 2 frames queued,
+        # no wait, and the failure: frames 2 and 3 and step 4's own, 3 frames not recorded. With
+        # frame 1 recorded, that is all 4 frames of the steps run. Frame 2 was read at 2/60 s.
+        # close does not report the failure a second time, or its count of 2 would replace this.
+        self.assertEqual(code, 1)
+        self.assertEqual(stderr.splitlines()[-1],
+                         "error: EncodeError: PNG encoding failed on the camera frame at 0.033 s (ValueError: bad "
+                         "pixels); 3 camera frames were not recorded: that one and every frame after it")
+        self.assertEqual(logged_at(events, CAMERA_PATH), [(1 / STEP_HZ, png(1))])
+
+    def test_a_saved_run_prints_the_encoding_time_and_the_backlog_waits(self):
+        import spike_lidar_rerun
+
+        clock = LoopClock(lambda: encoder.allow(1), lambda: encoder.allow(PNG_QUEUE_FRAMES))
+        encoder = GatedPng(clock)
+        stdout, stderr = io.StringIO(), io.StringIO()
+        with tempfile.TemporaryDirectory() as tmp, contextlib.ExitStack() as stack:
+            stack.enter_context(installed(fake_rerun(writes=1)))
+            stack.enter_context(plain_lists(encoder))
+            stack.enter_context(mock.patch.object(common, "session", fake_session))
+            stack.enter_context(mock.patch.object(common, "wall_clock", clock.now))
+            stack.enter_context(contextlib.redirect_stdout(stdout))
+            stack.enter_context(contextlib.redirect_stderr(stderr))
+            code = spike_lidar_rerun.main(["--home", tmp, "--out", tmp, "--mode", "lockstep", "--seconds", "0.15",
+                                           "--traffic", "0", "--save", "demo.rrd"])
+        self.assertEqual(code, 0, stderr.getvalue())
+        # 0.15 s of lock-step is 9 steps, one camera frame each. Steps 1 to 8 fill the queue with
+        # frames none of which may be encoded yet, and step 9 finds it full: one wait. The wait
+        # starts at 0 s and lets frame 1 be encoded, 0.5 fake s. Frame 2 then waits for a permit,
+        # so the wait ends at 0.5 s, and only that end lets the other 8 frames be encoded. The 9
+        # frames at 0.5 fake s each took 4.5 s.
+        self.assertIn("PNG encoding: 9 camera images in 4.500 s on the encoder thread", stdout.getvalue())
+        self.assertIn("PNG backlog: the loop found the queue of 8 frames full 1 times and waited 0.500 s in all "
+                      "for space; no frame was dropped", stdout.getvalue())
 
 
 if __name__ == "__main__":

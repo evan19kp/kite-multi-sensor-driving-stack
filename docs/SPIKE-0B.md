@@ -796,7 +796,7 @@ If the first run does not look smooth, run it again with `--live-stride 4` and s
 
 ### What the size line measures
 
-After a `--save` run that ends normally, the script prints these three lines after `wrote ...`, then writes the same numbers to `<NAME>.json` beside the recording (`run4.json` for `--save run4.rrd`) and prints `wrote ...` for it:
+After a `--save` run that ends normally, the script prints these three lines after `wrote ...`:
 
 ```
 recording: <bytes> bytes on disk after close, <MB> MB (1 MB = 10^6 bytes) over <s> simulated s: <MB/s> MB per simulated s
@@ -811,9 +811,8 @@ PNG backlog: the loop found the queue of 8 frames full <k> times and waited <s> 
 - `PNG encoding:` is the wall time on the encoder thread from the start to the end of each encode, summed over the images, by the same clock as the tables. It is no longer a part of `our processing`. The two threads share one Python interpreter, so the encoder can be held up while the loop runs Python code, and this time can be more than Pillow's own work. The other way round, the encoder's Python steps can still slow the loop a little.
 - `PNG backlog:` says how often the loop found the queue full and how long it waited, in all, for the encoder to make space. A full queue means the encoder fell behind the camera. The loop then waits; it never drops or shrinks an image. That wait is part of `our processing` and holds up the reads after it, as the encoding did before. `0 times` means the encoding never held up the loop. Compare the `schedule` table of the save run with the live run.
 - Why 8 images: the camera makes at most 20 images per simulated second (`requested_update_time=0.05`), so 8 is 0.4 s of camera. A 640 x 360 image of four channels is 921,600 bytes, so a full queue holds under 7.4 MB. Closing the recording waits for at most the 8 queued encodes before BeamNG.tech is closed.
-- The JSON has `recording` (the `--save` name), `bytes`, `simulated_s`, `mb_per_simulated_s` and `png_encoding`: `frames_encoded`, `encode_s`, `encode_backlog_waits`, `encode_backlog_wait_s` and `queue_frames`.
-- A live run prints none of these lines and writes no JSON, because nothing measures what the viewer receives. It shows the images as before, without encoding.
-- After Ctrl+C no line is printed and no JSON is written. Every image already in the queue is still encoded and logged, then the recording is closed, then BeamNG.tech.
+- A live run prints none of these lines, because nothing measures what the viewer receives. It shows the images as before, without encoding.
+- After Ctrl+C no line is printed. Every image already in the queue is still encoded and logged, then the recording is closed, then BeamNG.tech.
 - If Pillow fails on an image, the run stops with `error: EncodeError: PNG encoding failed on the camera frame at <s> s (<error>); <n> camera frames were not recorded: that one and every frame after it`, after a traceback. The images encoded before it are in the recording, and BeamNG.tech is closed as after any other error.
 
 ### What to send back

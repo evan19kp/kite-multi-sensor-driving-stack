@@ -466,10 +466,11 @@ Each item that introduces a lasting rule adds a "## Standing rules (R<n>)" secti
   R36's bounded close in `common._close_within`. It is given only the encoder and the clock, runs
   only Pillow, and never touches BeamNGpy or Rerun; every Rerun call stays on the run's thread.
 - A saved recording never drops, reorders or lossily encodes a camera frame. A full queue makes
-  the loop wait, counted as `encode_backlog_waits` and `encode_backlog_wait_s` in the printed
-  `PNG backlog:` line and the JSON. Closing the recorder encodes and logs every queued frame
-  before the file is flushed, after Ctrl+C too, and an encoder failure stops the run with an
-  error that counts the frames not recorded.
+  the loop wait; the waits (`EncodeStats.backlog_waits`) and their total seconds are printed in
+  the `PNG backlog:` line. An encoded frame leaves the worker only after Rerun's log call for it
+  returns. Closing the recorder encodes and logs every queued frame before the file is flushed,
+  after Ctrl+C too, and an encoder failure stops the run with an error that counts the frames not
+  recorded.
 - Tests of the encoder thread use fake encoders with fake costs on a FakeClock and decide when a
   frame is encoded with threading primitives; they never sleep or assert on real time.
 
