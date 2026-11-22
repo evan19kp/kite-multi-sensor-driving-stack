@@ -12,7 +12,7 @@ UP = (0, 0, 1)
 SENSOR_SETTINGS = {
     "lidar": {
         "requested_update_time": 0.1,
-        "pos": (0, 0, 1.7),
+        "pos": (0, 0, 1.9),
         "vertical_resolution": 64,
         "frequency": 20,
         "horizontal_angle": 360,

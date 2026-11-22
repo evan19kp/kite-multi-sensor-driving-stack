@@ -186,7 +186,7 @@ class MulticarJsonTest(unittest.TestCase):
     def test_multicar_json_settings_follow_the_defaults_without_options(self):
         with tempfile.TemporaryDirectory() as tmp:
             settings = self.saved(tmp, "spike_multicar", "multicar.json")["sensor_settings"]
-        self.assertEqual(settings["lidar"]["pos"], [0, 0, 1.7])
+        self.assertEqual(settings["lidar"]["pos"], [0, 0, 1.9])
         self.assertNotIn("is_streaming", settings["lidar"])
 
 
