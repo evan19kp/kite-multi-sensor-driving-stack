@@ -399,7 +399,7 @@ needs the simulator; every acceptance check runs in CI.
   (CTest): on the golden log the output reads back, keeps every `gt` and `meas` record, and scores
   as `kite_baseline` does (or a pinned score); removing `gt` lines gives identical tracks;
   byte-identical output on g++ and MSVC.
-- [ ] **R48 `viewer/log_to_rerun.py`: a v0 log as a Rerun recording** (feat, Sonnet; needs R47): a
+- [x] **R48 `viewer/log_to_rerun.py`: a v0 log as a Rerun recording** (feat, Sonnet; needs R47): a
   stdlib v0 log reader in `viewer/`; `python viewer/log_to_rerun.py <log> [--save <name.rrd>]
   [--out <folder>]` logs `ground_truth/actors`, `measurements`, `tracks` (with `track_id` labels and
   velocity lines) on one timeline `t`; `rerun` imported lazily in one module; tests use a fake
