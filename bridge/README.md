@@ -3,16 +3,18 @@
 Python code that talks to the BeamNG.tech simulator through BeamNGpy. Built so far: a simulator
 interface, a real adapter, a fake simulator, three spike scripts that measure the simulator's
 connection, sensors and multi-car behaviour, and a Rerun lidar demo script. Planned, not built
-yet: the local link to the core. The only real-simulator result recorded here is the Sprint 0B.3
-approximate self-hit count by lidar height (see Scripts). Evan runs the spikes on the real
-simulator, and nothing here has run against an installed Rerun yet.
+yet: the local link to the core. Evan ran streaming and free mode on the real simulator in
+Sprints 0B.2, 0B.3 and 0B.4, and the approximate self-hit count by lidar height in Sprint 0B.3
+(see Scripts). Evan runs the spikes on the real simulator, and nothing here has run against an
+installed Rerun yet.
 
 ## Layout
 
 - `kite_bridge/sim_api.py`: the small `Simulator` interface the scripts use.
 - `kite_bridge/beamng_adapter.py`: the real simulator. The only module that imports `beamngpy`,
-  and only inside methods. None of its BeamNGpy calls has run against BeamNGpy 1.36 yet. Calls
-  whose name, arguments or result format are guesses carry an `# ASSUMPTION:` comment.
+  and only inside methods. Evan's runs on the real simulator (Sprints 0B.2, 0B.3 and 0B.4)
+  covered its streaming and free-mode calls. This README records no result for its other calls.
+  Calls whose name, arguments or result format are guesses carry an `# ASSUMPTION:` comment.
 - `kite_bridge/readings.py`: turns a BeamNGpy poll result into plain data: a reading for any
   sensor, the lidar points or the camera image. An empty poll, including a lidar scan with no
   points, is no reading; a radar array with no rows is a reading with 0 detections. It never
@@ -75,9 +77,10 @@ with `--mode free` reads per wall second, default `lidar=20,camera=40,radar=10,g
 The three scripts that create a lidar (`spike_sensors.py`, `spike_multicar.py` and
 `spike_lidar_rerun.py`) also take `--lidar-pos X,Y,Z` (where the lidar sits, vehicle space,
 metres, default `0,0,1.9`; shown on the `sensor:` line) and `--ego-radius METRES` (default 2.5).
-The default is 1.9 m because the approximate self-hit count in the Sprint 0B.3 runs on the real
-simulator was about 233 points per scan at 1.7 m, where points were seen on the roof spoiler and
-roof rails, and 0 at 1.9, 2.1 and 2.3 m; 1.9 m is the lowest of the clean heights (see Run 5 in
+The default is 1.9 m because it was the lowest tested height with 0 approximate self-hits. In
+Evan's Sprint 0B.3 runs on the real simulator the count, per new scan, had a mean of 233.0 in
+three runs and 233.2 in one at 1.7 m (maximum 234 to 275), where points were seen on the roof
+spoiler and roof rails. At 1.9, 2.1 and 2.3 m it was 0 in every run (see Run 5 in
 `docs/SPIKE-0B.md`).
 `spike_connect.py` creates no lidar and has neither. A value that is not three finite numbers
 (for `--lidar-pos`) or not above 0 (for `--ego-radius`) is a usage error (exit code 2). Write a
@@ -191,7 +194,8 @@ under `unexp`. Rows left from an earlier, longer scan cannot be told from points
 Streamed reads are timed as `in stream reads`, apart from `in sensor polls`. That time includes
 the bridge's check, which reads every byte of a lidar scan; the bridge does not time it alone. The
 JSON records `"stream"`, `timing.stream_reads_s` and each row's `read` and `suspect`. Without
-`--stream` the output is as before. Streaming has not run against the real simulator.
+`--stream` the output is as before. Evan ran streaming on the real simulator in Sprints 0B.2,
+0B.3 and 0B.4; a streamed read took about 0.75 to 1.0 ms.
 
 `--mode free` on the two measuring scripts lets the simulator run on its own instead of in
 lock-step. The adapter attaches a `Timer` sensor to the first car, switches the simulator to
@@ -217,8 +221,10 @@ counts use the Timer; `poll_hz` is per wall second. A reading without its own ti
 latest Timer reading and shows `time` `timer`. The timing splits the wall time into `waiting to
 poll`, `in Timer polls`, the reads and `our processing`. The JSON records `"mode"` in both modes;
 in free mode `steps` is `null`, `timer` gives the Timer's poll count, rate and `schedule`, each
-sensor row has `schedule` (`late`, `worst_late_ms`, `skipped`), and a dump entry's `step` is `null`. `--stream` and `--dump-raw` work in both modes. Free mode has not run
-against the real simulator, and its real-time factor on the fake is the fake's own speed.
+sensor row has `schedule` (`late`, `worst_late_ms`, `skipped`), and a dump entry's `step` is `null`. `--stream` and `--dump-raw` work in both modes. Evan ran free mode on
+the real simulator in Sprints 0B.2, 0B.3 and 0B.4. With `--stream` as well, the real-time factor
+was 0.86 to 1.05 and the lidar gave about 10 scans per second. On the fake, the real-time factor
+is the fake's own speed.
 
 Output goes only to `--out`, `recordings/` by default, which is gitignored. Every JSON file has a
 top-level `"provenance"` field that marks the file as simulator output not to commit. The text is
@@ -293,8 +299,10 @@ timeout stops the run in both modes.
 python bridge/spike_lidar_rerun.py --fake --seconds 2 --out scratch/example
 ```
 
-In free mode the fake runs on the real clock, so this takes about 2 wall seconds. Nothing here
-has run against BeamNG.tech or an installed Rerun, and no real-time factor is claimed.
+In free mode the fake runs on the real clock, so this takes about 2 wall seconds. Evan ran free
+mode with streaming, this script's default, on the real simulator in Sprints 0B.2, 0B.3 and
+0B.4, with a real-time factor of 0.86 to 1.05. Nothing here has run against an installed Rerun,
+and the fake's real-time factor is the fake's own speed.
 
 `.rrd` files are recordings: they go only under `--out` and are never committed. A recording
 logs the same provenance text once as its first entry, as a text log under `meta/provenance`.
