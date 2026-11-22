@@ -470,7 +470,8 @@ Each item that introduces a lasting rule adds a "## Standing rules (R<n>)" secti
   the `PNG backlog:` line. An encoded frame leaves the worker only after Rerun's log call for it
   returns. Closing the recorder encodes and logs every queued frame before the file is flushed,
   after Ctrl+C too, and an encoder failure stops the run with an error that counts the frames not
-  recorded.
+  recorded. When the run already raised, that error is printed and the run's own error still
+  decides how it ends (R29).
 - Tests of the encoder thread use fake encoders with fake costs on a FakeClock and decide when a
   frame is encoded with threading primitives; they never sleep or assert on real time.
 

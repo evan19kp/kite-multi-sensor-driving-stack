@@ -200,6 +200,32 @@ class PngWorkerTest(unittest.TestCase):
         self.assertEqual(logged_at(events, CAMERA_PATH), [(n / 10, png(n)) for n in range(1, 5)])
         fake.disconnect.assert_called_once_with()
 
+    def test_a_camera_log_that_keeps_raising_still_lets_close_flush_the_recording(self):
+        clock = FakeClock()
+        encoder = GatedPng(clock)
+        recorder, fake, _ = self.recorder(encoder, clock)
+        for n in range(1, 3):
+            recorder.set_time(n / 10)
+            recorder.log_image(CAMERA_PATH, image(n))
+        encoder.allow(1)
+        # The encoder starts frame 2 only after frame 1 is encoded.
+        for _ in range(2):
+            encoder.wait_until_encoding()
+        log = fake.log.side_effect
+
+        def camera_log_fails(path, item):
+            if path == CAMERA_PATH:
+                raise RuntimeError("camera log failed")
+            log(path, item)
+
+        fake.log.side_effect = camera_log_fails
+        with self.assertRaises(RuntimeError):
+            recorder.set_time(0.3)
+        encoder.allow(1)
+        with self.assertRaises(RuntimeError):
+            recorder.close()
+        fake.disconnect.assert_called_once_with()
+
 
 class SavedRunTest(unittest.TestCase):
     """spike_lidar_rerun.py --fake in lock-step with a real RerunRecorder on a fake Rerun, so the
@@ -309,6 +335,39 @@ class SavedRunTest(unittest.TestCase):
                          "error: EncodeError: PNG encoding failed on the camera frame at 0.033 s (ValueError: bad "
                          "pixels); 3 camera frames were not recorded: that one and every frame after it")
         self.assertEqual(logged_at(events, CAMERA_PATH), [(1 / STEP_HZ, png(1))])
+
+    def test_an_encoder_exception_found_only_at_close_does_not_hide_ctrl_c_or_a_timeout(self):
+        stopped_by = [(KeyboardInterrupt, 130, "interrupted: BeamNG.tech closed"),
+                      (TimeoutError, 1, f"timed out after {common.DEFAULT_TIMEOUT_S:g} s: BeamNG.tech closed")]
+        for stop, exit_code, last_line in stopped_by:
+            with self.subTest(stop=stop.__name__):
+                clock = FakeClock()
+                encoder = GatedPng(clock, fail_at=2)
+                threads_before = set(threading.enumerate())
+                sims = []
+
+                class EncoderFailsThenStopsInStep4(FakeSim):
+                    def step(self, n=1):
+                        sims.append(self)
+                        if self._steps == 3:
+                            encoder.allow(2)
+                            for thread in set(threading.enumerate()) - threads_before:
+                                thread.join(GIVE_UP_S)
+                            raise stop
+                        super().step(n)
+
+                code, stderr, events = self.run_main(EncoderFailsThenStopsInStep4, encoder, clock)
+                # Steps 1 to 3 queue frames 1 to 3. In step 4 the encoder encodes frame 1, fails
+                # on frame 2 and its thread ends, and then the step stops the run before any put
+                # can find the failure. close logs frame 1 and reports frames 2 and 3 as not
+                # recorded. Frame 2 was read at 2/60 s.
+                self.assertEqual(code, exit_code)
+                self.assertEqual(stderr.splitlines(),
+                                 ["error: EncodeError: PNG encoding failed on the camera frame at 0.033 s (ValueError: "
+                                  "bad pixels); 2 camera frames were not recorded: that one and every frame after it",
+                                  last_line])
+                self.assertEqual(logged_at(events, CAMERA_PATH), [(1 / STEP_HZ, png(1))])
+                self.assertFalse(sims[-1].sensors_removed)
 
     def test_a_saved_run_prints_the_encoding_time_and_the_backlog_waits(self):
         import spike_lidar_rerun

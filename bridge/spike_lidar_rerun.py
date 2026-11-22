@@ -32,8 +32,8 @@ PNG, which is lossless. The PNGs are encoded on one thread beside the loop, thro
 rerun_view.PNG_QUEUE_FRAMES frames; when the queue is full the loop waits for space, and no frame
 is dropped. The run prints the file's size per simulated second, the time spent encoding PNGs and
 how often and how long the loop waited. After Ctrl+C every frame already queued is encoded and
-logged before the file is closed. If encoding
-fails, the run stops with an error that says how many frames were not recorded.
+logged before the file is closed. If encoding fails, the run stops with an error that says how
+many frames were not recorded.
 --fake uses the fake simulator and a recorder that keeps nothing: it opens no viewer, imports
 no Rerun and writes no file, even with --save.
 """
@@ -103,8 +103,10 @@ def run(args):
                 report, simulated_s = _run_free(sim, car, args, recorder)
             else:
                 report, simulated_s = _run_lockstep(sim, car, args, recorder, show_traffic)
-        finally:
-            recorder.close()
+        except BaseException:
+            _close_reporting_encode_error(recorder)
+            raise
+        recorder.close()
         sim.set_ai_mode(car, "disabled")
     if args.live_stride != 1:
         report.append(f"the live viewer showed 1 of every {args.live_stride} lidar points")
@@ -120,6 +122,13 @@ def run(args):
     stats = recorder.stats
     print("\n".join([*recording_lines(save_path.stat().st_size, simulated_s, stats.encoded, stats.encode_s),
                      backlog_line(stats)]))
+
+
+def _close_reporting_encode_error(recorder):
+    try:
+        recorder.close()
+    except rerun_view.EncodeError as error:
+        print(f"error: EncodeError: {error}", file=sys.stderr)
 
 
 def recording_lines(nbytes, simulated_s, encoded, encode_s):

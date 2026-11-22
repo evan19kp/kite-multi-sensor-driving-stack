@@ -443,8 +443,10 @@ class RerunRecorder:
             if self._png is not None:
                 self._png.finish()
         finally:
-            self._log_encoded()
-            self._rr.disconnect()  # ASSUMPTION: disconnect() flushes and closes the file or connection
+            try:
+                self._log_encoded()
+            finally:
+                self._rr.disconnect()  # ASSUMPTION: disconnect() flushes and closes the file or connection
 
 
 class NullRecorder:
