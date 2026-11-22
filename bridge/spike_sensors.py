@@ -10,15 +10,19 @@ with the settings the bridge passes, before the run. Writes the same numbers and
 sensors.json in --out. A sensor whose poll raises or returns an unexpected format is counted
 under `unexp`; the run goes on with the other sensors. --dump-raw N also writes the first N raw
 GPS and IMU readings to raw_gps_imu.json. --stream reads the lidar and camera from shared memory
-with stream() and counts what it drops under `suspect`. --mode free lets the simulator run on its
-own, polls on a wall-clock schedule and reads simulated time from a Timer sensor.
+with stream() and counts what it drops under `suspect`; in Evan's 0B.3 and 0B.4 runs on the real
+simulator a streamed read took 0.75 to 1.02 ms. --mode free lets the simulator run on its
+own, polls on a wall-clock schedule and reads simulated time from a Timer sensor; its default
+rate for the GPS and IMU is 5 per second since R40.
 --lidar-pos x,y,z sets where the lidar sits on our car (vehicle space, metres); it shows on the
-`sensor:` line. Every sensor is created with is_visualised=False, which should keep BeamNG from
-drawing them into the world and the camera frames. That is unverified until Evan's run on the real
-simulator. --visualise-sensors turns the drawing back on for the lidar, radar, IMU and GPS (never
+`sensor:` line. Every sensor is created with is_visualised=False. That this keeps BeamNG from
+drawing them into the world and the camera frames is not yet confirmed on the real simulator.
+--visualise-sensors turns the drawing back on for the lidar, radar, IMU and GPS (never
 the camera), for debugging. Every run counts, approximately, the lidar points within --ego-radius
 metres of our car in x and y, measured from the GPS position, per new scan, and prints their mean
-and maximum and writes them to sensors.json under `self_hits_approx` on the lidar row.
+and maximum and writes them to sensors.json under `self_hits_approx` on the lidar row. In Evan's
+0B.3 runs the approximate count per scan had a mean of 233.0 in three runs and 233.2 in one at
+1.7 m (maximum 234 to 275) and was 0 at 1.9, 2.1 and 2.3 m; 1.9 m is the default.
 """
 
 import sys

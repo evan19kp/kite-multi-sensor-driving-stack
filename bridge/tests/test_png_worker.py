@@ -203,8 +203,8 @@ class PngWorkerTest(unittest.TestCase):
         self.assertEqual(logged_at(events, CAMERA_PATH), [(n / 10, png(n)) for n in range(1, 5)])
         fake.disconnect.assert_called_once_with()
         self.assertEqual(stderr.getvalue().splitlines(),
-                         ["camera frame at 0.200 s: Rerun's log raised KeyboardInterrupt; the frame stays queued and "
-                          "is logged again, on the rule that a log that raises stored nothing"])
+                         ["camera frame at 0.200 s: Rerun's log call raised KeyboardInterrupt; the frame stays queued "
+                          "and is logged again, on the rule that a log that raises stored nothing"])
 
     def test_ctrl_c_as_rerun_takes_a_frame_logs_it_once_and_still_stops_the_loop(self):
         clock = FakeClock()
@@ -262,10 +262,104 @@ class PngWorkerTest(unittest.TestCase):
                 recorder.close()
         fake.disconnect.assert_called_once_with()
         # Frame 1's log raised at set_time and again at close, so neither frame was saved.
-        retry = ("camera frame at 0.100 s: Rerun's log raised RuntimeError; the frame stays queued and is logged "
-                 "again, on the rule that a log that raises stored nothing")
+        retry = ("camera frame at 0.100 s: Rerun's log call raised RuntimeError; the frame stays queued and is "
+                 "logged again, on the rule that a log that raises stored nothing")
         self.assertEqual(stderr.getvalue().splitlines(),
                          [retry, retry, "2 camera frames were not saved: RuntimeError while the recording closed"])
+
+    def test_a_second_ctrl_c_after_the_encoder_failed_names_the_failure_for_the_frames_it_cost(self):
+        clock = FakeClock()
+        encoder = GatedPng(clock, fail_at=3)
+        threads_before = set(threading.enumerate())
+        recorder, fake, events = self.recorder(encoder, clock)
+        for n in range(1, 5):
+            recorder.set_time(n / 10)
+            recorder.log_image(CAMERA_PATH, image(n))
+        encoder.allow(3)
+        for thread in set(threading.enumerate()) - threads_before:
+            thread.join(GIVE_UP_S)
+        log = fake.log.side_effect
+
+        def ctrl_c_once_rerun_has_frame_1(path, item):
+            log(path, item)
+            if item == png(1):
+                signal.raise_signal(signal.SIGINT)
+
+        fake.log.side_effect = ctrl_c_once_rerun_has_frame_1
+        stderr = io.StringIO()
+        with contextlib.redirect_stderr(stderr), self.assertRaises(KeyboardInterrupt):
+            recorder.close()
+        # Frames 1 and 2 were encoded and frame 3 failed, with frame 4 behind it. Frame 1 was
+        # logged and then Ctrl+C came, so frame 2 is encoded and not logged, and frames 3 and 4
+        # were never encoded: 3 frames not saved, 2 of them because of the encoder.
+        self.assertEqual(stderr.getvalue().splitlines(),
+                         ["3 camera frames were not saved: 2 because PNG encoding failed on the camera frame at "
+                          "0.300 s (ValueError: bad pixels), 1 because Ctrl+C ended the close"])
+        self.assertEqual(logged_at(events, CAMERA_PATH), [(0.1, png(1))])
+        fake.disconnect.assert_called_once_with()
+
+    def test_a_close_cut_short_by_another_error_after_the_encoder_failed_names_only_the_failure(self):
+        clock = FakeClock()
+        encoder = GatedPng(clock, fail_at=1)
+        threads_before = set(threading.enumerate())
+        recorder, fake, _ = self.recorder(encoder, clock)
+        for n in range(1, 4):
+            recorder.set_time(n / 10)
+            recorder.log_image(CAMERA_PATH, image(n))
+        encoder.allow(1)
+        for thread in set(threading.enumerate()) - threads_before:
+            thread.join(GIVE_UP_S)
+        fake.disconnect.side_effect = RuntimeError("disconnect failed")
+        stderr = io.StringIO()
+        with contextlib.redirect_stderr(stderr), self.assertRaises(RuntimeError):
+            recorder.close()
+        # Frame 1 failed in the encoder, so frames 1 to 3 were never encoded. The disconnect
+        # that raised afterwards did not cost any frame.
+        self.assertEqual(stderr.getvalue().splitlines(),
+                         ["3 camera frames were not saved: 3 because PNG encoding failed on the camera frame at "
+                          "0.100 s (ValueError: bad pixels)"])
+
+
+class CtrlCHeldTest(unittest.TestCase):
+    """`_ctrl_c_held` on a thread that is not the main thread, which never gets a Ctrl+C."""
+
+    def run_off_the_main_thread(self, body):
+        outcome = {}
+
+        def work():
+            try:
+                with rerun_view._ctrl_c_held():
+                    body(outcome)
+            except BaseException as error:
+                outcome["raised"] = error
+
+        thread = threading.Thread(target=work)
+        thread.start()
+        thread.join(GIVE_UP_S)
+        self.assertFalse(thread.is_alive(), "the thread never finished")
+        return outcome
+
+    def test_on_the_main_thread_the_block_has_its_own_handler_and_the_old_one_comes_back(self):
+        before = signal.getsignal(signal.SIGINT)
+        with rerun_view._ctrl_c_held():
+            inside = signal.getsignal(signal.SIGINT)
+        self.assertNotEqual(inside, before)
+        self.assertEqual(signal.getsignal(signal.SIGINT), before)
+
+    def test_off_the_main_thread_the_block_runs_and_leaves_the_handler_alone(self):
+        before = signal.getsignal(signal.SIGINT)
+        outcome = self.run_off_the_main_thread(
+            lambda seen: seen.update(ran=True, inside=signal.getsignal(signal.SIGINT)))
+        self.assertEqual(outcome, {"ran": True, "inside": before})
+        self.assertEqual(signal.getsignal(signal.SIGINT), before)
+
+    def test_off_the_main_thread_an_error_in_the_block_comes_out_unchanged(self):
+        def body(seen):
+            raise KeyError("from the block")
+
+        outcome = self.run_off_the_main_thread(body)
+        self.assertIsInstance(outcome["raised"], KeyError)
+        self.assertEqual(outcome["raised"].args, ("from the block",))
 
 
 class SavedRunTest(unittest.TestCase):
@@ -381,10 +475,11 @@ class SavedRunTest(unittest.TestCase):
         encoder = GatedPng(clock, fail_at=1)
         code, stderr, events = self.run_main(FakeSim, encoder, clock)
         # Steps 1 to 8 fill the queue with frames none of which may be encoded yet. Step 9's put
-        # finds it full and its wait lets frame 1 be encoded, which fails. A failed frame never
-        # leaves the queue, so the queue stays full until the failure ends the wait. The run
-        # stops in step 9 with frames 1 to 8 queued and frame 9 not yet in: 9 frames not
-        # recorded, which are all 9 frames of the steps run. Frame 1 was read at 1/60 s.
+        # queues frame 9 first (R44), finds 9 frames waiting and its wait lets frame 1 be
+        # encoded, which fails. A failed frame never leaves the queue, so the queue stays over
+        # its bound until the failure ends the wait. The run stops in step 9 with frames 1 to 9
+        # queued: 9 frames not recorded, which are all 9 frames of the steps run. Frame 1 was
+        # read at 1/60 s.
         self.assertEqual(code, 1)
         self.assertEqual(stderr.splitlines()[-1],
                          "error: EncodeError: PNG encoding failed on the camera frame at 0.017 s (ValueError: bad "

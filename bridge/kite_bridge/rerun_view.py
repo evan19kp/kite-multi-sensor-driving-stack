@@ -48,9 +48,9 @@ GROUND_TRUTH_COLOUR = (255, 165, 0)
 RECORDING_SUFFIX = ".rrd"
 PNG_MEDIA_TYPE = "image/png"
 # The camera makes at most 20 images per simulated second (requested_update_time 0.05 s), so 8
-# frames are 0.4 s of camera. A 640 x 360 RGBA frame is 921,600 bytes, so a full queue holds
-# under 7.4 MB. The loop's own frame joins the queue while it waits for space, so closing waits
-# for at most 9 encodes.
+# frames are 0.4 s of camera. A 640 x 360 RGBA frame is 921,600 bytes, so 8 frames are under
+# 7.4 MB. The loop's own frame joins the queue while it waits for space, so a full queue holds 9
+# frames (under 8.3 MB) and closing waits for at most 9 encodes.
 PNG_QUEUE_FRAMES = 8
 WAIT_SLICE_S = 0.1
 
@@ -325,6 +325,14 @@ class PngWorker:
         with self._changed:
             return len(self._waiting) + len(self._encoded)
 
+    def encoder_failure(self):
+        """None while the encoder has not failed. Else (text, lost): the text says on which frame
+        and with which error it failed, and `lost` is that frame and every one after it."""
+        with self._changed:
+            if self._failure is None:
+                return None
+            return _encode_failure_text(*self._failure), len(self._waiting)
+
     def _over(self):
         return len(self._waiting) > PNG_QUEUE_FRAMES and self._phase in (Phase.RUNNING, Phase.CLOSING)
 
@@ -332,8 +340,7 @@ class PngWorker:
         self._phase = Phase.REPORTED
         frame, error = self._failure
         lost = len(self._waiting)
-        report = EncodeError(f"PNG encoding failed on the camera frame at {frame.time:.3f} s "
-                             f"({type(error).__name__}: {error}); {lost} camera frames were not recorded: "
+        report = EncodeError(f"{_encode_failure_text(frame, error)}; {lost} camera frames were not recorded: "
                              f"that one and every frame after it")
         report.__cause__ = error
         return report
@@ -361,6 +368,10 @@ class PngWorker:
                 self.stats.encoded += 1
                 self.stats.encode_s += elapsed
                 self._changed.notify_all()
+
+
+def _encode_failure_text(frame, error):
+    return f"PNG encoding failed on the camera frame at {frame.time:.3f} s ({type(error).__name__}: {error})"
 
 
 @contextlib.contextmanager
@@ -479,16 +490,17 @@ class RerunRecorder:
                 except BaseException as error:
                     # ASSUMPTION: a log call that raises stored nothing, so the frame stays queued and is logged
                     # again; Ctrl+C is held back here, so only an error of Rerun's own can raise inside it
-                    print(f"camera frame at {frame.time:.3f} s: Rerun's log raised {type(error).__name__}; the frame "
-                          "stays queued and is logged again, on the rule that a log that raises stored nothing",
-                          file=sys.stderr)
+                    print(f"camera frame at {frame.time:.3f} s: Rerun's log call raised {type(error).__name__}; "
+                          "the frame stays queued and is logged again, on the rule that a log that raises "
+                          "stored nothing", file=sys.stderr)
                     raise
                 self._png.release_first()
 
     def close(self):
         """Waits for every queued image, logs each as it is encoded and flushes the file. If an
         exception ends that early, a second Ctrl+C for example, prints how many camera frames were
-        not saved. An EncodeError is the exception: its message already counts them."""
+        not saved. An EncodeError is the exception: its message already counts them. When the
+        encoder had failed before that, the line says how many frames it cost, with its error."""
         try:
             try:
                 if self._png is not None:
@@ -502,7 +514,15 @@ class RerunRecorder:
             unsaved = 0 if self._png is None else self._png.unsaved()
             if unsaved:
                 why = "Ctrl+C" if isinstance(error, KeyboardInterrupt) else type(error).__name__
-                print(f"{unsaved} camera frames were not saved: {why} while the recording closed", file=sys.stderr)
+                failure = self._png.encoder_failure()
+                if failure is None:
+                    print(f"{unsaved} camera frames were not saved: {why} while the recording closed", file=sys.stderr)
+                else:
+                    text, lost = failure
+                    causes = [f"{lost} because {text}"]
+                    if unsaved > lost:
+                        causes.append(f"{unsaved - lost} because {why} ended the close")
+                    print(f"{unsaved} camera frames were not saved: {', '.join(causes)}", file=sys.stderr)
             raise
 
 

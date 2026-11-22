@@ -9,7 +9,9 @@ measures (the origin until it gives one), and the default layout's 3D view follo
 No ground truth is logged, because reading our car's position from the simulator is a request
 that would hold up the lidar. The run then prints the measuring table of spike_sensors.py --mode free, which
 says how late each sensor's reads came. --no-stream polls the lidar and camera too. --rates sets
-the reads per wall second. --live-stride N shows every Nth lidar point in the live viewer.
+the reads per wall second; the free-mode default for the GPS and IMU is 5 per second since R40.
+In Evan's 0B.3 and 0B.4 runs on the real simulator a streamed lidar or camera read took 0.75 to
+1.02 ms. --live-stride N shows every Nth lidar point in the live viewer.
 
 --mode lockstep runs the demo as before: it logs, once per simulator step on one timeline, lidar
 points coloured by distance from our car (near blue, far red), our car's position and the camera
@@ -24,20 +26,27 @@ self-hits.
 --lidar-pos x,y,z sets where the lidar sits on our car (vehicle space, metres), in both modes. In
 free mode the measuring table is followed by an approximate self-hit count: the lidar points
 within --ego-radius metres of our car in x and y, measured from the GPS position, per new scan.
-It is printed only, never logged to Rerun.
+It is printed only, never logged to Rerun. The default height is 1.9 m. In Evan's 0B.3 runs the
+approximate count per scan had a mean of 233.0 in three runs and 233.2 in one at 1.7 m (maximum
+234 to 275) and was 0 at 1.9, 2.1 and 2.3 m.
 
-Sensors are created with is_visualised=False, so the lidar's dots are not drawn in the BeamNG
-window or the camera frames; Rerun shows the lidar. --visualise-sensors turns BeamNG's drawing of
-the lidar, radar, IMU and GPS back on, for debugging; the camera is never drawn.
+Sensors are created with is_visualised=False. That the lidar's dots are then no longer drawn in
+the BeamNG window or the camera frames is not yet confirmed on the real simulator. --visualise-sensors
+turns BeamNG's drawing of the lidar, radar, IMU and GPS back on, for debugging; the camera is
+never drawn.
 
 --save <name.rrd> writes the recording to that file inside --out and does not open a viewer;
 open it later with `rerun <file>`. It keeps every lidar point and stores each camera image as a
 PNG, which is lossless. The PNGs are encoded on one thread beside the loop, through a queue of
-rerun_view.PNG_QUEUE_FRAMES frames; when the queue is full the loop waits for space, and no frame
-is dropped. The run prints the file's size per simulated second, the time spent encoding PNGs and
-how often and how long the loop waited. After Ctrl+C every frame already queued is encoded and
-logged before the file is closed. If encoding fails, the run stops with an error that says how
-many frames were not recorded.
+rerun_view.PNG_QUEUE_FRAMES (8) frames; the loop adds its frame before it waits for space, so a
+full queue can hold 9. When the queue is full the loop waits, and no frame is dropped. The run
+prints the file's size per simulated second, the time spent encoding PNGs and how often and how
+long the loop waited. After Ctrl+C every frame already queued is encoded and logged before the file
+is closed. A second Ctrl+C while the file closes stops the wait and prints how many camera frames
+were not saved; if the encoder had failed first, that line names the failure. If encoding fails,
+the run stops with an error that says how many frames were not recorded. A real --save recording
+with lidar and camera opened in an installed Rerun on 2026-11-19 (0B rerun, Run 4b, 354 MiB for
+about 5 simulated s); the 0B.3 and 0B.4 recordings were 6.90 and 6.17 MB per simulated second.
 --fake uses the fake simulator and a recorder that keeps nothing: it opens no viewer, imports
 no Rerun and writes no file, even with --save.
 """

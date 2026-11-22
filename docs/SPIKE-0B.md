@@ -1,6 +1,6 @@
 # Run the Sprint 0B spike
 
-This guide is for Evan. It tells you how to run the four bridge scripts against BeamNG.tech on your machine and what to send back to the director. You ran streaming and free mode on the real simulator in Sprints 0B.2, 0B.3 and 0B.4, and the lidar-height self-hit counts in Run 5 in Sprint 0B.3. Expect some other BeamNGpy calls to fail. A failure with the full error text is a useful result.
+This guide is for Evan. It tells you how to run the four bridge scripts against BeamNG.tech on your machine and what to send back to the director. You ran streaming and free mode on the real simulator in Sprints 0B.2, 0B.3 and 0B.4, and the lidar-height self-hit counts in Run 5 in Sprint 0B.3. A real `--save` recording with lidar and camera opened in an installed Rerun on 2026-11-19 (0B rerun, Run 4b). Expect some other BeamNGpy calls to fail. A failure with the full error text is a useful result.
 
 The commands are for PowerShell. Run every command from the repo root, the folder that contains `AGENTS.md`.
 
@@ -134,7 +134,7 @@ The camera renders colour only: `is_render_annotations` and `is_render_depth` ar
 
 The lidar's `pos` is `(0, 0, 1.9)` by default; Run 5 says why. `--lidar-pos X,Y,Z` replaces the lidar's `pos` only (vehicle space, metres). The `sensor:` line and `sensors.json` then show the position you gave, and the adapter passes it to BeamNGpy through the same table. The radar's `pos` stays `(0, 0, 1.7)`. See Run 5.
 
-Every sensor is created with `is_visualised=False`, the last setting on each line. BeamNG draws some sensors into the 3D world, and the camera photographs that drawing, so the lidar's coloured dots showed up in the camera frames. With drawing off, the dots no longer appear in the BeamNG window or in the camera frames by default, and Rerun still shows the lidar. This has not run on the real simulator yet; Evan's next run checks it. `--visualise-sensors` turns the drawing back on for debugging. It is off by default and `spike_sensors.py`, `spike_multicar.py` and `spike_lidar_rerun.py` take it. With it, the lidar, radar, GPS and IMU get `is_visualised=True`, and the `sensor:` lines and `sensor_settings` in the JSON show it. The camera stays `is_visualised=False` with the flag. `spike_connect.py` creates no sensors and has no flag.
+Every sensor is created with `is_visualised=False`, the last setting on each line. BeamNG draws some sensors into the 3D world, and the camera photographs that drawing, so the lidar's coloured dots showed up in the camera frames. With drawing off, the dots no longer appear in the BeamNG window or in the camera frames by default, and Rerun still shows the lidar. This is not yet confirmed on the real simulator; Evan's next run checks it. `--visualise-sensors` turns the drawing back on for debugging. It is off by default and `spike_sensors.py`, `spike_multicar.py` and `spike_lidar_rerun.py` take it. With it, the lidar, radar, GPS and IMU get `is_visualised=True`, and the `sensor:` lines and `sensor_settings` in the JSON show it. The camera stays `is_visualised=False` with the flag. `spike_connect.py` creates no sensors and has no flag.
 
 ### How to read the output
 
@@ -362,7 +362,7 @@ Readings are in the order the polls returned them, and a reading that a later po
 
 Every poll costs about 21 ms in your earlier runs, whatever the sensor. `--stream` tests whether streaming avoids that cost for the lidar and the camera. With `--stream`, the bridge creates those two sensors with `is_streaming=True`. The simulator then writes each reading into shared memory, and the bridge reads it with `stream()`, which sends no request to the simulator. The radar, GPS and IMU are still polled, because BeamNGpy 1.36 does not stream them. `--rates` still decides when each sensor is read. Without `--stream`, nothing changes: every sensor is polled, and the output looks as described above.
 
-You ran streaming on the real simulator in Sprints 0B.2, 0B.3 and 0B.4. A streamed read took about 0.75 to 1.0 ms. Whether the streamed data can be trusted is for each run's `suspect` and `sus_rows` numbers to show.
+You ran streaming on the real simulator in Sprints 0B.2, 0B.3 and 0B.4. A streamed lidar or camera read took 0.75 to 1.02 ms in the 0B.3 and 0B.4 runs. Whether the streamed data can be trusted is for each run's `suspect` and `sus_rows` numbers to show.
 
 Run the script twice with the same rates, once without and once with `--stream`:
 
@@ -464,7 +464,7 @@ A sensor at rate `r` with phase `p` is due at `p + k / r` wall seconds after the
 
 When nothing is due, the script sleeps until the next due time. A sensor's next due time is the first `p + k / r` after the start of its read.
 
-A poll is a request to the simulator, about 17 to 21 ms each in your runs. A streamed read took about 1 to 2 ms. Before this rule a pass polled every due sensor, so a lidar that came due during a pass waited for all of that pass's polls. Now a due streamed read waits for at most the one poll that is already running. That bound is what the tests check on the fake, with 20 ms polls and 1 ms streamed reads. Whether it holds on BeamNG.tech is for your run to show.
+A poll is a request to the simulator, about 17 to 21 ms each in your runs. A streamed lidar or camera read took 0.75 to 1.02 ms in the 0B.3 and 0B.4 runs. Before this rule a pass polled every due sensor, so a lidar that came due during a pass waited for all of that pass's polls. Now a due streamed read waits for at most the one poll that is already running. That bound is what the tests check on the fake, with 20 ms polls and 1 ms streamed reads. Whether it holds on BeamNG.tech is for your run to show.
 
 When a read comes late, it covers its own due time, and the due times it passed over are skipped. They are not made up later in a burst. For example, at 20 reads per second a sensor is due every 0.05 s. If a read starts 0.2 s late, the sensor is read once and is next due at the first multiple of 0.05 s after that read started. So `polls` can be lower than the rate times the wall seconds. The `schedule` table below says how many due times each sensor missed.
 
@@ -478,7 +478,7 @@ A poll is a request, about 20 ms each in your runs. Before Sprint 0B.4 the Timer
 phases: ms after the run starts that each slow poll is first due, spread evenly over 100.00 ms (1 / the highest slow rate), then once per its own period: kite1 timer 0.00, kite1 radar 25.00, kite1 gps 50.00, kite1 imu 75.00
 ```
 
-So the Timer is due at 0, 200, 400 ms, the radar at 25, 125, 225 ms, the GPS at 50, 250 ms and the IMU at 75, 275 ms. The closest two are 25 ms apart. On the fake with 23 ms polls, the tests show every poll starting on time this way. Without the phases the radar or IMU poll started 69 ms late (`bridge/tests/test_staggered_polls.py`). Whether real polls fit in 25 ms is for your run to show: a streamed lidar or camera read due in the same gap comes first and adds its 1 to 2 ms. Without `--stream` the lidar and camera are polls too, so six polls share 25 ms (1 / 40, the camera's rate) and the phases are about 4 ms apart.
+So the Timer is due at 0, 200, 400 ms, the radar at 25, 125, 225 ms, the GPS at 50, 250 ms and the IMU at 75, 275 ms. The closest two are 25 ms apart. On the fake with 23 ms polls, the tests show every poll starting on time this way. Without the phases the radar or IMU poll started 69 ms late (`bridge/tests/test_staggered_polls.py`). Whether real polls fit in 25 ms is for your run to show: a streamed lidar or camera read due in the same gap comes first and adds its 0.75 to 1.02 ms. Without `--stream` the lidar and camera are polls too, so six polls share 25 ms (1 / 40, the camera's rate) and the phases are about 4 ms apart.
 
 Fewer polls also means less time in requests. At 23 ms per poll, the defaults' 25 polls per wall second (radar 10, GPS, IMU and Timer 5 each) take about 0.58 s of each wall second, against about 0.92 s for the 40 polls before (all four at 10). That is arithmetic, not a measurement. Your run prints the real share under `in sensor polls` and `in Timer polls`.
 
@@ -673,7 +673,7 @@ By default the script runs free with streaming, the same as `--mode free --strea
 
 `--mode lockstep` runs the demo as it was before. It steps the simulator and, once per step, polls the lidar and camera and logs the points coloured by distance from our car (blue near, red at 50 m and beyond), our car's position and the camera image. Our car's position and the traffic cars' positions come from simulator state, so they are ground truth. They appear under `ground_truth/` and only for display. Hide the `ground_truth/` root in the viewer to see the sensor data alone. `--mode lockstep` does not take `--stream` or `--rates`. Either one gives a usage error with exit code 2.
 
-You ran free mode with streaming on the real simulator in Sprints 0B.2, 0B.3 and 0B.4, with a real-time factor of 0.86 to 1.05. Nothing here has run against an installed Rerun yet. The Rerun calls that log a BeamNGpy point cloud or image directly are unverified. Your run decides whether the view keeps up with real time.
+You ran free mode with streaming on the real simulator in Sprints 0B.2, 0B.3 and 0B.4, with a real-time factor of 0.86 to 1.05. A real `--save` recording with lidar and camera opened in an installed Rerun on 2026-11-19 (0B rerun, Run 4b, 354 MiB for about 5 simulated seconds). Your run decides whether the view keeps up with real time.
 
 ### With a live viewer
 
@@ -681,7 +681,7 @@ You ran free mode with streaming on the real simulator in Sprints 0B.2, 0B.3 and
 python bridge/spike_lidar_rerun.py --home "<your BeamNG.tech folder>"
 ```
 
-The script is written to open a Rerun viewer window and stream into it. That call has not run against an installed Rerun yet, so the viewer may not open. Tell the director what you see.
+The script is written to open a Rerun viewer window and stream into it, but the viewer may not open. This guide records no result for the live viewer. Only a saved recording has opened in Rerun (0B rerun, Run 4b). Tell the director what you see.
 
 ### Save a recording instead
 
@@ -691,7 +691,7 @@ python bridge/spike_lidar_rerun.py --home "<your BeamNG.tech folder>" --save dem
 
 With `--save`, the script writes `recordings/demo.rrd` and opens no viewer. The name must end in `.rrd` and stay inside `--out`. An absolute path, a drive or `..` gives a usage error. Change the folder with `--out` and the file goes there instead.
 
-If you stop the run with Ctrl+C, the script closes the recording before it closes BeamNG.tech, so the file keeps everything logged before you pressed it. It does not print `wrote ...` in that case. The last line is `interrupted: BeamNG.tech closed`. The close call that writes out the file has not run against an installed Rerun yet, so check that the file opens.
+If you stop the run with Ctrl+C, the script closes the recording before it closes BeamNG.tech, so the file keeps everything logged before you pressed it. It does not print `wrote ...` in that case. The last line is `interrupted: BeamNG.tech closed`. This guide records no result for a run that ends with Ctrl+C, so check that the file opens.
 
 To view the saved file later, run `rerun` with the file path. The script's `--help` gives this form.
 
@@ -761,7 +761,7 @@ Do not send the `.rrd` file unless the director asks for it.
 
 ## Run 4: a live view that keeps up, and small recordings (`spike_lidar_rerun.py`)
 
-This run checks the Sprint 0B.3 changes to Demo 1 with its default `--mode free --stream`. You ran free mode with streaming on the real simulator in Sprints 0B.2, 0B.3 and 0B.4, with a real-time factor of 0.86 to 1.05. Nothing here has run against an installed Rerun yet, so these changes and the recording size are not claimed here. Your run decides.
+This run checks the Sprint 0B.3 changes to Demo 1 with its default `--mode free --stream`. You ran free mode with streaming on the real simulator in Sprints 0B.2, 0B.3 and 0B.4, with a real-time factor of 0.86 to 1.05. A real `--save` recording with lidar and camera opened in an installed Rerun on 2026-11-19 (0B rerun, Run 4b, 354 MiB for about 5 simulated seconds). The 0B.3 and 0B.4 recordings were 6.90 and 6.17 MB per simulated second. Your run decides whether the view keeps up.
 
 ### What changed
 
@@ -806,17 +806,17 @@ PNG encoding: <n> camera images in <s> s on the encoder thread
 PNG backlog: the loop found the queue of 8 frames full <k> times and waited <s> s in all for space; no frame was dropped
 ```
 
-- `recording:` is the size of the `.rrd` file on disk, read after the recording is closed, divided by the simulated seconds of the run. Those are Timer seconds in free mode, and steps / 60 in lock-step. 1 MB is 1,000,000 bytes, so the 354 MiB of the 0B.2 recording is about 371 MB.
+- `recording:` is the size of the `.rrd` file on disk, read after the recording is closed, divided by the simulated seconds of the run. Those are Timer seconds in free mode, and steps / 60 in lock-step. 1 MB is 1,000,000 bytes, so the 354 MiB of the Run 4b recording (about 5 simulated seconds) is about 371 MB. The 0B.3 and 0B.4 recordings were 6.90 and 6.17 MB per simulated second.
 - It counts everything in the file: the provenance text, the layout, the `world/ego` positions, the lidar points and their colours, and the PNG images. Before Rerun's own encoding, a lidar point is 15 bytes: three 4-byte floats and three 1-byte colours. A 640 x 360 colour image is 691,200 bytes before PNG if it has three channels (RGB), and 921,600 bytes if it has four (RGBA); the first real run shows which. How much smaller the PNG is depends on the picture.
 - If closing did not write everything to the file, the number is too low. Check that the file opens and plays to the end.
-- Since Sprint 0B.4 the PNGs are encoded on one thread of their own, beside the loop that reads the sensors. The loop only copies each new camera image into a queue that holds 8 images and goes on with its reads. The encoder thread takes the images in order, and the loop logs each encoded image to the recording at the Timer time it was read. The encoder thread runs only Pillow; every BeamNGpy and Rerun call stays on the loop's thread.
+- Since Sprint 0B.4 the PNGs are encoded on one thread of their own, beside the loop that reads the sensors. The loop only copies each new camera image into a queue and goes on with its reads. The queue's bound is 8 images; see "Why 8 images" below. The encoder thread takes the images in order, and the loop logs each encoded image to the recording at the Timer time it was read. The encoder thread runs only Pillow; every BeamNGpy and Rerun call stays on the loop's thread.
 - `PNG encoding:` is the wall time on the encoder thread from the start to the end of each encode, summed over the images, by the same clock as the tables. It is no longer a part of `our processing`. The two threads share one Python interpreter, so the encoder can be held up while the loop runs Python code, and this time can be more than Pillow's own work. The other way round, the encoder's Python steps can still slow the loop a little.
 - `PNG backlog:` says how often the loop found the queue full and how long it waited, in all, for the encoder to make space. A full queue means the encoder fell behind the camera. The loop then waits; it never drops or shrinks an image. That wait is part of `our processing` and holds up the reads after it, as the encoding did before. `0 times` means the encoding never held up the loop. Compare the `schedule` table of the save run with the live run.
-- Why 8 images: the camera makes at most 20 images per simulated second (`requested_update_time=0.05`), so 8 is 0.4 s of camera. A 640 x 360 image of four channels is 921,600 bytes, so a full queue holds under 7.4 MB. Closing the recording waits for at most 9 encodes before BeamNG.tech is closed: the 8 queued images and the one the loop was waiting to queue.
+- Why 8 images: the camera makes at most 20 images per simulated second (`requested_update_time=0.05`), so 8 is 0.4 s of camera. The loop adds its image to the queue before it waits for space, so a full queue can hold 9 images: the 8 that make it full and the one the loop is waiting to queue. A 640 x 360 image of four channels is 921,600 bytes, so 8 images are under 7.4 MB and 9 are under 8.3 MB. Closing the recording waits for at most 9 encodes before BeamNG.tech is closed.
 - A live run prints none of these lines, because nothing measures what the viewer receives. It shows the images as before, without encoding.
 - After Ctrl+C no line is printed. Every image already in the queue, and the image the loop was waiting to queue, is still encoded and logged once, then the recording is closed, then BeamNG.tech. A Ctrl+C that comes while an image is logged waits until that log is done, so the image is logged once. `bridge/tests/test_png_worker.py` checks this on the fake; no real run has tried it yet.
-- If closing takes too long, press Ctrl+C again. The script stops waiting for the encoder, prints `<n> camera frames were not saved: Ctrl+C while the recording closed`, closes the recording with what it has and then closes BeamNG.tech. Those n images are not in the file.
-- If Rerun's log call raises on an image, the script prints `camera frame at <s> s: Rerun's log raised <error>; the frame stays queued and is logged again, on the rule that a log that raises stored nothing` and tries that image again. If Rerun kept part of the failed call, the image can be in the file twice. This has not happened in a run.
+- If closing takes too long, press Ctrl+C again. The script stops waiting for the encoder, prints `<n> camera frames were not saved: Ctrl+C while the recording closed`, closes the recording with what it has and then closes BeamNG.tech. Those n images are not in the file. If the PNG encoder had already failed, the line says so and counts apart the images the failure cost and the ones the Ctrl+C cost: `<n> camera frames were not saved: <k> because PNG encoding failed on the camera frame at <s> s (<error>), <j> because Ctrl+C ended the close`.
+- If Rerun's log call raises on an image, the script prints `camera frame at <s> s: Rerun's log call raised <error>; the frame stays queued and is logged again, on the rule that a log that raises stored nothing` and tries that image again. If Rerun kept part of the failed call, the image can be in the file twice. This has not happened in a run.
 - If Pillow fails on an image, the run stops with `error: EncodeError: PNG encoding failed on the camera frame at <s> s (<error>); <n> camera frames were not recorded: that one and every frame after it`, after a traceback. The images encoded before it are in the recording, and BeamNG.tech is closed as after any other error. If Ctrl+C or a timeout stops the run before the loop sees the failure, the script prints the same line without a traceback and then ends as after any Ctrl+C or timeout.
 
 ### What to send back
@@ -876,7 +876,7 @@ What the number cannot tell you:
 
 - It is not the shape of the car. It is a vertical cylinder, so it cannot tell a hit on the roof from a point on the ground, and ground points inside the radius count. The lowest beams reach the ground at a distance that grows with the lidar's height, so a radius below that distance keeps the ground out. The proper filter, an oriented box around the car, comes with perception.
 - The GPS sits at its own mount, `(0, 1.5, 2.0)` in `sensor_settings.py`, which is about 1.5 m behind the car's origin, so the cylinder is centred about there and not on the middle of the car.
-- The GPS is read less often than the lidar (10 times per wall second against 20 by default in free mode), so its position can be older than the scan. A car that drives at speed v moves v times that age in between: about 1.5 m for 0.1 s at 15 m/s (worked out, not measured). The cylinder then lags the car. This is inference, not a measurement. Points of the car at the front can fall outside the cylinder and points at the rear can fall inside it, so the count can be off in either direction. A higher `--rates gps=...` shortens the age; the `schedule` table shows whether those reads came late.
+- The GPS is read less often than the lidar (5 times per wall second against 20 by default in free mode, since Sprint 0B.4), so its position can be older than the scan. A car that drives at speed v moves v times that age in between: about 3 m for 0.2 s at 15 m/s (worked out, not measured). The cylinder then lags the car. This is inference, not a measurement. Points of the car at the front can fall outside the cylinder and points at the rear can fall inside it, so the count can be off in either direction. A higher `--rates gps=...` shortens the age; the `schedule` table shows whether those reads came late.
 - It takes the lidar points and the GPS x and y to be in one frame, the world frame (see "Limits of `world/ego`"). If the GPS gives no x and y, no scan is counted and the run prints `kite1 lidar: <n> new scans had no GPS position yet and were not counted`. If the two frames differ, the counts mean nothing. Tell the director.
 - Two runs of one height differ because the car drives through different traffic. Run each height twice. If two runs of the same height differ by more than two heights differ from each other, the numbers cannot rank the heights.
 
@@ -904,7 +904,7 @@ Then the same four with `-b` in the folder names. To look at the points instead 
 
 ## If a call fails
 
-Many BeamNGpy calls are marked as unverified for BeamNGpy 1.36, and the Rerun calls are unverified against the installed `rerun-sdk`, so failures are expected.
+Many BeamNGpy calls are marked as unverified for BeamNGpy 1.36, and two Rerun cases are still unverified against the installed `rerun-sdk`: the live viewer and a run that ends with Ctrl+C. A saved `--save` recording with lidar and camera did open in an installed Rerun on 2026-11-19 (0B rerun, Run 4b). Failures are still expected.
 
 1. Copy the whole output, including the traceback above the last line if there is one. Do not shorten it.
 2. Copy the exact command you ran, with the placeholder in place of your real folder.
