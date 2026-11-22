@@ -87,7 +87,7 @@ class Colours(unittest.TestCase):
         steps, _ = run(read_log(DATA / "seed42_baseline_tracks.log"))
         seen = {}
         for _, entities in steps:
-            positions, colours, labels = entities[scene.TRACKS_PATH]
+            _, colours, labels = entities[scene.TRACKS_PATH]
             for label, colour in zip(labels, colours):
                 self.assertEqual(seen.setdefault(label, colour), colour)
         self.assertEqual(len(set(seen.values())), len(seen))

@@ -46,6 +46,8 @@ the `.exe` and the leading `.\`.
    changes the folder, and `--save` takes a name inside it, never a path:
 
    ```powershell
+   cd <your repo folder>
+   .\.venv\Scripts\Activate.ps1
    python viewer/log_to_rerun.py build/dev/demo_tracks.log --save demo.rrd
    ```
 

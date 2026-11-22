@@ -508,7 +508,8 @@ Each item that introduces a lasting rule adds a "## Standing rules (R<n>)" secti
 
 ## Standing rules (R48)
 
-- Only `viewer/rerun_sink.py` imports `rerun`, and only lazily inside `RerunSink.__init__`. Its
+- `viewer/rerun_sink.py` is the only module in `viewer/` that imports `rerun`, and only lazily
+  inside `RerunSink.__init__`. Its
   calls are those of `bridge/kite_bridge/rerun_view.py` plus `labels=` on `Points3D`, each marked
   `# ASSUMPTION:` until a real run. Viewer tests use a fake sink and never import `rerun` or
   `numpy`.
