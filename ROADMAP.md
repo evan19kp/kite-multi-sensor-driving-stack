@@ -386,6 +386,33 @@ never run the real simulator; every test uses the fake.
   over four runs, max 234–275, approximate count) and that 1.9 m is the default because it was the
   lowest tested height with 0. Only measured numbers; no new claims.
 
+## Sprint 0A.3
+
+Synthetic tracking runs into Rerun (Demo 1's second clip), plus bridge docs fixes. Nothing here
+needs the simulator; every acceptance check runs in CI.
+
+- [ ] **R47 `kite_track`: run a tracker over a log and write its tracks** (feat, Sonnet):
+  `tools/kite_track --in <log> --tracker baseline|kalman --out <log>` (default `kalman`, parameters
+  from `tools/baseline_setup.hpp`) feeds the tracker only the `meas` records, step by step in time
+  order, and writes a v0 log with the input's `gt` and `meas` records plus one `track` record per
+  output track per step; usage errors and unreadable input exit non-zero with clear messages. Tests
+  (CTest): on the golden log the output reads back, keeps every `gt` and `meas` record, and scores
+  as `kite_baseline` does (or a pinned score); removing `gt` lines gives identical tracks;
+  byte-identical output on g++ and MSVC.
+- [ ] **R48 `viewer/log_to_rerun.py`: a v0 log as a Rerun recording** (feat, Sonnet; needs R47): a
+  stdlib v0 log reader in `viewer/`; `python viewer/log_to_rerun.py <log> [--save <name.rrd>]
+  [--out <folder>]` logs `ground_truth/actors`, `measurements`, `tracks` (with `track_id` labels and
+  velocity lines) on one timeline `t`; `rerun` imported lazily in one module; tests use a fake
+  logger; `viewer/README.md` gives the three commands for Demo 1's second clip.
+- [ ] **R49 CI runs the viewer tests** (ci, Sonnet; needs R48): the `python` job also runs
+  `python -m unittest discover -s viewer -v`; a test in `scripts/test_ci_changes.py` confirms
+  `viewer/` changes select the `python` job.
+- [ ] **R46 Bridge docs and help match the facts** (fix, Sonnet): `docs/SPIKE-0B.md`,
+  `bridge/README.md`, the R42 line and the scripts' `--help` texts state the measured stream read
+  times, recording sizes, the saved Rerun recording, the GPS/IMU free-mode default and the self-hit
+  numbers; the stale test comment, a test for `_ctrl_c_held` off the main thread, and two messages
+  that state their real cause.
+
 ## Later
 
 Planned, not scheduled. Do not pick these up as roadmap items.
