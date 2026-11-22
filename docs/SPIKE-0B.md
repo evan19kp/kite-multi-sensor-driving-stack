@@ -1,6 +1,6 @@
 # Run the Sprint 0B spike
 
-This guide is for Evan. It tells you how to run the four bridge scripts against BeamNG.tech on your machine and what to send back to the director. Apart from the Sprint 0B.3 lidar-height self-hit counts in Run 5, nothing in this repo has run against the real simulator yet, so expect some BeamNGpy calls to fail. A failure with the full error text is a useful result.
+This guide is for Evan. It tells you how to run the four bridge scripts against BeamNG.tech on your machine and what to send back to the director. You ran streaming and free mode on the real simulator in Sprints 0B.2, 0B.3 and 0B.4, and the lidar-height self-hit counts in Run 5 in Sprint 0B.3. Expect some other BeamNGpy calls to fail. A failure with the full error text is a useful result.
 
 The commands are for PowerShell. Run every command from the repo root, the folder that contains `AGENTS.md`.
 
@@ -130,7 +130,7 @@ sensor: gps pos=(0, 1.5, 2.0) ref_lon=0.0 ref_lat=0.0 is_visualised=False
 sensor: imu pos=(0, 0, 0.5) dir=(0, -1, 0) up=(0, 0, 1) gfx_update_time=0.01 physics_update_time=0.01 is_visualised=False
 ```
 
-The camera renders colour only: `is_render_annotations` and `is_render_depth` are `False`. The lidar and radar values are the BeamNGpy 1.36 defaults, passed explicitly, except the lidar's `pos`, `is_360_mode` and `is_using_shared_memory`, the radar's `dir` and `up`, and `is_visualised=False` on both, which are the bridge's own choices. The camera, GPS and IMU values are the bridge's own choices too. None of these values has run against the real simulator yet, except the lidar's `pos` (see Run 5), so a rejected setting is a useful result. `spike_sensors.py` also writes the table into `sensors.json`, and `spike_multicar.py` into `multicar.json`, under `sensor_settings`.
+The camera renders colour only: `is_render_annotations` and `is_render_depth` are `False`. The lidar and radar values are the BeamNGpy 1.36 defaults, passed explicitly, except the lidar's `pos`, `is_360_mode` and `is_using_shared_memory`, the radar's `dir` and `up`, and `is_visualised=False` on both, which are the bridge's own choices. The camera, GPS and IMU values are the bridge's own choices too. Your real-simulator runs covered the lidar's `pos` (see Run 5) and `is_streaming=True` on the lidar and camera. This guide records no result for the other values, so a rejected setting is a useful result. `spike_sensors.py` also writes the table into `sensors.json`, and `spike_multicar.py` into `multicar.json`, under `sensor_settings`.
 
 The lidar's `pos` is `(0, 0, 1.9)` by default; Run 5 says why. `--lidar-pos X,Y,Z` replaces the lidar's `pos` only (vehicle space, metres). The `sensor:` line and `sensors.json` then show the position you gave, and the adapter passes it to BeamNGpy through the same table. The radar's `pos` stays `(0, 0, 1.7)`. See Run 5.
 
@@ -138,7 +138,7 @@ Every sensor is created with `is_visualised=False`, the last setting on each lin
 
 ### How to read the output
 
-Apart from the Sprint 0B.3 self-hit counts in Run 5, the numbers in this guide come from `--fake` runs. The fake simulator is synthetic, so the BeamNGpy version lines read `fake` and the rates, counts and step speed will differ on the real simulator. The shape of the output is what carries over.
+The example output in this guide comes from `--fake` runs. The numbers from your real-simulator runs (Sprints 0B.2, 0B.3 and 0B.4) are named as yours. The fake simulator is synthetic, so the BeamNGpy version lines read `fake` and the rates, counts and step speed will differ on the real simulator. The shape of the output is what carries over.
 
 ## Run 1: connect (`spike_connect.py`)
 
@@ -362,7 +362,7 @@ Readings are in the order the polls returned them, and a reading that a later po
 
 Every poll costs about 21 ms in your earlier runs, whatever the sensor. `--stream` tests whether streaming avoids that cost for the lidar and the camera. With `--stream`, the bridge creates those two sensors with `is_streaming=True`. The simulator then writes each reading into shared memory, and the bridge reads it with `stream()`, which sends no request to the simulator. The radar, GPS and IMU are still polled, because BeamNGpy 1.36 does not stream them. `--rates` still decides when each sensor is read. Without `--stream`, nothing changes: every sensor is polled, and the output looks as described above.
 
-Nobody has run streaming against the real simulator yet. Your run decides whether it works and whether its data can be trusted.
+You ran streaming on the real simulator in Sprints 0B.2, 0B.3 and 0B.4. A streamed read took about 0.75 to 1.0 ms. Whether the streamed data can be trusted is for each run's `suspect` and `sus_rows` numbers to show.
 
 Run the script twice with the same rates, once without and once with `--stream`:
 
@@ -442,7 +442,7 @@ With `--mode free`:
 - If that has not happened after `--seconds` × 20 wall seconds, the run stops with an error. For the default of 30 seconds the limit is 600 wall seconds. A Timer that stands still, for example because the simulator is paused, reaches this limit. The run does not hang.
 - A Timer reading that is not a number of seconds from 0 up stops the run with one line, `error: free run: unusable Timer reading: ...`, and exit code 1. A bad sensor reading counts under `unexp` and the run goes on. A bad Timer reading stops the run instead, because the Timer decides when the run ends.
 
-Nobody has run free mode against the real simulator yet. Your run decides whether it works, and only your run can show a real-time factor. This mode claims no target.
+You ran free mode on the real simulator in Sprints 0B.2, 0B.3 and 0B.4. With `--stream` as well, the real-time factor was 0.86 to 1.05 and the lidar gave about 10 scans per second. This mode claims no target.
 
 Run the script twice with the same rates, once in each mode:
 
@@ -673,7 +673,7 @@ By default the script runs free with streaming, the same as `--mode free --strea
 
 `--mode lockstep` runs the demo as it was before. It steps the simulator and, once per step, polls the lidar and camera and logs the points coloured by distance from our car (blue near, red at 50 m and beyond), our car's position and the camera image. Our car's position and the traffic cars' positions come from simulator state, so they are ground truth. They appear under `ground_truth/` and only for display. Hide the `ground_truth/` root in the viewer to see the sensor data alone. `--mode lockstep` does not take `--stream` or `--rates`. Either one gives a usage error with exit code 2.
 
-Nobody has run the free default against BeamNG.tech or an installed Rerun yet. The Rerun calls that log a BeamNGpy point cloud or image directly are unverified. Your run decides whether the view keeps up with real time.
+You ran free mode with streaming on the real simulator in Sprints 0B.2, 0B.3 and 0B.4, with a real-time factor of 0.86 to 1.05. Nothing here has run against an installed Rerun yet. The Rerun calls that log a BeamNGpy point cloud or image directly are unverified. Your run decides whether the view keeps up with real time.
 
 ### With a live viewer
 
@@ -761,7 +761,7 @@ Do not send the `.rrd` file unless the director asks for it.
 
 ## Run 4: a live view that keeps up, and small recordings (`spike_lidar_rerun.py`)
 
-This run checks the Sprint 0B.3 changes to Demo 1 with its default `--mode free --stream`. Nobody has run them against BeamNG.tech or an installed Rerun yet, so no speed and no size is claimed here. Your run decides.
+This run checks the Sprint 0B.3 changes to Demo 1 with its default `--mode free --stream`. You ran free mode with streaming on the real simulator in Sprints 0B.2, 0B.3 and 0B.4, with a real-time factor of 0.86 to 1.05. Nothing here has run against an installed Rerun yet, so these changes and the recording size are not claimed here. Your run decides.
 
 ### What changed
 
@@ -840,14 +840,14 @@ With the lidar at `pos` (0, 0, 1.7) you found that it hits our own car: the whol
 
 Your Sprint 0B.3 runs on the real simulator printed the approximate self-hit count (see below) for four heights:
 
-| Lidar height (z) | Approximate self-hits per scan |
+| Lidar height (z) | Approximate self-hits per new scan |
 |---|---|
-| 1.7 m | about 233 |
-| 1.9 m | 0 |
-| 2.1 m | 0 |
-| 2.3 m | 0 |
+| 1.7 m | mean 233.0 in three runs and 233.2 in one; max 234 to 275 |
+| 1.9 m | 0 in every run |
+| 2.1 m | 0 in every run |
+| 2.3 m | 0 in every run |
 
-At 1.7 m you also saw points on the roof spoiler and roof rails; the count cannot say which part of the car a point hit. The three higher heights all print 0, so these runs do not rank them against each other. You chose 1.9 m, the lowest of the heights with no self-hits, and it is the default of every script that creates a lidar (`--lidar-pos` still overrides it). The count is approximate for the reasons under "What the number cannot tell you": it is a cylinder around the GPS position, not the car's shape, so a 0 means no point fell inside that cylinder, not that no beam touched the car. The radar keeps `pos=(0, 0, 1.7)`. The default lives in one place, the `pos` of the lidar in `bridge/kite_bridge/sensor_settings.py`; the `--help` text, the `sensor:` line and the JSON are all derived from it.
+Each count is the `mean` the run printed: the average over the new scans of that run, approximate for the reasons below. The `max` is the largest single scan. At 1.7 m you also saw points on the roof spoiler and roof rails; the count cannot say which part of the car a point hit. The three higher heights all print 0, so these runs do not rank them against each other. The default is 1.9 m because it was the lowest tested height with 0. Every script that creates a lidar uses it (`--lidar-pos` still overrides it). The count is approximate for the reasons under "What the number cannot tell you": it is a cylinder around the GPS position, not the car's shape, so a 0 means no point fell inside that cylinder, not that no beam touched the car. The radar keeps `pos=(0, 0, 1.7)`. The default lives in one place, the `pos` of the lidar in `bridge/kite_bridge/sensor_settings.py`; the `--help` text, the `sensor:` line and the JSON are all derived from it.
 
 ### What the options do
 
