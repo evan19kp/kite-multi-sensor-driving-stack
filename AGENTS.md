@@ -518,6 +518,14 @@ Each item that introduces a lasting rule adds a "## Standing rules (R<n>)" secti
   `measurements` or `tracks`. `log_to_rerun.py` writes a recording only inside `--out`, which
   follows R30's folder rule (exit 2 otherwise); `.rrd` files are never committed.
 
+## Standing rules (R49)
+
+- CI's `python` job runs the viewer tests (`python -m unittest discover -s viewer -v`) with no
+  installs, so viewer tests stay stdlib-only.
+- Viewer tests read `sim/tests/data/*.log`, so `scripts/ci_paths.json` selects the `python` job
+  for `sim/tests/data/` as well as the C++ jobs. Its rule stays ahead of the `sim/` rule, because
+  the first matching prefix wins.
+
 ## Simulator files (hard rule)
 
 - Never read, list, search, copy, launch or write about the simulator's install folder, its user
