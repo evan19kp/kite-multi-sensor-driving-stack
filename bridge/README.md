@@ -3,8 +3,9 @@
 Python code that talks to the BeamNG.tech simulator through BeamNGpy. Built so far: a simulator
 interface, a real adapter, a fake simulator, three spike scripts that measure the simulator's
 connection, sensors and multi-car behaviour, and a Rerun lidar demo script. Planned, not built
-yet: the local link to the core. No result from the real simulator is recorded here; Evan runs
-the spikes on it, and nothing here has run against an installed Rerun yet.
+yet: the local link to the core. The only real-simulator result recorded here is the Sprint 0B.3
+approximate self-hit count by lidar height (see Scripts). Evan runs the spikes on the real
+simulator, and nothing here has run against an installed Rerun yet.
 
 ## Layout
 
@@ -74,10 +75,10 @@ with `--mode free` reads per wall second, default `lidar=20,camera=40,radar=10,g
 The three scripts that create a lidar (`spike_sensors.py`, `spike_multicar.py` and
 `spike_lidar_rerun.py`) also take `--lidar-pos X,Y,Z` (where the lidar sits, vehicle space,
 metres, default `0,0,1.9`; shown on the `sensor:` line) and `--ego-radius METRES` (default 2.5).
-The default is 1.9 m because the approximate self-hit count in the Sprint 0B.3 runs on the real simulator was about
-233 points per scan at 1.7 m, where points were seen on the roof spoiler and roof rails, and 0 at
-1.9, 2.1 and 2.3 m;
-1.9 m is the lowest of the clean heights (see Run 5 in `docs/SPIKE-0B.md`).
+The default is 1.9 m because the approximate self-hit count in the Sprint 0B.3 runs on the real
+simulator was about 233 points per scan at 1.7 m, where points were seen on the roof spoiler and
+roof rails, and 0 at 1.9, 2.1 and 2.3 m; 1.9 m is the lowest of the clean heights (see Run 5 in
+`docs/SPIKE-0B.md`).
 `spike_connect.py` creates no lidar and has neither. A value that is not three finite numbers
 (for `--lidar-pos`) or not above 0 (for `--ego-radius`) is a usage error (exit code 2). Write a
 negative position as `--lidar-pos=-0.5,0,1.9`. `--lidar-pos` replaces only the lidar's `pos` in
@@ -93,8 +94,8 @@ ground truth, in lock-step and free mode alike; it is printed and written to the
 logged to Rerun and never fed to anything that drives. A scan read before the GPS gave an x and y
 is not counted and is reported. The count assumes the lidar points and the GPS x, y are in one
 (world) frame. Its only real-simulator results so far are the Sprint 0B.3 height runs above; see
-`docs/SPIKE-0B.md`, Run 5, for how to read it. `spike_lidar_rerun.py --mode lockstep` counts nothing, so `--ego-radius` there is a
-usage error.
+`docs/SPIKE-0B.md`, Run 5, for how to read it. `spike_lidar_rerun.py --mode lockstep` counts
+nothing, so `--ego-radius` there is a usage error.
 
 `--timeout` is the longest wait in seconds for any one simulator call, map loading included; it
 must be above 0. Every run ends BeamNG.tech through one shutdown path. After a normal run or an

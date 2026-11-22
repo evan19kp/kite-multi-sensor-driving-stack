@@ -1,6 +1,6 @@
 # Run the Sprint 0B spike
 
-This guide is for Evan. It tells you how to run the four bridge scripts against BeamNG.tech on your machine and what to send back to the director. Nothing in this repo has run against the real simulator yet, so expect some BeamNGpy calls to fail. A failure with the full error text is a useful result.
+This guide is for Evan. It tells you how to run the four bridge scripts against BeamNG.tech on your machine and what to send back to the director. Apart from the Sprint 0B.3 lidar-height self-hit counts in Run 5, nothing in this repo has run against the real simulator yet, so expect some BeamNGpy calls to fail. A failure with the full error text is a useful result.
 
 The commands are for PowerShell. Run every command from the repo root, the folder that contains `AGENTS.md`.
 
@@ -136,7 +136,7 @@ The lidar's `pos` is `(0, 0, 1.9)` by default; Run 5 says why. `--lidar-pos X,Y,
 
 ### How to read the output
 
-The numbers in this guide come from `--fake` runs. The fake simulator is synthetic, so the BeamNGpy version lines read `fake` and the rates, counts and step speed will differ on the real simulator. The shape of the output is what carries over.
+Apart from the Sprint 0B.3 self-hit counts in Run 5, the numbers in this guide come from `--fake` runs. The fake simulator is synthetic, so the BeamNGpy version lines read `fake` and the rates, counts and step speed will differ on the real simulator. The shape of the output is what carries over.
 
 ## Run 1: connect (`spike_connect.py`)
 
