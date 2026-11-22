@@ -1,10 +1,12 @@
 """The PNG encoder thread of a saved recording, against a fake Rerun and fake encoders. No test
 waits for real: an encoder's cost moves a FakeClock, and a test decides when a frame may be
 encoded with semaphores. A semaphore's or a join's timeout only ends a broken test instead of
-hanging it."""
+hanging it. A Ctrl+C that a test sends from inside a fake Rerun call is `signal.raise_signal`,
+which runs the SIGINT handler at once, on the run's thread."""
 
 import contextlib
 import io
+import signal
 import tempfile
 import threading
 import unittest
@@ -191,7 +193,8 @@ class PngWorkerTest(unittest.TestCase):
             log(path, item)
 
         fake.log.side_effect = ctrl_c_at_the_second_camera_log
-        with self.assertRaises(KeyboardInterrupt):
+        stderr = io.StringIO()
+        with self.assertRaises(KeyboardInterrupt), contextlib.redirect_stderr(stderr):
             recorder.set_time(0.5)
         encoder.allow(1)
         recorder.close()
@@ -199,6 +202,37 @@ class PngWorkerTest(unittest.TestCase):
         # waiting, and close logged them and frame 4, each at its own time.
         self.assertEqual(logged_at(events, CAMERA_PATH), [(n / 10, png(n)) for n in range(1, 5)])
         fake.disconnect.assert_called_once_with()
+        self.assertEqual(stderr.getvalue().splitlines(),
+                         ["camera frame at 0.200 s: Rerun's log raised KeyboardInterrupt; the frame stays queued and "
+                          "is logged again, on the rule that a log that raises stored nothing"])
+
+    def test_ctrl_c_as_rerun_takes_a_frame_logs_it_once_and_still_stops_the_loop(self):
+        clock = FakeClock()
+        encoder = GatedPng(clock)
+        recorder, fake, events = self.recorder(encoder, clock)
+        for n in range(1, 5):
+            recorder.set_time(n / 10)
+            recorder.log_image(CAMERA_PATH, image(n))
+        encoder.allow(3)
+        # The encoder starts frame 4 only after frames 1 to 3 are encoded.
+        for _ in range(4):
+            encoder.wait_until_encoding()
+        log = fake.log.side_effect
+
+        def ctrl_c_once_rerun_has_frame_2(path, item):
+            log(path, item)
+            if item == png(2):
+                signal.raise_signal(signal.SIGINT)
+
+        fake.log.side_effect = ctrl_c_once_rerun_has_frame_2
+        with self.assertRaises(KeyboardInterrupt):
+            recorder.set_time(0.5)
+        self.assertEqual(logged_at(events, CAMERA_PATH), [(n / 10, png(n)) for n in (1, 2)])
+        fake.log.side_effect = log
+        encoder.allow(1)
+        recorder.close()
+        # Rerun had frame 2 when Ctrl+C came, so close logs frames 3 and 4 and never frame 2 again.
+        self.assertEqual(logged_at(events, CAMERA_PATH), [(n / 10, png(n)) for n in range(1, 5)])
 
     def test_a_camera_log_that_keeps_raising_still_lets_close_flush_the_recording(self):
         clock = FakeClock()
@@ -219,23 +253,39 @@ class PngWorkerTest(unittest.TestCase):
             log(path, item)
 
         fake.log.side_effect = camera_log_fails
-        with self.assertRaises(RuntimeError):
-            recorder.set_time(0.3)
-        encoder.allow(1)
-        with self.assertRaises(RuntimeError):
-            recorder.close()
+        stderr = io.StringIO()
+        with contextlib.redirect_stderr(stderr):
+            with self.assertRaises(RuntimeError):
+                recorder.set_time(0.3)
+            encoder.allow(1)
+            with self.assertRaises(RuntimeError):
+                recorder.close()
         fake.disconnect.assert_called_once_with()
+        # Frame 1's log raised at set_time and again at close, so neither frame was saved.
+        retry = ("camera frame at 0.100 s: Rerun's log raised RuntimeError; the frame stays queued and is logged "
+                 "again, on the rule that a log that raises stored nothing")
+        self.assertEqual(stderr.getvalue().splitlines(),
+                         [retry, retry, "2 camera frames were not saved: RuntimeError while the recording closed"])
 
 
 class SavedRunTest(unittest.TestCase):
     """spike_lidar_rerun.py --fake in lock-step with a real RerunRecorder on a fake Rerun, so the
     run goes through `common.session` and its shutdown path."""
 
-    def run_main(self, sim_class, encoder, clock):
+    def run_main(self, sim_class, encoder, clock, after_log=None):
+        """`after_log(item)`, if given, runs after the fake Rerun has stored each logged item."""
         import spike_lidar_rerun
 
         fake = fake_rerun(writes=1)
         events = tracked(fake)
+        if after_log is not None:
+            log = fake.log.side_effect
+
+            def log_then(path, item):
+                log(path, item)
+                after_log(item)
+
+            fake.log.side_effect = log_then
         sims = []
         closed_before_recording = []
         fake.disconnect.side_effect = lambda: closed_before_recording.extend(s.closed for s in sims)
@@ -280,9 +330,9 @@ class SavedRunTest(unittest.TestCase):
         # step 6. All five reach the recording in order, each at its step's time.
         self.assertEqual(logged_at(events, CAMERA_PATH), [(n / STEP_HZ, png(n)) for n in range(1, queued + 1)])
 
-    def test_ctrl_c_in_a_put_waiting_on_a_full_queue_records_the_queued_frames_then_shuts_down(self):
+    def test_ctrl_c_in_a_put_waiting_on_a_full_queue_records_that_frame_too_then_shuts_down(self):
         def ctrl_c():
-            encoder.allow(PNG_QUEUE_FRAMES)
+            encoder.allow(PNG_QUEUE_FRAMES + 1)
             raise KeyboardInterrupt
 
         clock = LoopClock(ctrl_c)
@@ -290,11 +340,41 @@ class SavedRunTest(unittest.TestCase):
         code, stderr, events = self.run_main(FakeSim, encoder, clock)
         self.assertEqual((code, stderr), (130, "interrupted: BeamNG.tech closed\n"))
         # Steps 1 to 8 fill the queue with frames none of which may be encoded yet. Step 9's put
-        # finds it full, and Ctrl+C comes as its wait starts, so frame 9 never enters the queue.
-        # The 8 queued frames are encoded at close and reach the recording in order, each at its
-        # step's time; run_main checks that the recording closed before the simulator.
+        # finds it full, and Ctrl+C comes as its wait starts. Frame 9 was the recorder's before
+        # the wait, so all 9 frames are encoded at close and reach the recording in order, each
+        # at its step's time; run_main checks that the recording closed before the simulator.
         self.assertEqual(logged_at(events, CAMERA_PATH),
-                         [(n / STEP_HZ, png(n)) for n in range(1, PNG_QUEUE_FRAMES + 1)])
+                         [(n / STEP_HZ, png(n)) for n in range(1, PNG_QUEUE_FRAMES + 2)])
+
+    def test_a_second_ctrl_c_while_the_recording_closes_says_how_many_frames_were_not_saved(self):
+        clock = FakeClock()
+        encoder = GatedPng(clock)
+        queued = 5
+        threads_before = set(threading.enumerate())
+
+        class CtrlCWithFramesQueued(FakeSim):
+            def step(self, n=1):
+                if self._steps == queued:
+                    encoder.allow(2)
+                    raise KeyboardInterrupt
+                super().step(n)
+
+        def second_ctrl_c(item):
+            if item == png(2):
+                signal.raise_signal(signal.SIGINT)
+
+        code, stderr, events = self.run_main(CtrlCWithFramesQueued, encoder, clock, after_log=second_ctrl_c)
+        encoder.allow(queued - 2)
+        for thread in set(threading.enumerate()) - threads_before:
+            thread.join(GIVE_UP_S)
+        # Steps 1 to 5 queue frames 1 to 5 and Ctrl+C comes in step 6, with only frames 1 and 2
+        # allowed to be encoded. Closing logs frame 1, and a second Ctrl+C comes as frame 2 is
+        # logged. Frame 3 can never be encoded until the test allows it, so only the second
+        # Ctrl+C ends the wait: frames 1 and 2 are saved, and 3, 4 and 5 are counted.
+        self.assertEqual((code, stderr.splitlines()),
+                         (130, ["3 camera frames were not saved: Ctrl+C while the recording closed",
+                                "interrupted: BeamNG.tech closed"]))
+        self.assertEqual(logged_at(events, CAMERA_PATH), [(n / STEP_HZ, png(n)) for n in (1, 2)])
 
     def test_an_encoder_exception_found_by_a_waiting_put_is_reported_and_stops_the_run_cleanly(self):
         clock = LoopClock(lambda: encoder.allow(1))
