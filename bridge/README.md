@@ -73,7 +73,10 @@ with `--mode free` reads per wall second, default `lidar=20,camera=40,radar=10,g
 
 The three scripts that create a lidar (`spike_sensors.py`, `spike_multicar.py` and
 `spike_lidar_rerun.py`) also take `--lidar-pos X,Y,Z` (where the lidar sits, vehicle space,
-metres, default `0,0,1.7`; shown on the `sensor:` line) and `--ego-radius METRES` (default 2.5).
+metres, default `0,0,1.9`; shown on the `sensor:` line) and `--ego-radius METRES` (default 2.5).
+The default is 1.9 m because the approximate self-hit count in the Sprint 0B.3 runs on the real simulator was about
+233 points per scan at 1.7 m (the roof spoiler and the roof rails) and 0 at 1.9, 2.1 and 2.3 m;
+1.9 m is the lowest of the clean heights (see Run 5 in `docs/SPIKE-0B.md`).
 `spike_connect.py` creates no lidar and has neither. A value that is not three finite numbers
 (for `--lidar-pos`) or not above 0 (for `--ego-radius`) is a usage error (exit code 2). Write a
 negative position as `--lidar-pos=-0.5,0,1.9`. `--lidar-pos` replaces only the lidar's `pos` in

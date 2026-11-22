@@ -355,7 +355,7 @@ nothing until Evan's run prints it. Agents never run the real simulator; every t
   frames encoded and backlog waits; `docs/SPIKE-0B.md` updated. Tests (fake only, no `PIL`): fake
   encoder cost, order and times kept, full queue waits and counts, Ctrl+C with frames queued records
   all, an encoder exception is reported and stops the run cleanly.
-- [ ] **R42 Lidar default at 1.9 m** (feat, Sonnet; needs R40): the lidar's default `pos` becomes
+- [x] **R42 Lidar default at 1.9 m** (feat, Sonnet; needs R40): the lidar's default `pos` becomes
   (0, 0, 1.9) everywhere (`--lidar-pos` still overrides), shown on the `sensor:` line; the docs say
   why (Evan's 0B.3 runs: approximate self-hits ≈ 233 per scan at 1.7 m, 0 at 1.9, 2.1 and 2.3 m);
   `docs/SPIKE-0B.md`, `bridge/README.md` updated. Tests: the default reaches the sensor settings and
