@@ -14,6 +14,13 @@ Scores tracker output against ground truth.
   - `--association two_stage|joint|joint_likelihood`: `KalmanTracker` association mode, only with
     `--tracker kalman`; `two_stage` is the default.
   - `--seeds N | A-B`: run seeds 1..N with N >= 1, or A..B with 1 <= A <= B (default 1..20).
+- `tools/kite_track --in <log> --out <log> [--tracker baseline|kalman]` runs a tracker over a log
+  and writes a log with the input's `gt` and `meas` records plus one `track` record per output
+  track and step. `kalman` is the default; both trackers use the `kite_baseline` settings from
+  `tools/baseline_setup.hpp`. The tracker gets the `meas` records only, one time step at a time
+  (the records that share a `t`, in time order), so a step with no `meas` record is not run. Track
+  records already in the input are dropped. Score the output with `kite_score --log <out>`. A usage
+  error exits 2; an unreadable input or unwritable output exits 1.
 - `tools/kite_association_study` runs `KalmanTracker` on seeds 101-120 and prints tables of the
   measurements that tentative tracks took from confirmed tracks of the same vehicle.
   `tools/kite_drop_study` measures how often `KalmanTracker` drops a tentative track. Both are run

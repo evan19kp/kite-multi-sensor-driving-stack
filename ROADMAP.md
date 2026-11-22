@@ -391,7 +391,7 @@ never run the real simulator; every test uses the fake.
 Synthetic tracking runs into Rerun (Demo 1's second clip), plus bridge docs fixes. Nothing here
 needs the simulator; every acceptance check runs in CI.
 
-- [ ] **R47 `kite_track`: run a tracker over a log and write its tracks** (feat, Sonnet):
+- [x] **R47 `kite_track`: run a tracker over a log and write its tracks** (feat, Sonnet):
   `tools/kite_track --in <log> --tracker baseline|kalman --out <log>` (default `kalman`, parameters
   from `tools/baseline_setup.hpp`) feeds the tracker only the `meas` records, step by step in time
   order, and writes a v0 log with the input's `gt` and `meas` records plus one `track` record per

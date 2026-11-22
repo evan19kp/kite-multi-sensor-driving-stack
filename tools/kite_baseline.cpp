@@ -26,7 +26,6 @@ namespace {
 
 using kite::tool_format::format_int;
 
-constexpr double kTrackerGateM = 5.0;
 constexpr int kDefaultSeeds = 20;
 
 constexpr const char* kUsage =
@@ -135,7 +134,7 @@ std::unique_ptr<kite::Tracker> make_tracker(const Options& options) {
     return std::make_unique<kite::KalmanTracker>(kite::baseline_setup::make_kalman_tracker(
         options.association.value_or(kite::AssociationMode::two_stage)));
   }
-  return std::make_unique<kite::NearestNeighbourBaseline>(kTrackerGateM);
+  return std::make_unique<kite::NearestNeighbourBaseline>(kite::baseline_setup::kBaselineTrackerGateM);
 }
 
 kite::ScoreResult run_seed(std::uint64_t seed, const Options& options) {
