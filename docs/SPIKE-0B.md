@@ -1,6 +1,6 @@
 # Run the Sprint 0B spike
 
-This guide is for Evan. It tells you how to run the four bridge scripts against BeamNG.tech on your machine and what to send back to the director. You ran streaming and free mode on the real simulator in Sprints 0B.2, 0B.3 and 0B.4, and the lidar-height self-hit counts in Run 5 in Sprint 0B.3. This guide records no result for other BeamNGpy calls, so expect some of them to fail. A failure with the full error text is a useful result.
+This guide is for Evan. It tells you how to run the four bridge scripts against BeamNG.tech on your machine and what to send back to the director. You ran streaming and free mode on the real simulator in Sprints 0B.2, 0B.3 and 0B.4, and the lidar-height self-hit counts in Run 5 in Sprint 0B.3. Expect some other BeamNGpy calls to fail. A failure with the full error text is a useful result.
 
 The commands are for PowerShell. Run every command from the repo root, the folder that contains `AGENTS.md`.
 
@@ -673,7 +673,7 @@ By default the script runs free with streaming, the same as `--mode free --strea
 
 `--mode lockstep` runs the demo as it was before. It steps the simulator and, once per step, polls the lidar and camera and logs the points coloured by distance from our car (blue near, red at 50 m and beyond), our car's position and the camera image. Our car's position and the traffic cars' positions come from simulator state, so they are ground truth. They appear under `ground_truth/` and only for display. Hide the `ground_truth/` root in the viewer to see the sensor data alone. `--mode lockstep` does not take `--stream` or `--rates`. Either one gives a usage error with exit code 2.
 
-You ran the free default (`--mode free --stream`) against BeamNG.tech in Sprints 0B.2, 0B.3 and 0B.4, with a real-time factor of 0.86 to 1.05. Nothing here has run against an installed Rerun yet. The Rerun calls that log a BeamNGpy point cloud or image directly are unverified. Your run decides whether the view keeps up with real time.
+You ran free mode with streaming on the real simulator in Sprints 0B.2, 0B.3 and 0B.4, with a real-time factor of 0.86 to 1.05. Nothing here has run against an installed Rerun yet. The Rerun calls that log a BeamNGpy point cloud or image directly are unverified. Your run decides whether the view keeps up with real time.
 
 ### With a live viewer
 

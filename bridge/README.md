@@ -300,8 +300,8 @@ python bridge/spike_lidar_rerun.py --fake --seconds 2 --out scratch/example
 ```
 
 In free mode the fake runs on the real clock, so this takes about 2 wall seconds. Evan ran free
-mode with streaming, this script's default, on the real simulator in Sprints 0B.2, 0B.3 and
-0B.4, with a real-time factor of 0.86 to 1.05. Nothing here has run against an installed Rerun,
+mode with streaming on the real simulator in Sprints 0B.2, 0B.3 and 0B.4, with a real-time
+factor of 0.86 to 1.05. Nothing here has run against an installed Rerun,
 and the fake's real-time factor is the fake's own speed.
 
 `.rrd` files are recordings: they go only under `--out` and are never committed. A recording
