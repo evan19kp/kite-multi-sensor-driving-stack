@@ -270,12 +270,14 @@ class LidarOptionsTest(unittest.TestCase):
         import spike_multicar
         import spike_sensors
 
-        _, _, _, _, saved = run_script(spike_sensors, "--rates", "all=60")
+        code, _, stderr, _, saved = run_script(spike_sensors, "--rates", "all=60")
+        self.assertEqual(code, 0, stderr)
         data = saved["sensors.json"]
         self.assertEqual(data["sensor_settings"]["lidar"]["pos"], [0, 0, 1.9])
         lidar = next(row for row in data["sensors"] if row["sensor"] == "lidar")
         self.assertEqual(lidar["self_hits_approx"]["lidar_pos"], [0.0, 0.0, 1.9])
-        _, _, _, _, saved = run_script(spike_multicar)
+        code, _, stderr, _, saved = run_script(spike_multicar)
+        self.assertEqual(code, 0, stderr)
         self.assertEqual(saved["multicar.json"]["sensor_settings"]["lidar"]["pos"], [0, 0, 1.9])
         for module, extra, _ in self.modules():
             with self.assertRaises(SystemExit) as raised, contextlib.redirect_stdout(io.StringIO()) as shown:

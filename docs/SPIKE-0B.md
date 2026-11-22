@@ -130,7 +130,7 @@ sensor: gps pos=(0, 1.5, 2.0) ref_lon=0.0 ref_lat=0.0
 sensor: imu pos=(0, 0, 0.5) dir=(0, -1, 0) up=(0, 0, 1) gfx_update_time=0.01 physics_update_time=0.01
 ```
 
-The camera renders colour only: `is_render_annotations` and `is_render_depth` are `False`. The lidar and radar values are the BeamNGpy 1.36 defaults, passed explicitly, except `is_360_mode`, `is_using_shared_memory` and the radar `dir` and `up`, which are the bridge's own choices. The camera, GPS and IMU values are the bridge's own choices too. None of these values has run against the real simulator yet, so a rejected setting is a useful result. `spike_sensors.py` also writes the table into `sensors.json`, and `spike_multicar.py` into `multicar.json`, under `sensor_settings`.
+The camera renders colour only: `is_render_annotations` and `is_render_depth` are `False`. The lidar and radar values are the BeamNGpy 1.36 defaults, passed explicitly, except `is_360_mode`, `is_using_shared_memory` and the radar `dir` and `up`, which are the bridge's own choices. The camera, GPS and IMU values are the bridge's own choices too. None of these values has run against the real simulator yet, except the lidar's `pos` (see Run 5), so a rejected setting is a useful result. `spike_sensors.py` also writes the table into `sensors.json`, and `spike_multicar.py` into `multicar.json`, under `sensor_settings`.
 
 The lidar's `pos` is `(0, 0, 1.9)` by default; Run 5 says why. `--lidar-pos X,Y,Z` replaces the lidar's `pos` only (vehicle space, metres). The `sensor:` line and `sensors.json` then show the position you gave, and the adapter passes it to BeamNGpy through the same table. The radar's `pos` stays `(0, 0, 1.7)`. See Run 5.
 
@@ -838,12 +838,12 @@ Your Sprint 0B.3 runs on the real simulator printed the approximate self-hit cou
 
 | Lidar height (z) | Approximate self-hits per scan |
 |---|---|
-| 1.7 m | about 233 (the roof spoiler and the roof rails) |
+| 1.7 m | about 233 |
 | 1.9 m | 0 |
 | 2.1 m | 0 |
 | 2.3 m | 0 |
 
-The three higher heights all print 0, so these runs do not rank them against each other. You chose 1.9 m, the lowest of the heights with no self-hits, and it is the default of every script that creates a lidar (`--lidar-pos` still overrides it). The count is approximate for the reasons under "What the number cannot tell you": it is a cylinder around the GPS position, not the car's shape, so a 0 means no point fell inside that cylinder, not that no beam touched the car. The radar keeps `pos=(0, 0, 1.7)`. The default lives in one place, the `pos` of the lidar in `bridge/kite_bridge/sensor_settings.py`; the `--help` text, the `sensor:` line and the JSON are all derived from it.
+At 1.7 m you also saw points on the roof spoiler and roof rails; the count cannot say which part of the car a point hit. The three higher heights all print 0, so these runs do not rank them against each other. You chose 1.9 m, the lowest of the heights with no self-hits, and it is the default of every script that creates a lidar (`--lidar-pos` still overrides it). The count is approximate for the reasons under "What the number cannot tell you": it is a cylinder around the GPS position, not the car's shape, so a 0 means no point fell inside that cylinder, not that no beam touched the car. The radar keeps `pos=(0, 0, 1.7)`. The default lives in one place, the `pos` of the lidar in `bridge/kite_bridge/sensor_settings.py`; the `--help` text, the `sensor:` line and the JSON are all derived from it.
 
 ### What the options do
 
