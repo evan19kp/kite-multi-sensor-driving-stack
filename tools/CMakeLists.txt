@@ -10,6 +10,10 @@ add_executable(kite_baseline kite_baseline.cpp)
 target_link_libraries(kite_baseline PRIVATE kite_sim kite_eval kite_core)
 kite_enable_warnings(kite_baseline)
 
+add_executable(kite_track kite_track.cpp)
+target_link_libraries(kite_track PRIVATE kite_sim kite_core)
+kite_enable_warnings(kite_track)
+
 add_executable(kite_association_study kite_association_study.cpp)
 target_link_libraries(kite_association_study PRIVATE kite_sim kite_eval kite_core)
 target_compile_options(kite_association_study
@@ -74,6 +78,51 @@ if(KITE_BUILD_TESTS)
             -DCOPY=${CMAKE_CURRENT_BINARY_DIR}/no_match.log
             "-DEXPECT_STDOUT=matched=0 missed=2 false=2 rmse_m=n/a id_switches=0 steps=2"
             -P ${CMAKE_CURRENT_SOURCE_DIR}/score_log.cmake)
+
+  add_executable(kite_tools_tests tests/track_log_test.cpp)
+  target_link_libraries(kite_tools_tests PRIVATE kite_sim kite_eval kite_core GTest::gmock_main)
+  target_include_directories(kite_tools_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+  target_compile_options(kite_tools_tests
+                         PRIVATE $<$<CXX_COMPILER_ID:GNU,Clang,AppleClang>:-ffp-contract=off>)
+  kite_enable_warnings(kite_tools_tests)
+  gtest_discover_tests(kite_tools_tests)
+
+  kite_exit_test(kite_track_help kite_track 0 "--help")
+  kite_exit_test(kite_track_no_args kite_track 2 "")
+  kite_exit_test(kite_track_unknown_flag kite_track 2 "--bogus;1")
+  kite_exit_test(kite_track_duplicate_flag kite_track 2 "--in;a.log;--in;b.log;--out;c.log")
+  kite_exit_test(kite_track_missing_value kite_track 2 "--in;a.log;--out")
+  kite_exit_test(kite_track_missing_in kite_track 2 "--out;c.log")
+  kite_exit_test(kite_track_missing_out kite_track 2 "--in;a.log")
+  kite_exit_test(kite_track_tracker_bad_value kite_track 2
+    "--in;a.log;--out;c.log;--tracker;bogus")
+  kite_exit_test(kite_track_help_with_another_flag kite_track 2 "--help;--in")
+  kite_exit_test(kite_track_missing_input kite_track 1
+    "--in;${CMAKE_CURRENT_BINARY_DIR}/no_such_dir/x.log;--out;${CMAKE_CURRENT_BINARY_DIR}/unused.log"
+    "-DERROR_TEXT=cannot read")
+  kite_exit_test(kite_track_input_not_a_log kite_track 1
+    "--in;${PROJECT_SOURCE_DIR}/eval/README.md;--out;${CMAKE_CURRENT_BINARY_DIR}/unused.log"
+    "-DERROR_TEXT=cannot read")
+  kite_exit_test(kite_track_write_failure kite_track 1
+    "--in;${PROJECT_SOURCE_DIR}/sim/tests/data/seed42.log;--out;${CMAKE_CURRENT_BINARY_DIR}/no_such_dir/x.log")
+
+  # The golden log (3 vehicles, 2 s) is not kite_baseline's scenario, so these scores are pinned
+  # from kite_track and kite_score. The RunTracker tests check the kite_baseline numbers.
+  set(kite_track_scores
+    "baseline|matched=57 missed=6 false=0 rmse_m=0.738 id_switches=4 steps=21"
+    "kalman|matched=56 missed=7 false=0 rmse_m=0.375 id_switches=0 steps=21")
+  foreach(entry IN LISTS kite_track_scores)
+    string(REPLACE "|" ";" parts "${entry}")
+    list(GET parts 0 tracker)
+    list(GET parts 1 expect)
+    add_test(NAME kite_track_${tracker}_golden
+      COMMAND ${CMAKE_COMMAND} -DTRACK=$<TARGET_FILE:kite_track> -DSCORE=$<TARGET_FILE:kite_score>
+              -DIN=${PROJECT_SOURCE_DIR}/sim/tests/data/seed42.log -DTRACKER=${tracker}
+              -DGOLDEN=${PROJECT_SOURCE_DIR}/sim/tests/data/seed42_${tracker}_tracks.log
+              -DWORK=${CMAKE_CURRENT_BINARY_DIR} -DNAME=seed42_${tracker}
+              "-DEXPECT_STDOUT=${expect}"
+              -P ${CMAKE_CURRENT_SOURCE_DIR}/track_log.cmake)
+  endforeach()
 
   kite_exit_test(kite_baseline_help kite_baseline 0 "--help")
   kite_exit_test(kite_baseline_zero_seeds kite_baseline 2 "--seeds;0")

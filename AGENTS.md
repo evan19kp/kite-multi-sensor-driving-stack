@@ -497,6 +497,15 @@ Each item that introduces a lasting rule adds a "## Standing rules (R<n>)" secti
 - Tests send a Ctrl+C from inside a fake Rerun call with `signal.raise_signal(signal.SIGINT)`,
   never by sleeping or timing.
 
+## Standing rules (R47)
+
+- `kite_track` gives a tracker the `meas` records only, through `kite::tool_track::run_tracker`,
+  which takes measurements and nothing else. The `gt` records are copied to the output for scoring
+  and display, never fed to a tracker.
+- `sim/tests/data/seed42_baseline_tracks.log` and `seed42_kalman_tracks.log` change only by copying
+  what `kite_track` writes after a deliberate tracker or setup change; the `kite_track_*_golden`
+  tests compare them byte for byte and check the pinned score.
+
 ## Simulator files (hard rule)
 
 - Never read, list, search, copy, launch or write about the simulator's install folder, its user
