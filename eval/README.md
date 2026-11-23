@@ -9,11 +9,19 @@ Scores tracker output against ground truth.
 - `tools/kite_baseline` runs a tracker on generated scenarios and prints a Markdown table with one
   row per seed and a mean row. Without options it runs the baseline tracker and prints the table in
   `docs/BASELINE.md`.
+  - `--scenario straight|hard`: `straight` (default) is the scenario above, with output unchanged;
+    `hard` adds turning, speed changes and clutter (2 false detections per step on average). The
+    `hard` tables are in the "Hard scenario" section of `docs/BASELINE.md`.
   - `--tracker baseline|kalman`: `baseline` (default) is `NearestNeighbourBaseline`; `kalman` is
     `KalmanTracker`.
   - `--association two_stage|joint|joint_likelihood`: `KalmanTracker` association mode, only with
     `--tracker kalman`; `two_stage` is the default.
   - `--seeds N | A-B`: run seeds 1..N with N >= 1, or A..B with 1 <= A <= B (default 1..20).
+  - `--grid A-B`: the Kalman tuning grid (q in {0.01, 0.1, 1, 10}, initial velocity sigma in {5, 10,
+    20}) on seeds A..B. It prints one mean row per setting and the setting with the lowest mean of
+    missed + false + id_switches, ties by lower rmse_m. Every seed must be a tuning seed (A >= 101);
+    a range that includes a reporting seed exits 2. It cannot be combined with `--tracker`,
+    `--association` or `--seeds`.
 - `tools/kite_track --in <log> --out <log> [--tracker baseline|kalman]` runs a tracker over a log
   and writes a log with the input's `gt` and `meas` records plus one `track` record per output
   track and step. `kalman` is the default; both trackers use the `kite_baseline` settings from
