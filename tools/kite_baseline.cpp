@@ -124,13 +124,11 @@ void parse_tracker(std::string_view value, Options& options) {
 }
 
 void parse_scenario(std::string_view value, Options& options) {
-  if (value == "straight") {
-    options.scenario = Scenario::straight;
-  } else if (value == "hard") {
-    options.scenario = Scenario::hard;
-  } else {
+  const std::optional<Scenario> scenario = kite::baseline_setup::parse_scenario(value);
+  if (!scenario) {
     throw UsageError("invalid value for --scenario: '" + std::string(value) + "'");
   }
+  options.scenario = *scenario;
 }
 
 void parse_association(std::string_view value, Options& options) {
@@ -171,7 +169,7 @@ Options parse_options(int argc, char** argv) {
     throw UsageError("--association needs --tracker kalman");
   }
   if (options.grid) {
-    for (const std::string_view other : {"--tracker", "--association", "--seeds"}) {
+    for (const std::string_view other : {"--tracker", "--seeds"}) {
       if (seen.count(other) != 0) {
         throw UsageError("--grid cannot be combined with " + std::string(other));
       }
@@ -321,7 +319,7 @@ void print_grid(const Options& options) {
   }
 
   std::string text = std::string("Kalman tuning grid, ") +
-                     (options.scenario == Scenario::hard ? "hard" : "straight") +
+                     std::string(kite::baseline_setup::scenario_name(options.scenario)) +
                      " scenario, seeds " + format_int(range.first) + "-" + format_int(range.last) +
                      ", mean per seed; cost is the mean of missed + false + id_switches\n\n"
                      "| q | velocity_sigma | matched | missed | false | rmse_m | id_switches | "

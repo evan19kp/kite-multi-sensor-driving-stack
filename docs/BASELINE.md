@@ -137,7 +137,7 @@ the table below is exactly what the first command prints.
 | 20 | 1421 | 84 | 640 | 1.377 | 84 | 301 |
 | mean | 1413.950 | 91.050 | 620.350 | 1.379 | 80.300 | 301.000 |
 
-The Kalman tracker on seeds 1-20, with the parameters in the table above. The CTest test
+The Kalman tracker on seeds 1-20, with the parameters in the table under "Kalman tracker" above. The CTest test
 `kite_baseline_hard_kalman_doc_matches` fails unless the table below is exactly what the second
 command prints.
 

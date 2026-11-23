@@ -10,7 +10,7 @@
 #include "kite/generator.hpp"
 #include "kite/kalman_tracker.hpp"
 
-// The scenario, tracker parameters and scoring gate that kite_baseline reports, shared with the
+// The scenarios, tracker parameters and scoring gate that kite_baseline runs, shared with the
 // study tools so they run exactly the same setup.
 namespace kite::baseline_setup {
 
@@ -63,7 +63,29 @@ inline KalmanTracker make_kalman_tracker(AssociationMode association) {
 inline constexpr std::array<double, 4> kTuningQs = {0.01, 0.1, 1.0, 10.0};
 inline constexpr std::array<double, 3> kTuningVelocitySigmas = {5.0, 10.0, 20.0};
 inline constexpr int kFirstTuningSeed = 101;
-inline constexpr int kLastReportingSeed = 20;
+
+inline constexpr std::array<std::pair<Scenario, std::string_view>, 2> kScenarioNames = {{
+    {Scenario::straight, "straight"},
+    {Scenario::hard, "hard"},
+}};
+
+inline std::optional<Scenario> parse_scenario(std::string_view name) {
+  for (const auto& [scenario, scenario_name] : kScenarioNames) {
+    if (name == scenario_name) {
+      return scenario;
+    }
+  }
+  return std::nullopt;
+}
+
+inline std::string_view scenario_name(Scenario scenario) {
+  for (const auto& [candidate, candidate_name] : kScenarioNames) {
+    if (candidate == scenario) {
+      return candidate_name;
+    }
+  }
+  throw std::logic_error("unknown scenario");
+}
 
 inline constexpr std::array<std::pair<AssociationMode, std::string_view>, 3> kAssociationNames = {{
     {AssociationMode::two_stage, "two_stage"},

@@ -214,8 +214,8 @@ if(KITE_BUILD_TESTS)
   kite_exit_test(kite_baseline_grid_with_seeds kite_baseline 2 "--grid;101-102;--seeds;101-102")
   kite_exit_test(kite_baseline_grid_with_tracker kite_baseline 2
     "--tracker;kalman;--grid;101-102")
-  kite_exit_test(kite_baseline_grid_with_association kite_baseline 2
-    "--grid;101-102;--tracker;kalman;--association;joint")
+  kite_exit_test(kite_baseline_grid_with_association_only kite_baseline 2
+    "--grid;101-102;--association;joint")
 
   # --scenario straight is the default, so its output is the table the doc-matches tests pin.
   add_test(NAME kite_baseline_scenario_straight_output
@@ -282,6 +282,15 @@ if(KITE_BUILD_TESTS)
             -P ${CMAKE_CURRENT_SOURCE_DIR}/doc_contains.cmake)
   set_tests_properties(kite_baseline_hard_grid_doc_matches
                        PROPERTIES FIXTURES_REQUIRED kite_baseline_hard_grid_table)
+
+  # On seed 101 alone the three q 10 settings tie on cost (10 errors) and differ in rmse_m: 0.792,
+  # 0.789 and 0.790 for velocity_sigma 5, 10 and 20. The rule picks 10. Keeping the first of the
+  # tie would pick 5, and preferring the higher rmse_m would pick 5 too.
+  add_test(NAME kite_baseline_hard_grid_tie_break
+    COMMAND ${CMAKE_COMMAND} -DEXE=$<TARGET_FILE:kite_baseline> "-DARGS=--scenario;hard;--grid;101-101"
+            "-DEXPECT_MATCH=[|] 10[.]000 [|] 5[.]000 [|] 1495[.]000 [|] 10[.]000 [|] 0[.]000 [|] 0[.]792 [|] 0[.]000 [|] 301[.]000 [|] 10[.]000 [|].*[|] 10[.]000 [|] 10[.]000 [|] 1495[.]000 [|] 10[.]000 [|] 0[.]000 [|] 0[.]789 [|] 0[.]000 [|] 301[.]000 [|] 10[.]000 [|].*[|] 10[.]000 [|] 20[.]000 [|] 1495[.]000 [|] 10[.]000 [|] 0[.]000 [|] 0[.]790 [|] 0[.]000 [|] 301[.]000 [|] 10[.]000 [|].*selected: q 10[.]000, velocity_sigma 10[.]000"
+            -DOUT=${CMAKE_CURRENT_BINARY_DIR}/grid_hard_tie.md
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/run_to_file.cmake)
 
   kite_exit_test(kite_baseline_association_without_tracker kite_baseline 2 "--association;joint")
   kite_exit_test(kite_baseline_association_with_baseline_tracker kite_baseline 2
