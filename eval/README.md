@@ -33,5 +33,12 @@ Scores tracker output against ground truth.
   measurements that tentative tracks took from confirmed tracks of the same vehicle.
   `tools/kite_drop_study` measures how often `KalmanTracker` drops a tentative track. Both are run
   through CTest. `docs/INVESTIGATION-ASSOCIATION.md` has their output and what it shows.
+  - `--scenario straight|hard` (both tools): `straight` (default) prints exactly what the tools
+    printed before the option; `hard` runs the hard scenario of `kite_baseline` on seeds 101-120
+    and labels a measurement "clutter" when no truth vehicle is within 3 m. The hard tables state
+    the clutter and ambiguous counts apart. `kite_drop_study --scenario hard` takes `--tuning` only
+    and adds the count of duplicate tentative tracks of one car; `--monte-carlo` with `hard` exits
+    2. The hard tables are in the "Hard scenario (seeds 101-120)" section of
+    `docs/INVESTIGATION-ASSOCIATION.md`.
 
 Ground truth is used for scoring and training labels only. It is never an input to the driving stack.

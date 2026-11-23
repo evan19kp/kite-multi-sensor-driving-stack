@@ -516,3 +516,320 @@ seeds 101-120 the tracker started 333 tentative tracks, confirmed 100 and droppe
 dropped, none was a real birth lost, 57 were births to a car that already had a confirmed track
 and 173 had an ambiguous birth label. Every one of the 100 cars was confirmed, a mean of 2.120
 steps after its first labelled measurement.
+
+## Hard scenario (seeds 101-120)
+
+This section runs the three association modes and the tentative-track study on the hard scenario
+of `docs/BASELINE.md`: the `kite_baseline` scenario with turning, speed changes and clutter. It
+chooses no mode and changes no default, no parameter and no table above. The scenario and the
+Kalman parameters come from `tools/baseline_setup.hpp`, as before. Every run uses seeds 101-120,
+never the reporting seeds 1-20.
+
+### Commands
+
+Run these from the repo root after a build with the `dev` preset, with `<mode>` set to `two_stage`,
+`joint` or `joint_likelihood`:
+
+```
+build/dev/tools/kite_baseline --scenario hard --tracker kalman --association <mode> --seeds 101-120
+build/dev/tools/kite_association_study --scenario hard --association <mode> --summary
+build/dev/tools/kite_drop_study --scenario hard --tuning
+```
+
+`--scenario straight` is the default of both study tools and prints what they printed before the
+flag existed; `kite_association_study_scenario_straight_matches_default`,
+`kite_association_study_scenario_straight_summary_matches_default` and
+`kite_drop_study_scenario_straight_matches_default` compare the two outputs byte for byte.
+`kite_drop_study --monte-carlo` takes `--scenario straight` only and exits 2 with `--scenario
+hard`. The Monte Carlo study of R23 is one vehicle on seeds from 100001, so the hard scenario's
+output of the drop study is the tentative-track table on seeds 101-120 below.
+
+The CTest tests `kite_baseline_hard_association_<mode>_doc_matches`,
+`kite_association_study_hard_<mode>_summary_doc_matches` and
+`kite_drop_study_hard_tuning_doc_matches` fail unless the tables below are exactly what the tools
+print. The scoring tables carry no mode name, so their tests also need the `hard <mode>:` line above
+each table. `ctest -R "hard" -V` shows the outputs.
+
+### Labels
+
+Labels are the R21 rule, with one more value. Ground truth only labels and classifies; no tracker
+sees it, and the generator marks no measurement as clutter.
+
+- **Car C.** The nearest truth vehicle is C, it is within 3 m, and the second-nearest vehicle is at
+  least 1 m farther.
+- **Clutter.** No truth vehicle is within 3 m.
+- **Ambiguous.** A truth vehicle is within 3 m but the second-nearest vehicle is less than 1 m
+  farther than the nearest.
+
+The label comes only from the distance to the truth vehicles, in `tools/study_common.hpp`. So a
+false detection within 3 m of a car is labelled as that car, or ambiguous, and a real detection whose
+noise put it more than 3 m from its car is labelled clutter. A measurement with no car label,
+clutter or ambiguous, is never a steal and never counts in a reverse steal. Every table below states
+its clutter and ambiguous counts. The straight tables above count both together as ambiguous.
+
+### Definitions
+
+Steals, duplicates, the steal columns and reverse steals are as defined in the R21 and R22
+sections. A reverse steal needs two measurements with car labels, so a clutter measurement counts
+like an ambiguous one there.
+
+- **Duplicate tentative track.** Number the steps of a run from 0. Every track the tracker starts is
+  tentative at its birth step. A track is a duplicate when its birth measurement is labelled car C
+  and some earlier-started track also has a birth measurement labelled C with a birth step at most 5
+  steps before this track's. Two births in the same step are 0 steps apart. The earlier track may
+  have been dropped, confirmed or still tentative. The count is of the later tracks, so births of
+  one car at steps 0 and 5 make one duplicate, and births at steps 0, 3 and 6 make two. A track
+  born from a clutter or ambiguous measurement is never a duplicate.
+- **Clutter birth.** A dropped track whose birth measurement is labelled clutter. The tables of the
+  R23 section count these with the ambiguous births; here they are apart.
+
+### Scoring tables
+
+hard two_stage:
+
+| seed | matched | missed | false | rmse_m | id_switches | steps |
+|---|---|---|---|---|---|---|
+| 101 | 1465 | 40 | 91 | 1.142 | 20 | 301 |
+| 102 | 1468 | 37 | 87 | 1.235 | 20 | 301 |
+| 103 | 1457 | 48 | 119 | 1.101 | 21 | 301 |
+| 104 | 1471 | 34 | 79 | 1.078 | 17 | 301 |
+| 105 | 1454 | 51 | 116 | 1.161 | 23 | 301 |
+| 106 | 1456 | 49 | 97 | 1.193 | 24 | 301 |
+| 107 | 1461 | 44 | 93 | 1.201 | 23 | 301 |
+| 108 | 1460 | 45 | 100 | 1.270 | 25 | 301 |
+| 109 | 1457 | 48 | 114 | 1.137 | 24 | 301 |
+| 110 | 1476 | 29 | 57 | 1.068 | 16 | 301 |
+| 111 | 1469 | 36 | 72 | 1.081 | 19 | 301 |
+| 112 | 1471 | 34 | 72 | 1.112 | 19 | 301 |
+| 113 | 1478 | 27 | 86 | 1.029 | 18 | 301 |
+| 114 | 1455 | 50 | 114 | 1.263 | 26 | 301 |
+| 115 | 1445 | 60 | 97 | 1.208 | 20 | 301 |
+| 116 | 1472 | 33 | 65 | 0.918 | 12 | 301 |
+| 117 | 1483 | 22 | 34 | 0.838 | 11 | 301 |
+| 118 | 1446 | 59 | 121 | 1.238 | 27 | 301 |
+| 119 | 1458 | 47 | 92 | 1.173 | 19 | 301 |
+| 120 | 1457 | 48 | 114 | 1.189 | 24 | 301 |
+| mean | 1462.950 | 42.050 | 91.000 | 1.132 | 20.400 | 301.000 |
+
+With two_stage the mean row has 1462.950 matched, 42.050 missed and 91.000 false tracks per seed,
+an rmse_m of 1.132 and 20.400 id switches. Id switches run from 11 on seed 117 to 27 on seed 118.
+
+hard joint:
+
+| seed | matched | missed | false | rmse_m | id_switches | steps |
+|---|---|---|---|---|---|---|
+| 101 | 1482 | 23 | 161 | 1.025 | 43 | 301 |
+| 102 | 1485 | 20 | 128 | 1.031 | 38 | 301 |
+| 103 | 1486 | 19 | 160 | 0.975 | 35 | 301 |
+| 104 | 1485 | 20 | 150 | 0.915 | 34 | 301 |
+| 105 | 1480 | 25 | 182 | 1.059 | 45 | 301 |
+| 106 | 1479 | 26 | 123 | 1.030 | 41 | 301 |
+| 107 | 1484 | 21 | 187 | 1.077 | 45 | 301 |
+| 108 | 1472 | 33 | 178 | 1.092 | 49 | 301 |
+| 109 | 1484 | 21 | 180 | 1.012 | 44 | 301 |
+| 110 | 1489 | 16 | 131 | 0.909 | 36 | 301 |
+| 111 | 1481 | 24 | 147 | 0.978 | 45 | 301 |
+| 112 | 1488 | 17 | 183 | 1.003 | 45 | 301 |
+| 113 | 1493 | 12 | 142 | 0.941 | 34 | 301 |
+| 114 | 1481 | 24 | 144 | 1.089 | 43 | 301 |
+| 115 | 1484 | 21 | 108 | 0.983 | 37 | 301 |
+| 116 | 1482 | 23 | 139 | 0.840 | 27 | 301 |
+| 117 | 1492 | 13 | 112 | 0.848 | 27 | 301 |
+| 118 | 1475 | 30 | 156 | 1.146 | 46 | 301 |
+| 119 | 1482 | 23 | 171 | 1.001 | 42 | 301 |
+| 120 | 1479 | 26 | 140 | 1.034 | 42 | 301 |
+| mean | 1483.150 | 21.850 | 151.100 | 1.000 | 39.900 | 301.000 |
+
+With joint the mean row has 1483.150 matched, 21.850 missed and 151.100 false tracks per seed, an
+rmse_m of 1.000 and 39.900 id switches. Id switches run from 27 on seeds 116 and 117 to 49 on seed
+108.
+
+hard joint_likelihood:
+
+| seed | matched | missed | false | rmse_m | id_switches | steps |
+|---|---|---|---|---|---|---|
+| 101 | 1477 | 28 | 110 | 1.071 | 27 | 301 |
+| 102 | 1480 | 25 | 140 | 1.098 | 35 | 301 |
+| 103 | 1484 | 21 | 109 | 1.006 | 27 | 301 |
+| 104 | 1482 | 23 | 127 | 0.977 | 31 | 301 |
+| 105 | 1479 | 26 | 96 | 1.078 | 29 | 301 |
+| 106 | 1478 | 27 | 107 | 1.058 | 30 | 301 |
+| 107 | 1485 | 20 | 134 | 1.066 | 37 | 301 |
+| 108 | 1471 | 34 | 147 | 1.155 | 37 | 301 |
+| 109 | 1481 | 24 | 146 | 1.032 | 28 | 301 |
+| 110 | 1493 | 12 | 84 | 0.913 | 26 | 301 |
+| 111 | 1475 | 30 | 102 | 1.007 | 32 | 301 |
+| 112 | 1487 | 18 | 104 | 0.974 | 28 | 301 |
+| 113 | 1491 | 14 | 79 | 0.990 | 23 | 301 |
+| 114 | 1479 | 26 | 139 | 1.154 | 42 | 301 |
+| 115 | 1483 | 22 | 115 | 1.055 | 33 | 301 |
+| 116 | 1482 | 23 | 70 | 0.844 | 18 | 301 |
+| 117 | 1489 | 16 | 73 | 0.869 | 19 | 301 |
+| 118 | 1467 | 38 | 142 | 1.162 | 41 | 301 |
+| 119 | 1481 | 24 | 113 | 1.058 | 29 | 301 |
+| 120 | 1474 | 31 | 135 | 1.091 | 35 | 301 |
+| mean | 1480.900 | 24.100 | 113.600 | 1.033 | 30.350 | 301.000 |
+
+With joint_likelihood the mean row has 1480.900 matched, 24.100 missed and 113.600 false tracks per
+seed, an rmse_m of 1.033 and 30.350 id switches. Id switches run from 18 on seed 116 to 42 on seed
+114.
+
+### Steal tables
+
+Association two_stage, hard scenario, seeds 101-120: 40655 measurements, 12357 clutter, 23 ambiguous.
+
+| seed | measurements | clutter | ambiguous | steals | duplicates | reverse steals |
+|---|---|---|---|---|---|---|
+| 101 | 2039 | 616 | 3 | 49 | 43 | 0 |
+| 102 | 2063 | 633 | 0 | 43 | 38 | 0 |
+| 103 | 2012 | 615 | 0 | 49 | 37 | 0 |
+| 104 | 2032 | 617 | 0 | 42 | 35 | 0 |
+| 105 | 2081 | 653 | 0 | 53 | 45 | 0 |
+| 106 | 2009 | 591 | 0 | 52 | 47 | 0 |
+| 107 | 2060 | 643 | 2 | 53 | 43 | 2 |
+| 108 | 1985 | 590 | 0 | 61 | 46 | 0 |
+| 109 | 2021 | 590 | 0 | 52 | 44 | 0 |
+| 110 | 2013 | 594 | 0 | 41 | 34 | 0 |
+| 111 | 2019 | 610 | 4 | 43 | 40 | 0 |
+| 112 | 2042 | 622 | 0 | 48 | 36 | 2 |
+| 113 | 2029 | 603 | 0 | 38 | 34 | 0 |
+| 114 | 2020 | 601 | 0 | 61 | 49 | 0 |
+| 115 | 2017 | 605 | 14 | 48 | 42 | 0 |
+| 116 | 2045 | 627 | 0 | 28 | 20 | 0 |
+| 117 | 2043 | 652 | 0 | 23 | 18 | 0 |
+| 118 | 2023 | 620 | 0 | 62 | 54 | 0 |
+| 119 | 2042 | 632 | 0 | 48 | 36 | 0 |
+| 120 | 2060 | 643 | 0 | 56 | 48 | 0 |
+| total | 40655 | 12357 | 23 | 950 | 789 | 4 |
+
+With two_stage, tentative tracks stole 950 measurements from confirmed tracks of the same car, and
+789 of the steals were followed within 5 steps by two confirmed tracks labelled to the same car.
+There were 4 reverse steals, 2 on seed 107 and 2 on seed 112. The 12357 clutter and 23 ambiguous
+measurements out of 40655 carry no car label, so they cannot count as steals.
+
+Association joint, hard scenario, seeds 101-120: 40655 measurements, 12357 clutter, 23 ambiguous.
+
+| seed | measurements | clutter | ambiguous | steals | duplicates | reverse steals |
+|---|---|---|---|---|---|---|
+| 101 | 2039 | 616 | 3 | 69 | 65 | 1 |
+| 102 | 2063 | 633 | 0 | 67 | 66 | 0 |
+| 103 | 2012 | 615 | 0 | 67 | 62 | 0 |
+| 104 | 2032 | 617 | 0 | 67 | 64 | 0 |
+| 105 | 2081 | 653 | 0 | 79 | 73 | 0 |
+| 106 | 2009 | 591 | 0 | 77 | 72 | 0 |
+| 107 | 2060 | 643 | 2 | 79 | 75 | 4 |
+| 108 | 1985 | 590 | 0 | 93 | 89 | 0 |
+| 109 | 2021 | 590 | 0 | 82 | 76 | 0 |
+| 110 | 2013 | 594 | 0 | 61 | 54 | 0 |
+| 111 | 2019 | 610 | 4 | 76 | 72 | 0 |
+| 112 | 2042 | 622 | 0 | 68 | 68 | 1 |
+| 113 | 2029 | 603 | 0 | 67 | 65 | 0 |
+| 114 | 2020 | 601 | 0 | 89 | 85 | 0 |
+| 115 | 2017 | 605 | 14 | 69 | 66 | 0 |
+| 116 | 2045 | 627 | 0 | 52 | 49 | 0 |
+| 117 | 2043 | 652 | 0 | 48 | 44 | 0 |
+| 118 | 2023 | 620 | 0 | 79 | 74 | 0 |
+| 119 | 2042 | 632 | 0 | 71 | 69 | 1 |
+| 120 | 2060 | 643 | 0 | 79 | 72 | 0 |
+| total | 40655 | 12357 | 23 | 1439 | 1360 | 7 |
+
+With joint, tentative tracks stole 1439 measurements from confirmed tracks of the same car, and
+1360 of the steals were followed within 5 steps by two confirmed tracks labelled to the same car.
+There were 7 reverse steals, 4 on seed 107 and 1 each on seeds 101, 112 and 119. The 12357 clutter
+and 23 ambiguous measurements out of 40655 carry no car label, so they cannot count as steals.
+
+Association joint_likelihood, hard scenario, seeds 101-120: 40655 measurements, 12357 clutter, 23 ambiguous.
+
+| seed | measurements | clutter | ambiguous | steals | duplicates | reverse steals |
+|---|---|---|---|---|---|---|
+| 101 | 2039 | 616 | 3 | 57 | 53 | 0 |
+| 102 | 2063 | 633 | 0 | 65 | 61 | 0 |
+| 103 | 2012 | 615 | 0 | 61 | 54 | 0 |
+| 104 | 2032 | 617 | 0 | 57 | 54 | 0 |
+| 105 | 2081 | 653 | 0 | 58 | 53 | 0 |
+| 106 | 2009 | 591 | 0 | 63 | 58 | 0 |
+| 107 | 2060 | 643 | 2 | 59 | 52 | 5 |
+| 108 | 1985 | 590 | 0 | 74 | 71 | 0 |
+| 109 | 2021 | 590 | 0 | 65 | 62 | 0 |
+| 110 | 2013 | 594 | 0 | 48 | 45 | 0 |
+| 111 | 2019 | 610 | 4 | 55 | 49 | 0 |
+| 112 | 2042 | 622 | 0 | 55 | 51 | 1 |
+| 113 | 2029 | 603 | 0 | 51 | 46 | 0 |
+| 114 | 2020 | 601 | 0 | 77 | 74 | 0 |
+| 115 | 2017 | 605 | 14 | 64 | 60 | 2 |
+| 116 | 2045 | 627 | 0 | 37 | 32 | 0 |
+| 117 | 2043 | 652 | 0 | 30 | 26 | 0 |
+| 118 | 2023 | 620 | 0 | 71 | 65 | 0 |
+| 119 | 2042 | 632 | 0 | 56 | 52 | 0 |
+| 120 | 2060 | 643 | 0 | 69 | 60 | 0 |
+| total | 40655 | 12357 | 23 | 1172 | 1078 | 8 |
+
+With joint_likelihood, tentative tracks stole 1172 measurements from confirmed tracks of the same
+car, and 1078 of the steals were followed within 5 steps by two confirmed tracks labelled to the
+same car. There were 8 reverse steals, 5 on seed 107, 2 on seed 115 and 1 on seed 112. The 12357
+clutter and 23 ambiguous measurements out of 40655 carry no car label, so they cannot count as
+steals.
+
+### Tentative tracks
+
+Tentative tracks, two_stage, hard scenario, seeds 101-120: 40655 measurements, 12357 clutter, 23 ambiguous.
+
+| seed | tentative tracks | confirmed | dropped | unresolved | real births lost | birth to a car with a confirmed track | clutter birth | ambiguous birth | duplicate tentative tracks |
+|---|---|---|---|---|---|---|---|---|---|
+| 101 | 650 | 25 | 618 | 7 | 0 | 33 | 585 | 0 | 13 |
+| 102 | 664 | 26 | 628 | 10 | 0 | 35 | 593 | 0 | 10 |
+| 103 | 649 | 26 | 618 | 5 | 0 | 28 | 590 | 0 | 4 |
+| 104 | 652 | 22 | 620 | 10 | 0 | 29 | 591 | 0 | 6 |
+| 105 | 693 | 29 | 653 | 11 | 0 | 28 | 625 | 0 | 5 |
+| 106 | 627 | 28 | 593 | 6 | 0 | 32 | 561 | 0 | 11 |
+| 107 | 680 | 28 | 635 | 17 | 0 | 34 | 601 | 0 | 9 |
+| 108 | 629 | 30 | 589 | 10 | 0 | 38 | 551 | 0 | 11 |
+| 109 | 624 | 28 | 591 | 5 | 0 | 35 | 556 | 0 | 12 |
+| 110 | 616 | 21 | 586 | 9 | 0 | 23 | 563 | 0 | 6 |
+| 111 | 628 | 24 | 591 | 13 | 0 | 19 | 572 | 0 | 6 |
+| 112 | 647 | 24 | 614 | 9 | 0 | 28 | 586 | 0 | 3 |
+| 113 | 620 | 23 | 588 | 9 | 0 | 18 | 570 | 0 | 8 |
+| 114 | 642 | 31 | 605 | 6 | 0 | 39 | 566 | 0 | 11 |
+| 115 | 651 | 25 | 619 | 7 | 0 | 42 | 577 | 0 | 15 |
+| 116 | 645 | 19 | 620 | 6 | 0 | 26 | 594 | 0 | 9 |
+| 117 | 662 | 16 | 636 | 10 | 0 | 15 | 621 | 0 | 3 |
+| 118 | 658 | 32 | 622 | 4 | 0 | 27 | 595 | 0 | 10 |
+| 119 | 659 | 24 | 629 | 6 | 0 | 24 | 605 | 0 | 11 |
+| 120 | 674 | 29 | 630 | 15 | 0 | 25 | 605 | 0 | 7 |
+| total | 12970 | 510 | 12285 | 175 | 0 | 578 | 11707 | 0 | 170 |
+
+Tentative tracks, two_stage, hard scenario, seeds 101-120: 40655 measurements, 12357 clutter, 23 ambiguous.
+
+| seed | measurements | clutter | ambiguous | cars | cars never confirmed | mean steps, first measurement to confirmation |
+|---|---|---|---|---|---|---|
+| 101 | 2039 | 616 | 3 | 5 | 0 | 2.000 |
+| 102 | 2063 | 633 | 0 | 5 | 0 | 2.200 |
+| 103 | 2012 | 615 | 0 | 5 | 0 | 1.800 |
+| 104 | 2032 | 617 | 0 | 5 | 0 | 2.200 |
+| 105 | 2081 | 653 | 0 | 5 | 0 | 2.000 |
+| 106 | 2009 | 591 | 0 | 5 | 0 | 2.000 |
+| 107 | 2060 | 643 | 2 | 5 | 0 | 2.000 |
+| 108 | 1985 | 590 | 0 | 5 | 0 | 2.000 |
+| 109 | 2021 | 590 | 0 | 5 | 0 | 2.000 |
+| 110 | 2013 | 594 | 0 | 5 | 0 | 2.000 |
+| 111 | 2019 | 610 | 4 | 5 | 0 | 2.000 |
+| 112 | 2042 | 622 | 0 | 5 | 0 | 2.000 |
+| 113 | 2029 | 603 | 0 | 5 | 0 | 2.000 |
+| 114 | 2020 | 601 | 0 | 5 | 0 | 2.000 |
+| 115 | 2017 | 605 | 14 | 5 | 0 | 2.000 |
+| 116 | 2045 | 627 | 0 | 5 | 0 | 2.000 |
+| 117 | 2043 | 652 | 0 | 5 | 0 | 2.200 |
+| 118 | 2023 | 620 | 0 | 5 | 0 | 2.000 |
+| 119 | 2042 | 632 | 0 | 5 | 0 | 2.200 |
+| 120 | 2060 | 643 | 0 | 5 | 0 | 2.000 |
+| total | 40655 | 12357 | 23 | 100 | 0 | 2.030 |
+
+On seeds 101-120 the tracker started 12970 tentative tracks, confirmed 510, dropped 12285 and left
+175 unresolved. Of the 12285 dropped, none was a real birth lost, 578 were births to a car that
+already had a confirmed track, 11707 had a clutter birth label and none had an ambiguous one. 170
+of the 12970 tracks were duplicate tentative tracks of one car. Per seed the count runs from 3
+(seeds 112 and 117) to 15 (seed 115).
+
+Each seed has 5 cars, and all 100 cars were confirmed, a mean of 2.030 steps after the car's first
+labelled measurement. The per-seed mean runs from 1.800 on seed 103 to 2.200 on seeds 102, 104, 117
+and 119.

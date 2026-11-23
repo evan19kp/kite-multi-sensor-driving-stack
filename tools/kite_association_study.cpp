@@ -26,16 +26,18 @@ namespace {
 using namespace kite::baseline_setup;
 using namespace kite::study;
 
-constexpr int kFirstSeed = 101;
 constexpr int kLastSeed = 120;
 constexpr std::size_t kDuplicateWindowSteps = 5;
 
 constexpr const char* kUsage =
-    "usage: kite_association_study [--association MODE] [--summary]\n"
+    "usage: kite_association_study [--scenario straight|hard] [--association MODE] [--summary]\n"
     "Runs KalmanTracker with the kite_baseline scenario and parameters on seeds 101-120, labels\n"
     "each measurement with a truth vehicle (nearest within 3 m and at least 1 m nearer than the\n"
-    "second nearest, else ambiguous), and prints Markdown tables of the measurements that\n"
-    "tentative tracks took from confirmed tracks of the same vehicle.\n"
+    "second nearest, else ambiguous; clutter when no truth vehicle is within 3 m), and prints\n"
+    "Markdown tables of the measurements that tentative tracks took from confirmed tracks of the\n"
+    "same vehicle.\n"
+    "  --scenario     straight (default) or hard, as in kite_baseline; the straight tables count\n"
+    "                 clutter and ambiguous measurements together as ambiguous, the hard ones apart\n"
     "  --association  two_stage, joint (default) or joint_likelihood\n"
     "  --summary      print only one table of steals, duplicates and reverse steals per seed\n"
     "  --help         print this text\n";
@@ -46,6 +48,7 @@ class UsageError : public std::runtime_error {
 };
 
 struct Options {
+  Scenario scenario = Scenario::straight;
   kite::AssociationMode association = kite::AssociationMode::joint;
   bool summary = false;
 };
@@ -55,7 +58,7 @@ Options parse_options(int argc, char** argv) {
   std::set<std::string_view> seen;
   for (int i = 1; i < argc; ++i) {
     const std::string_view flag = argv[i];
-    if (flag != "--association" && flag != "--summary") {
+    if (flag != "--association" && flag != "--summary" && flag != "--scenario") {
       throw UsageError("unknown argument: " + std::string(flag));
     }
     if (!seen.insert(flag).second) {
@@ -66,7 +69,15 @@ Options parse_options(int argc, char** argv) {
       continue;
     }
     if (++i == argc) {
-      throw UsageError("missing value for --association");
+      throw UsageError("missing value for " + std::string(flag));
+    }
+    if (flag == "--scenario") {
+      const std::optional<Scenario> scenario = parse_scenario(argv[i]);
+      if (!scenario) {
+        throw UsageError("invalid value for --scenario: '" + std::string(argv[i]) + "'");
+      }
+      options.scenario = *scenario;
+      continue;
     }
     const std::optional<kite::AssociationMode> mode = parse_association(argv[i]);
     if (!mode) {
@@ -93,7 +104,7 @@ const char* class_name(StealClass kind) {
 }
 
 struct Birth {
-  CarLabel label;
+  Label label;
   bool inside_a_gate;
 };
 
@@ -114,7 +125,7 @@ struct Steal {
 struct SeedResult {
   int seed;
   int measurements;
-  int ambiguous;
+  LabelCounts unlabelled;
   std::vector<Steal> steals;
   int reverse_steals;
 };
@@ -163,13 +174,13 @@ bool duplicate_follows(const std::vector<std::vector<CarLabel>>& confirmed_label
   return false;
 }
 
-SeedResult run_seed(int seed, kite::AssociationMode association) {
+SeedResult run_seed(int seed, Scenario scenario_kind, kite::AssociationMode association) {
   const kite::GeneratedScenario scenario =
-      kite::generate(scenario_config(static_cast<std::uint64_t>(seed)));
+      kite::generate(scenario_config(scenario_kind, static_cast<std::uint64_t>(seed)));
   kite::KalmanTracker tracker = make_kalman_tracker(association);
   tracker.record_steps(true);
 
-  SeedResult result{seed, 0, 0, {}, 0};
+  SeedResult result{seed, 0, {}, {}, 0};
   std::map<int, CarLabel> latest_label;
   std::map<int, Birth> births;
   std::vector<std::vector<CarLabel>> confirmed_labels;
@@ -178,11 +189,13 @@ SeedResult run_seed(int seed, kite::AssociationMode association) {
     const std::vector<kite::TrackState> output = tracker.update(step.t, step.measurements);
     const kite::StepRecord& record = tracker.step_record().value();
 
+    std::vector<Label> kinds;
     std::vector<CarLabel> labels;
     for (const kite::Measurement& z : step.measurements) {
-      labels.push_back(label_of(z.position, step.truth));
+      kinds.push_back(classify_measurement(z.position, step.truth));
+      labels.push_back(kinds.back().as_car());
       ++result.measurements;
-      result.ambiguous += labels.back() ? 0 : 1;
+      result.unlabelled.add(kinds.back());
     }
 
     for (const kite::TrackRecord& tentative : record.tracks) {
@@ -221,7 +234,7 @@ SeedResult run_seed(int seed, kite::AssociationMode association) {
     for (std::size_t m = 0; m < step.measurements.size(); ++m) {
       if (const std::optional<int> id = record.started_track[m]) {
         latest_label[*id] = labels[m];
-        births[*id] = Birth{labels[m], inside_a_gate(record, step.measurements[m].position)};
+        births[*id] = Birth{kinds[m], inside_a_gate(record, step.measurements[m].position)};
       }
     }
     std::vector<CarLabel> after;
@@ -273,10 +286,17 @@ std::vector<double> collect(const std::vector<Steal>& steals, Field field) {
   return values;
 }
 
-std::string seed_row(const std::string& label, const std::vector<Steal>& steals,
-                     int measurements, int ambiguous) {
-  std::vector<std::string> cells{label, count(measurements), count(ambiguous),
-                                 count(static_cast<int>(steals.size()))};
+std::vector<std::string> measurement_cells(const std::string& label, Scenario scenario,
+                                           int measurements, const LabelCounts& unlabelled) {
+  std::vector<std::string> cells{label, count(measurements)};
+  append(cells, label_cells(scenario, unlabelled));
+  return cells;
+}
+
+std::string seed_row(const std::string& label, Scenario scenario, const std::vector<Steal>& steals,
+                     int measurements, const LabelCounts& unlabelled) {
+  std::vector<std::string> cells = measurement_cells(label, scenario, measurements, unlabelled);
+  cells.push_back(count(static_cast<int>(steals.size())));
   for (const StealClass kind : kClasses) {
     cells.push_back(count(count_if(steals, [kind](const Steal& s) { return s.kind == kind; })));
   }
@@ -284,11 +304,22 @@ std::string seed_row(const std::string& label, const std::vector<Steal>& steals,
   return row(cells);
 }
 
-std::string summary_row(const std::string& label, const std::vector<Steal>& steals,
-                        int measurements, int ambiguous, int reverse_steals) {
-  return row({label, count(measurements), count(ambiguous), count(static_cast<int>(steals.size())),
-              count(count_if(steals, [](const Steal& s) { return s.duplicate; })),
-              count(reverse_steals)});
+std::string summary_row(const std::string& label, Scenario scenario,
+                        const std::vector<Steal>& steals, int measurements,
+                        const LabelCounts& unlabelled, int reverse_steals) {
+  std::vector<std::string> cells = measurement_cells(label, scenario, measurements, unlabelled);
+  cells.push_back(count(static_cast<int>(steals.size())));
+  cells.push_back(count(count_if(steals, [](const Steal& s) { return s.duplicate; })));
+  cells.push_back(count(reverse_steals));
+  return row(cells);
+}
+
+std::string header(Scenario scenario, const std::vector<std::string>& first,
+                   const std::vector<std::string>& rest) {
+  std::vector<std::string> names = first;
+  append(names, label_headers(scenario));
+  append(names, rest);
+  return table_header(names);
 }
 
 std::string score_row(const std::string& label, const std::vector<Steal>& steals) {
@@ -302,14 +333,19 @@ std::string score_row(const std::string& label, const std::vector<Steal>& steals
   return row(cells);
 }
 
-std::string birth_row(const std::string& label, const std::vector<Steal>& steals) {
+std::string birth_row(const std::string& label, Scenario scenario, const std::vector<Steal>& steals) {
   std::vector<std::string> cells{label, count(static_cast<int>(steals.size()))};
   append(cells, median_min_max(collect(
                     steals, [](const Steal& s) { return static_cast<double>(s.tentative_age); })));
-  cells.push_back(count(count_if(steals, [](const Steal& s) { return s.birth.label == s.car; })));
-  cells.push_back(count(count_if(
-      steals, [](const Steal& s) { return s.birth.label && s.birth.label != s.car; })));
-  cells.push_back(count(count_if(steals, [](const Steal& s) { return !s.birth.label; })));
+  cells.push_back(count(count_if(steals, [](const Steal& s) { return s.birth.label.as_car() == s.car; })));
+  cells.push_back(count(count_if(steals, [](const Steal& s) {
+    return s.birth.label.as_car() && s.birth.label.as_car() != s.car;
+  })));
+  LabelCounts unlabelled;
+  for (const Steal& steal : steals) {
+    unlabelled.add(steal.birth.label);
+  }
+  append(cells, label_cells(scenario, unlabelled));
   cells.push_back(count(count_if(steals, [](const Steal& s) { return !s.birth.inside_a_gate; })));
   cells.push_back(count(count_if(steals, [](const Steal& s) { return s.birth.inside_a_gate; })));
   return row(cells);
@@ -330,42 +366,43 @@ int main(int argc, char** argv) {
     return 2;
   }
 
+  const Scenario scenario = options.scenario;
   std::vector<SeedResult> seeds;
-  for (int seed = kFirstSeed; seed <= kLastSeed; ++seed) {
-    seeds.push_back(run_seed(seed, options.association));
+  for (int seed = kFirstTuningSeed; seed <= kLastSeed; ++seed) {
+    seeds.push_back(run_seed(seed, scenario, options.association));
   }
   std::vector<Steal> all;
   int measurements = 0;
-  int ambiguous = 0;
+  LabelCounts unlabelled;
   int reverse_steals = 0;
   for (const SeedResult& seed : seeds) {
     all.insert(all.end(), seed.steals.begin(), seed.steals.end());
     measurements += seed.measurements;
-    ambiguous += seed.ambiguous;
+    unlabelled += seed.unlabelled;
     reverse_steals += seed.reverse_steals;
   }
   const std::string caption = "Association " + std::string(association_name(options.association)) +
-                              ", seeds 101-120: " + count(measurements) + " measurements, " +
-                              count(ambiguous) + " ambiguous.\n\n";
+                              scenario_suffix(scenario) + ", seeds 101-120: " +
+                              label_summary(scenario, measurements, unlabelled) + ".\n\n";
 
   if (options.summary) {
-    std::string out = caption + table_header({"seed", "measurements", "ambiguous", "steals",
-                                              "duplicates", "reverse steals"});
+    std::string out =
+        caption + header(scenario, {"seed", "measurements"}, {"steals", "duplicates", "reverse steals"});
     for (const SeedResult& seed : seeds) {
-      out += summary_row(count(seed.seed), seed.steals, seed.measurements, seed.ambiguous,
+      out += summary_row(count(seed.seed), scenario, seed.steals, seed.measurements, seed.unlabelled,
                          seed.reverse_steals);
     }
-    out += summary_row("total", all, measurements, ambiguous, reverse_steals);
+    out += summary_row("total", scenario, all, measurements, unlabelled, reverse_steals);
     std::cout << out;
     return 0;
   }
 
-  std::string out = caption + table_header({"seed", "measurements", "ambiguous", "steals", "H1",
-                                            "nearer", "other", "duplicates"});
+  std::string out = caption + header(scenario, {"seed", "measurements"},
+                                     {"steals", "H1", "nearer", "other", "duplicates"});
   for (const SeedResult& seed : seeds) {
-    out += seed_row(count(seed.seed), seed.steals, seed.measurements, seed.ambiguous);
+    out += seed_row(count(seed.seed), scenario, seed.steals, seed.measurements, seed.unlabelled);
   }
-  out += seed_row("total", all, measurements, ambiguous);
+  out += seed_row("total", scenario, all, measurements, unlabelled);
 
   out += "\n" + caption +
          table_header({"class", "steals", "confirmed outside gate", "tentative scores lower",
@@ -377,14 +414,22 @@ int main(int argc, char** argv) {
   }
   out += score_row("all", all);
 
-  out += "\n" + caption +
-         table_header({"class", "steals", "tentative age median", "tentative age min",
-                       "tentative age max", "born from same car", "born from other car",
-                       "born ambiguous", "born outside every gate", "born inside a gate"});
-  for (const StealClass kind : kClasses) {
-    out += birth_row(class_name(kind), of_class(all, kind));
+  std::vector<std::string> birth_names{"class",
+                                       "steals",
+                                       "tentative age median",
+                                       "tentative age min",
+                                       "tentative age max",
+                                       "born from same car",
+                                       "born from other car"};
+  for (const std::string& name : label_headers(scenario)) {
+    birth_names.push_back("born " + name);
   }
-  out += birth_row("all", all);
+  append(birth_names, {"born outside every gate", "born inside a gate"});
+  out += "\n" + caption + table_header(birth_names);
+  for (const StealClass kind : kClasses) {
+    out += birth_row(class_name(kind), scenario, of_class(all, kind));
+  }
+  out += birth_row("all", scenario, all);
 
   std::cout << out;
   return 0;

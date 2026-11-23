@@ -439,7 +439,7 @@ golden file stays byte-identical. Nothing here needs the simulator; every accept
   those numbers; a tuning report over q {0.01, 0.1, 1, 10} and initial velocity sigma {5, 10, 20} on
   seeds 101-120 of the hard scenario (R15's selection rule), pinned by a test, reported on 101-120
   only. No default changes.
-- [ ] **R52 Association and track-drop studies on the hard scenario** (feat, Sonnet; needs R51):
+- [x] **R52 Association and track-drop studies on the hard scenario** (feat, Sonnet; needs R51):
   `kite_association_study` and `kite_drop_study` gain `--scenario straight|hard` (default straight,
   tables unchanged); `docs/INVESTIGATION-ASSOCIATION.md` section "Hard scenario (seeds 101-120)":
   the three modes' scoring rows, steals, duplicates and reverse steals, the drop study's
