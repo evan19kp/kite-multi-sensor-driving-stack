@@ -534,6 +534,27 @@ Each item that introduces a lasting rule adds a "## Standing rules (R<n>)" secti
 - A message about a lost camera frame names the cause that is true: an encoder failure is named as
   that, and Rerun's log call raising is named as that.
 
+## Standing rules (R50)
+
+- Every generator option is off by default, and an option that is off makes no draws, so the
+  output of every existing config stays byte-identical. A new option's draws are documented in the
+  draw order of `sim/include/kite/generator.hpp`. `GeneratedFiles.Seed42MatchesGoldenFileByteForByte`
+  and `kite_gen_golden_matches` enforce it.
+- Vehicle motion with turning or speed changes comes only from `kite::advance`, whose fixed-term
+  series use +, -, *, / and the generator's own `square_root`; no item adds a second motion
+  integrator.
+- `sim/tests/data/hard_seed7.log` changes only together with a deliberate generator change. It is
+  written by `kite_gen` with the flags in `kite_gen_hard_golden`, never edited by hand.
+  `GeneratedFiles.SmallHardScenarioMatchesGoldenFileByteForByte` and `kite_gen_hard_golden_matches`
+  compare it byte for byte.
+- Clutter is written as ordinary `meas` records and shuffled in with the detections. Nothing in a
+  scenario's measurements or log marks a measurement as clutter (R8).
+- Generated data takes square roots only from the generator's own correctly rounded `square_root`
+  in `sim/src/generator.cpp`, never `std::sqrt`. This narrows R9's `sqrt`. MinGW-w64's `sqrt`
+  uses the x87 `fsqrt` at 64-bit precision and then rounds again, so on some inputs it is one ulp
+  off glibc and MSVC. `Generator.AdvanceRenormalisesTheHeadingWithTheCorrectlyRoundedLength`
+  fails with `std::sqrt` in the MinGW Debug build of the `dev` preset.
+
 ## Simulator files (hard rule)
 
 - Never read, list, search, copy, launch or write about the simulator's install folder, its user

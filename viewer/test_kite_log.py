@@ -35,7 +35,8 @@ class GoldenLogs(unittest.TestCase):
                 self.assertEqual({r.track_id for r in log.tracks}, track_ids)
 
     def test_every_golden_file_reads_back_to_its_exact_bytes(self):
-        for name in ("seed42.log", "seed42_kalman_tracks.log", "seed42_baseline_tracks.log"):
+        for name in ("seed42.log", "seed42_kalman_tracks.log", "seed42_baseline_tracks.log",
+                     "hard_seed7.log"):
             with self.subTest(name=name):
                 data = (DATA / name).read_bytes()
                 self.assertEqual(serialise(parse_log(data)), data)

@@ -18,14 +18,20 @@ constexpr double kAreaHalfWidthM = 50.0;
 
 constexpr const char* kUsage =
     "usage: kite_gen --seed N --vehicles N --duration S --dt S --noise M --pd P --out <file>\n"
-    "  --seed       unsigned integer seed\n"
-    "  --vehicles   number of vehicles, >= 0\n"
-    "  --duration   scenario length in seconds, >= 0\n"
-    "  --dt         time step in seconds, > 0\n"
-    "  --noise      position noise sigma in meters, >= 0\n"
-    "  --pd         detection probability per vehicle and step, 0 to 1\n"
-    "  --out        log file to write (kite-log v0)\n"
-    "The area is fixed: vehicles start in a square of half-width 50 m.\n";
+    "                [--turning on|off] [--speed-changes on|off] [--clutter L]\n"
+    "  --seed           unsigned integer seed\n"
+    "  --vehicles       number of vehicles, >= 0\n"
+    "  --duration       scenario length in seconds, >= 0\n"
+    "  --dt             time step in seconds, > 0 (<= 1 with --turning on)\n"
+    "  --noise          position noise sigma in meters, >= 0\n"
+    "  --pd             detection probability per vehicle and step, 0 to 1\n"
+    "  --out            log file to write (kite-log v0)\n"
+    "  --turning        off (default): straight lines; on: straight and turning segments,\n"
+    "                   turn rate in [-0.3, 0.3) rad/s\n"
+    "  --speed-changes  off (default): constant speed; on: constant-acceleration segments in\n"
+    "                   [-3, 2) m/s^2, speed kept in [0, 20] m/s\n"
+    "  --clutter        mean false detections per step, 0 (default) to 1000\n"
+    "The area is fixed: vehicles start in a square of half-width 50 m, and clutter falls in it.\n";
 
 class UsageError : public std::runtime_error {
  public:
@@ -48,10 +54,24 @@ struct Arguments {
   std::filesystem::path out;
 };
 
+bool parse_on_off(std::string_view flag, std::string_view text) {
+  if (text == "on") {
+    return true;
+  }
+  if (text == "off") {
+    return false;
+  }
+  throw UsageError("invalid value for " + std::string(flag) + ": '" + std::string(text) +
+                   "' (expected on or off)");
+}
+
 Arguments parse_arguments(int argc, char** argv) {
-  constexpr std::string_view flags[] = {"--seed", "--vehicles", "--duration", "--dt",
-                                        "--noise", "--pd",      "--out"};
+  constexpr std::string_view flags[] = {"--seed",    "--vehicles",      "--duration",
+                                        "--dt",      "--noise",         "--pd",
+                                        "--out",     "--turning",       "--speed-changes",
+                                        "--clutter"};
   constexpr std::size_t kFlagCount = sizeof(flags) / sizeof(flags[0]);
+  constexpr std::size_t kRequiredFlagCount = 7;
   std::string_view values[kFlagCount];
   bool seen[kFlagCount] = {};
 
@@ -73,7 +93,7 @@ Arguments parse_arguments(int argc, char** argv) {
     seen[index] = true;
     values[index] = argv[i + 1];
   }
-  for (std::size_t index = 0; index < kFlagCount; ++index) {
+  for (std::size_t index = 0; index < kRequiredFlagCount; ++index) {
     if (!seen[index]) {
       throw UsageError("missing argument: " + std::string(flags[index]));
     }
@@ -87,6 +107,15 @@ Arguments parse_arguments(int argc, char** argv) {
   args.config.position_noise_m = parse_number<double>(flags[4], values[4]);
   args.config.detection_probability = parse_number<double>(flags[5], values[5]);
   args.out = std::string(values[6]);
+  if (seen[7]) {
+    args.config.turning = parse_on_off(flags[7], values[7]);
+  }
+  if (seen[8]) {
+    args.config.speed_changes = parse_on_off(flags[8], values[8]);
+  }
+  if (seen[9]) {
+    args.config.clutter_per_step = parse_number<double>(flags[9], values[9]);
+  }
   return args;
 }
 

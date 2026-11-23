@@ -55,6 +55,25 @@ if(KITE_BUILD_TESTS)
             ${CMAKE_CURRENT_BINARY_DIR}/seed42.log ${PROJECT_SOURCE_DIR}/sim/tests/data/seed42.log)
   set_tests_properties(kite_gen_golden_matches PROPERTIES FIXTURES_REQUIRED kite_gen_golden_file)
 
+  kite_exit_test(kite_gen_turning_bad_value kite_gen 2
+    "--seed;1;--vehicles;1;--duration;1;--dt;0.1;--noise;0;--pd;1;--out;unused.log;--turning;yes")
+  kite_exit_test(kite_gen_speed_changes_bad_value kite_gen 2
+    "--seed;1;--vehicles;1;--duration;1;--dt;0.1;--noise;0;--pd;1;--out;unused.log;--speed-changes;1")
+  kite_exit_test(kite_gen_clutter_negative kite_gen 2
+    "--seed;1;--vehicles;1;--duration;1;--dt;0.1;--noise;0;--pd;1;--out;unused.log;--clutter;-1")
+  kite_exit_test(kite_gen_turning_coarse_dt kite_gen 2
+    "--seed;1;--vehicles;1;--duration;4;--dt;2;--noise;0;--pd;1;--out;unused.log;--turning;on")
+
+  kite_exit_test(kite_gen_hard_golden kite_gen 0
+    "--seed;7;--vehicles;3;--duration;10;--dt;0.1;--noise;1;--pd;0.95;--turning;on;--speed-changes;on;--clutter;2;--out;${CMAKE_CURRENT_BINARY_DIR}/hard_seed7.log")
+  set_tests_properties(kite_gen_hard_golden PROPERTIES FIXTURES_SETUP kite_gen_hard_golden_file)
+
+  add_test(NAME kite_gen_hard_golden_matches
+    COMMAND ${CMAKE_COMMAND} -E compare_files --ignore-eol
+            ${CMAKE_CURRENT_BINARY_DIR}/hard_seed7.log ${PROJECT_SOURCE_DIR}/sim/tests/data/hard_seed7.log)
+  set_tests_properties(kite_gen_hard_golden_matches
+                       PROPERTIES FIXTURES_REQUIRED kite_gen_hard_golden_file)
+
   kite_exit_test(kite_score_no_args kite_score 2 "")
   kite_exit_test(kite_score_unknown_flag kite_score 2 "--log;x.log;--bogus;1")
   kite_exit_test(kite_score_duplicate_flag kite_score 2 "--log;x.log;--log;y.log")
