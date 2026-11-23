@@ -42,7 +42,7 @@ struct MotionState {
 // This is the exact integral of that motion, up to the series' truncation. For |theta| <= 0.3 the
 // truncation is below 0.3^16 / 16! < 3e-22, relative. Each series is summed by Horner's rule from
 // the last term. Each coefficient is 1 divided by an integer that is exact in a double, so it is
-// correctly rounded. Only +, -, *, / and sqrt are used.
+// correctly rounded. Only +, -, *, / and the generator's own sqrt (see generate) are used.
 MotionState advance(const MotionState& state, double turn_rate_rad_s, double end_speed,
                     double dt_s);
 
@@ -87,10 +87,13 @@ struct GeneratedScenario {
 // each uniform over the area and shaped like any other measurement.
 //
 // Exact algorithm, so the same config gives the same bytes on every compiler and platform. Every
-// value comes from IEEE-exact operations (+, -, *, /, sqrt, frexp, and the exact llround, min and
-// max) applied to the raw 64-bit output of one std::mt19937_64 seeded with `seed`. No std::*_distribution, std::shuffle, or
-// platform transcendental function is used. Floating-point contraction (fused multiply-add) is
-// disabled for GCC and Clang, so a * b + c rounds twice.
+// value comes from IEEE-exact operations (+, -, *, /, frexp, and the exact llround, min and max)
+// applied to the raw 64-bit output of one std::mt19937_64 seeded with `seed`. No
+// std::*_distribution, std::shuffle, platform transcendental function or std::sqrt is used.
+// MinGW-w64's sqrt runs the x87 fsqrt at 64-bit precision and then rounds again to a double, so
+// some of its results are one ulp off the correctly rounded root that glibc and MSVC return.
+// Floating-point contraction (fused multiply-add) is disabled for GCC and Clang, so a * b + c
+// rounds twice.
 //
 //   raw      one call of the engine.
 //   uniform  u = (raw >> 11) * 2^-53, in [0, 1). A value in [lo, hi) is lo + (hi - lo) * u.
@@ -104,6 +107,20 @@ struct GeneratedScenario {
 //   ln       our own: frexp splits s = m * 2^e, with m moved into [sqrt(0.5), sqrt(2)); with
 //            z = (m - 1) / (m + 1), ln(m) = 2 * (z + z^3/3 + z^5/5 + ...) summed over exactly 14
 //            terms by Horner's rule from the last term; the result is that sum plus e * ln(2).
+//   sqrt     our own, correctly rounded, for x > 0. frexp splits x = m * 2^e, with m moved into
+//            [0.5, 2) so that e is even. Start at r = (1 + m) / 2 and take 4 Heron steps
+//            r = (r + m / r) / 2. Each step maps the relative error e to e^2 / (2 (1 + e)), so it
+//            falls from at most 0.061 to under 1e-24, and r ends within a few ulp of sqrt(m), off
+//            only by the rounding of the steps. Let r+ and r- be the doubles next to r. Then
+//            sqrt(m) rounds to r exactly when r * r- < m <= r * r+. The
+//            reason is that the upper midpoint squared is r * r+ + u^2/4, with u = r+ - r and
+//            u^2/4 <= 2^-106. Both m and r * r+ are multiples of 2^-106, and m is never the square
+//            of a midpoint. The lower midpoint works the same way. Step r up while m > r * r+,
+//            then down while m <= r * r-. Each comparison is exact: Dekker's product, with
+//            Veltkamp's split by 2^27 + 1 and no fused multiply-add, gives r * r+ as a rounded
+//            product plus its exact error, and m minus the rounded product is exact by Sterbenz's
+//            lemma. The result is r * 2^(e/2), with the power of two built by repeated doubling or
+//            halving.
 //   below    an integer in [0, n): draw raw until raw >= 2^64 mod n, then raw mod n. This has no
 //            modulo bias.
 //   shuffle  Fisher-Yates: for i = size - 1 down to 1, j = below(i + 1), swap elements i and j.

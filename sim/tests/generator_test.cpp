@@ -350,6 +350,24 @@ TEST(Generator, AnAcceleratingTurningVehicleEndsWhereTheIntegralSays) {
   EXPECT_DOUBLE_EQ(state.speed, v0 + acceleration * total);
 }
 
+// With turn rate 0 the rotation is exactly (1, 0), so advance divides the heading h by the square
+// root of |h|^2. Take h = (1 + 2^-52, 2^-26): hx^2 = 1 + 2^-51 + 2^-104 rounds to 1 + 2^-51, and
+// hy^2 = 2^-52 is exact, so |h|^2 = 1 + 3 * 2^-52 exactly. Let m = 1 + 3 * 2^-53, the midpoint
+// between the doubles 1 + 2^-52 and 1 + 2^-51. Since m^2 = |h|^2 + 9 * 2^-106, the square root of
+// |h|^2 is m - 9 * 2^-107 to first order, and the correctly rounded root is 1 + 2^-52. MinGW-w64's
+// sqrt rounds first to a 64-bit significand with the x87 fsqrt. That lands on m itself, because
+// 9 * 2^-107 is under half its ulp of 2^-63, and the tie then goes to the even 1 + 2^-51. With the
+// correct root, hx / root = 1 exactly and hy / root = 2^-26 / (1 + 2^-52) rounds to
+// 2^-26 - 2^-78. With the double-rounded root, hx / root rounds to 1 - 2^-52.
+TEST(Generator, AdvanceRenormalisesTheHeadingWithTheCorrectlyRoundedLength) {
+  const double two_pow_minus_26 = 1.0 / 67108864.0;
+  const double two_pow_minus_52 = two_pow_minus_26 * two_pow_minus_26;
+  const kite::MotionState state{{0.0, 0.0}, {1.0 + two_pow_minus_52, two_pow_minus_26}, 10.0};
+  const kite::MotionState next = kite::advance(state, 0.0, 10.0, 0.1);
+  EXPECT_EQ(next.heading.x, 1.0);
+  EXPECT_EQ(next.heading.y, two_pow_minus_26 - two_pow_minus_26 * two_pow_minus_52);
+}
+
 // Between two steps of one vehicle, the turn read from its two velocities is the step's turn rate
 // times dt, and its displacement is the chord of that arc. Positions stay under 1024 m (a 50 m
 // start plus 15 m/s for 60 s), so the rounding of the later position, half an ulp or 5.7e-14 m,

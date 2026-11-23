@@ -13,6 +13,9 @@ namespace kite {
 namespace {
 
 constexpr double kTwoPowMinus53 = 1.0 / 9007199254740992.0;
+constexpr double kTwoPowMinus52 = 2.0 * kTwoPowMinus53;
+constexpr double kVeltkampSplitter = 134217729.0;
+constexpr int kRootIterations = 4;
 constexpr double kLn2 = 0.693147180559945309417232121458;
 constexpr double kSqrtHalf = 0.70710678118654752440;
 constexpr double kMinDiscRadiusSquared = 1e-12;
@@ -86,9 +89,60 @@ double natural_log(double x) {
   return 2.0 * z * series + static_cast<double>(exponent) * kLn2;
 }
 
+struct Split {
+  double high;
+  double low;
+};
+
+Split split(double a) {
+  const double scaled = kVeltkampSplitter * a;
+  const double high = scaled - (scaled - a);
+  return {high, a - high};
+}
+
+bool product_below(double a, double b, double m) {
+  const double product = a * b;
+  const Split sa = split(a);
+  const Split sb = split(b);
+  const double error =
+      ((sa.high * sb.high - product) + sa.high * sb.low + sa.low * sb.high) + sa.low * sb.low;
+  return (m - product) - error > 0.0;
+}
+
+double ulp_above(double root) { return root < 1.0 ? kTwoPowMinus53 : kTwoPowMinus52; }
+
+double ulp_below(double root) { return root <= 1.0 ? kTwoPowMinus53 : kTwoPowMinus52; }
+
+double square_root(double x) {
+  int exponent = 0;
+  double mantissa = std::frexp(x, &exponent);
+  if (exponent % 2 != 0) {
+    mantissa *= 2.0;
+    --exponent;
+  }
+  double root = 0.5 * (1.0 + mantissa);
+  for (int i = 0; i < kRootIterations; ++i) {
+    root = 0.5 * (root + mantissa / root);
+  }
+  while (product_below(root, root + ulp_above(root), mantissa)) {
+    root += ulp_above(root);
+  }
+  while (!product_below(root, root - ulp_below(root), mantissa)) {
+    root -= ulp_below(root);
+  }
+  double scale = 1.0;
+  for (int e = 0; e < exponent / 2; ++e) {
+    scale *= 2.0;
+  }
+  for (int e = 0; e > exponent / 2; --e) {
+    scale *= 0.5;
+  }
+  return root * scale;
+}
+
 Vec2 standard_normal_pair(Rng& rng) {
   const DiscPoint p = disc_point(rng);
-  const double factor = std::sqrt(-2.0 * natural_log(p.radius_squared) / p.radius_squared);
+  const double factor = square_root(-2.0 * natural_log(p.radius_squared) / p.radius_squared);
   return {p.u * factor, p.v * factor};
 }
 
@@ -269,7 +323,7 @@ MotionState advance(const MotionState& state, double turn_rate_rad_s, double end
   const Vec2 travel = times(state.heading, {state.speed * mean_rotation.x + gain * weighted_rotation.x,
                                             state.speed * mean_rotation.y + gain * weighted_rotation.y});
   const Vec2 turned = times(state.heading, rotation);
-  const double length = std::sqrt(turned.x * turned.x + turned.y * turned.y);
+  const double length = square_root(turned.x * turned.x + turned.y * turned.y);
   return {{state.position.x + dt_s * travel.x, state.position.y + dt_s * travel.y},
           {turned.x / length, turned.y / length},
           end_speed};
@@ -286,7 +340,7 @@ GeneratedScenario generate(const ScenarioConfig& config) {
     vehicle.motion.position.x = rng.uniform(-config.area_half_width_m, config.area_half_width_m);
     vehicle.motion.position.y = rng.uniform(-config.area_half_width_m, config.area_half_width_m);
     const DiscPoint heading = disc_point(rng);
-    const double length = std::sqrt(heading.radius_squared);
+    const double length = square_root(heading.radius_squared);
     vehicle.motion.heading = {heading.u / length, heading.v / length};
     vehicle.motion.speed = rng.uniform(kMinSpeed, kMaxSpeed);
     vehicles.push_back(vehicle);
