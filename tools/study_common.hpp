@@ -12,8 +12,8 @@
 #include "kite/matrix.hpp"
 #include "kite/types.hpp"
 
-// Helpers the study tools share. Ground truth enters only through label_of, which labels a
-// measurement; no tracker ever sees it.
+// Helpers the study tools share. Ground truth enters only through classify_measurement, which
+// labels a measurement; no tracker ever sees it.
 namespace kite::study {
 
 inline constexpr double kLabelMarginM = 1.0;
@@ -65,11 +65,6 @@ inline Label classify_measurement(Vec2 z, const std::vector<GroundTruthState>& t
   return {LabelKind::ambiguous};
 }
 
-inline CarLabel label_of(Vec2 z, const std::vector<GroundTruthState>& truth) {
-  return classify_measurement(z, truth).as_car();
-}
-
-// The measurements of a run that carry no car label, split by why.
 struct LabelCounts {
   int clutter = 0;
   int ambiguous = 0;
@@ -88,12 +83,22 @@ struct LabelCounts {
 
 // The straight scenario prints one "ambiguous" column that counts every measurement without a car
 // label, as it did before the hard scenario existed. The hard scenario splits it into clutter and
-// ambiguous.
-inline std::vector<std::string> label_headers(baseline_setup::Scenario scenario) {
+// ambiguous. A column heading wraps each name in the prefix and suffix given.
+inline std::vector<std::string> label_headers(baseline_setup::Scenario scenario,
+                                              const std::string& prefix = "",
+                                              const std::string& suffix = "") {
+  std::vector<std::string> names{"ambiguous"};
   if (scenario == baseline_setup::Scenario::hard) {
-    return {"clutter", "ambiguous"};
+    names = {"clutter", "ambiguous"};
   }
-  return {"ambiguous"};
+  for (std::string& name : names) {
+    name = prefix + name + suffix;
+  }
+  return names;
+}
+
+inline void append(std::vector<std::string>& cells, const std::vector<std::string>& more) {
+  cells.insert(cells.end(), more.begin(), more.end());
 }
 
 inline std::string row(const std::vector<std::string>& cells) {

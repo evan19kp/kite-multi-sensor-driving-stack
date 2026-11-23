@@ -428,7 +428,6 @@ if(KITE_BUILD_TESTS)
             -DOUT=${CMAKE_CURRENT_BINARY_DIR}/association_study_hard.md
             -P ${CMAKE_CURRENT_SOURCE_DIR}/run_to_file.cmake)
 
-  # The hard scenario's scoring rows and steal tables, for each association mode.
   foreach(mode two_stage joint joint_likelihood)
     add_test(NAME kite_baseline_hard_association_${mode}_output
       COMMAND ${CMAKE_COMMAND} -DEXE=$<TARGET_FILE:kite_baseline>

@@ -76,15 +76,6 @@ TEST(ClassifyMeasurement, TheTruthOrderDoesNotChangeTheLabel) {
   EXPECT_EQ(classify({vehicle(6, 2.0), vehicle(5, 1.0)}).as_car(), kite::study::CarLabel(5));
 }
 
-TEST(LabelOf, IsTheCarLabelOfClassifyMeasurement) {
-  const std::vector<kite::GroundTruthState> labelled{vehicle(5, 1.0)};
-  const std::vector<kite::GroundTruthState> clutter{vehicle(5, 9.0)};
-  const std::vector<kite::GroundTruthState> ambiguous{vehicle(5, 1.0), vehicle(6, 1.5)};
-  EXPECT_EQ(kite::study::label_of(kOrigin, labelled), kite::study::CarLabel(5));
-  EXPECT_FALSE(kite::study::label_of(kOrigin, clutter));
-  EXPECT_FALSE(kite::study::label_of(kOrigin, ambiguous));
-}
-
 TEST(LabelCounts, CountClutterAndAmbiguousApartAndNeverACar) {
   LabelCounts counts;
   counts.add({LabelKind::clutter});
@@ -101,6 +92,8 @@ TEST(LabelSummary, TheStraightScenarioPrintsOneAmbiguousCountAsItAlwaysDid) {
   EXPECT_EQ(kite::study::label_summary(Scenario::straight, 10, counts),
             "10 measurements, 5 ambiguous");
   EXPECT_EQ(kite::study::label_headers(Scenario::straight), std::vector<std::string>{"ambiguous"});
+  EXPECT_EQ(kite::study::label_headers(Scenario::straight, "born "),
+            std::vector<std::string>{"born ambiguous"});
   EXPECT_EQ(kite::study::label_cells(Scenario::straight, counts), std::vector<std::string>{"5"});
   EXPECT_EQ(kite::study::scenario_suffix(Scenario::straight), "");
 }
@@ -111,6 +104,8 @@ TEST(LabelSummary, TheHardScenarioStatesClutterAndAmbiguousApart) {
             "10 measurements, 2 clutter, 3 ambiguous");
   EXPECT_EQ(kite::study::label_headers(Scenario::hard),
             (std::vector<std::string>{"clutter", "ambiguous"}));
+  EXPECT_EQ(kite::study::label_headers(Scenario::hard, "born ", " birth"),
+            (std::vector<std::string>{"born clutter birth", "born ambiguous birth"}));
   EXPECT_EQ(kite::study::label_cells(Scenario::hard, counts),
             (std::vector<std::string>{"2", "3"}));
   EXPECT_EQ(kite::study::scenario_suffix(Scenario::hard), ", hard scenario");
@@ -205,7 +200,7 @@ TEST(TentativeClassifierBirths, ADroppedClutterBirthIsCountedApartFromAnAmbiguou
   EXPECT_EQ(clutter.dropped, 1);
   EXPECT_EQ(clutter.clutter_births, 1);
   EXPECT_EQ(clutter.ambiguous_births, 0);
-  EXPECT_EQ(clutter.unlabelled_births(), 1);
+  EXPECT_EQ(clutter.births().unlabelled(), 1);
 
   std::vector<LabelledStep> ambiguous_steps(5);
   add(ambiguous_steps, 0, 0.0, Label{LabelKind::ambiguous});
@@ -213,7 +208,7 @@ TEST(TentativeClassifierBirths, ADroppedClutterBirthIsCountedApartFromAnAmbiguou
   EXPECT_EQ(ambiguous.dropped, 1);
   EXPECT_EQ(ambiguous.clutter_births, 0);
   EXPECT_EQ(ambiguous.ambiguous_births, 1);
-  EXPECT_EQ(ambiguous.unlabelled_births(), 1);
+  EXPECT_EQ(ambiguous.births().unlabelled(), 1);
 }
 
 }

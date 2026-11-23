@@ -167,7 +167,7 @@ struct TentativeOutcome {
   int cars_never_confirmed = 0;
   long long steps_to_confirmation = 0;
 
-  int unlabelled_births() const { return clutter_births + ambiguous_births; }
+  study::LabelCounts births() const { return {clutter_births, ambiguous_births}; }
 
   TentativeOutcome& operator+=(const TentativeOutcome& other) {
     tentative += other.tentative;

@@ -49,8 +49,6 @@ struct Block {
 constexpr std::array<Block, 4> kBlocks = {
     {{0.95, 100001}, {0.90, 120001}, {0.80, 140001}, {0.70, 160001}}};
 
-constexpr int kLastTuningSeed = 120;
-
 std::string percent(double fraction) { return kite::format_fixed(fraction * 100.0); }
 
 std::string seed_range(int first, int last) {
@@ -212,7 +210,6 @@ std::string mean_steps(long long steps, int confirmed_cars) {
 }
 
 void print_tuning(Scenario scenario) {
-  const bool hard = scenario == Scenario::hard;
   std::vector<TuningSeed> seeds;
   TuningSeed total{};
   for (int seed = kFirstTuningSeed; seed <= kLastTuningSeed; ++seed) {
@@ -227,7 +224,7 @@ void print_tuning(Scenario scenario) {
                               label_summary(scenario, total.measurements, total.unlabelled) +
                               ".\n\n";
 
-  const auto track_row = [hard](const std::string& label, const TuningSeed& s) {
+  const auto track_row = [scenario](const std::string& label, const TuningSeed& s) {
     const TentativeOutcome& o = s.outcome;
     std::vector<std::string> cells{label,
                                    count(o.tentative),
@@ -236,21 +233,16 @@ void print_tuning(Scenario scenario) {
                                    count(o.unresolved),
                                    count(o.real_births_lost),
                                    count(o.car_already_confirmed)};
-    if (hard) {
-      cells.push_back(count(o.clutter_births));
-      cells.push_back(count(o.ambiguous_births));
+    append(cells, label_cells(scenario, o.births()));
+    if (scenario == Scenario::hard) {
       cells.push_back(count(o.duplicate_tentative_tracks));
-    } else {
-      cells.push_back(count(o.unlabelled_births()));
     }
     return row(cells);
   };
   const auto car_row = [scenario](const std::string& label, const TuningSeed& s) {
     const TentativeOutcome& o = s.outcome;
     std::vector<std::string> cells{label, count(s.measurements)};
-    for (std::string& cell : label_cells(scenario, s.unlabelled)) {
-      cells.push_back(std::move(cell));
-    }
+    append(cells, label_cells(scenario, s.unlabelled));
     cells.push_back(count(o.cars));
     cells.push_back(count(o.cars_never_confirmed));
     cells.push_back(mean_steps(o.steps_to_confirmation, o.cars - o.cars_never_confirmed));
@@ -264,12 +256,9 @@ void print_tuning(Scenario scenario) {
                                        "unresolved",
                                        "real births lost",
                                        "birth to a car with a confirmed track"};
-  if (hard) {
-    track_names.push_back("clutter birth");
-    track_names.push_back("ambiguous birth");
+  append(track_names, label_headers(scenario, "", " birth"));
+  if (scenario == Scenario::hard) {
     track_names.push_back("duplicate tentative tracks");
-  } else {
-    track_names.push_back("ambiguous birth");
   }
   std::string out = caption + table_header(track_names);
   for (const TuningSeed& s : seeds) {
@@ -278,9 +267,7 @@ void print_tuning(Scenario scenario) {
   out += track_row("total", total);
 
   std::vector<std::string> car_names{"seed", "measurements"};
-  for (const std::string& name : label_headers(scenario)) {
-    car_names.push_back(name);
-  }
+  append(car_names, label_headers(scenario));
   car_names.push_back("cars");
   car_names.push_back("cars never confirmed");
   car_names.push_back("mean steps, first measurement to confirmation");

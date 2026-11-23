@@ -63,6 +63,7 @@ inline KalmanTracker make_kalman_tracker(AssociationMode association) {
 inline constexpr std::array<double, 4> kTuningQs = {0.01, 0.1, 1.0, 10.0};
 inline constexpr std::array<double, 3> kTuningVelocitySigmas = {5.0, 10.0, 20.0};
 inline constexpr int kFirstTuningSeed = 101;
+inline constexpr int kLastTuningSeed = 120;
 
 inline constexpr std::array<std::pair<Scenario, std::string_view>, 2> kScenarioNames = {{
     {Scenario::straight, "straight"},

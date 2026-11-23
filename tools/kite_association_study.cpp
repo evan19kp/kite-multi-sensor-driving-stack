@@ -26,7 +26,6 @@ namespace {
 using namespace kite::baseline_setup;
 using namespace kite::study;
 
-constexpr int kLastSeed = 120;
 constexpr std::size_t kDuplicateWindowSteps = 5;
 
 constexpr const char* kUsage =
@@ -249,10 +248,6 @@ SeedResult run_seed(int seed, Scenario scenario_kind, kite::AssociationMode asso
   return result;
 }
 
-void append(std::vector<std::string>& cells, const std::vector<std::string>& more) {
-  cells.insert(cells.end(), more.begin(), more.end());
-}
-
 template <typename Predicate>
 int count_if(const std::vector<Steal>& steals, Predicate predicate) {
   return static_cast<int>(std::count_if(steals.begin(), steals.end(), predicate));
@@ -368,7 +363,7 @@ int main(int argc, char** argv) {
 
   const Scenario scenario = options.scenario;
   std::vector<SeedResult> seeds;
-  for (int seed = kFirstTuningSeed; seed <= kLastSeed; ++seed) {
+  for (int seed = kFirstTuningSeed; seed <= kLastTuningSeed; ++seed) {
     seeds.push_back(run_seed(seed, scenario, options.association));
   }
   std::vector<Steal> all;
@@ -421,9 +416,7 @@ int main(int argc, char** argv) {
                                        "tentative age max",
                                        "born from same car",
                                        "born from other car"};
-  for (const std::string& name : label_headers(scenario)) {
-    birth_names.push_back("born " + name);
-  }
+  append(birth_names, label_headers(scenario, "born "));
   append(birth_names, {"born outside every gate", "born inside a gate"});
   out += "\n" + caption + table_header(birth_names);
   for (const StealClass kind : kClasses) {

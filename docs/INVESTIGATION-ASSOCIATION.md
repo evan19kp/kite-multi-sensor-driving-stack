@@ -564,8 +564,10 @@ sees it, and the generator marks no measurement as clutter.
 The label comes only from the distance to the truth vehicles, in `tools/study_common.hpp`. So a
 false detection within 3 m of a car is labelled as that car, or ambiguous, and a real detection whose
 noise put it more than 3 m from its car is labelled clutter. A measurement with no car label,
-clutter or ambiguous, is never a steal and never counts in a reverse steal. Every table below states
-its clutter and ambiguous counts. The straight tables above count both together as ambiguous.
+clutter or ambiguous, is never a steal and never counts in a reverse steal. The three scoring tables
+are `kite_baseline`-style scores that use no labels, so the clutter and ambiguous counts are stated
+with the labelled tables: the steal tables and the tentative-track tables. The straight tables above
+count both together as ambiguous.
 
 ### Definitions
 
