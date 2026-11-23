@@ -31,14 +31,39 @@ inline constexpr int kKalmanConfirmWindow = 5;
 inline constexpr int kKalmanMaxMisses = 5;
 inline constexpr double kMatchGateM = 3.0;
 
+inline constexpr double kHardClutterPerStep = 2.0;
+
+enum class Scenario { straight, hard };
+
 inline ScenarioConfig scenario_config(std::uint64_t seed) {
   return {seed, kVehicles, kDurationS, kDtS, kNoiseM, kDetectionProbability, kAreaHalfWidthM};
 }
 
-inline KalmanTracker make_kalman_tracker(AssociationMode association) {
-  return KalmanTracker(kKalmanQ, kKalmanMeasurementSigmaM, kKalmanVelocitySigma, kKalmanGateChi2,
+inline ScenarioConfig scenario_config(Scenario scenario, std::uint64_t seed) {
+  ScenarioConfig config = scenario_config(seed);
+  if (scenario == Scenario::hard) {
+    config.turning = true;
+    config.speed_changes = true;
+    config.clutter_per_step = kHardClutterPerStep;
+  }
+  return config;
+}
+
+inline KalmanTracker make_kalman_tracker(double q, double velocity_sigma,
+                                         AssociationMode association) {
+  return KalmanTracker(q, kKalmanMeasurementSigmaM, velocity_sigma, kKalmanGateChi2,
                        kKalmanConfirmHits, kKalmanConfirmWindow, kKalmanMaxMisses, association);
 }
+
+inline KalmanTracker make_kalman_tracker(AssociationMode association) {
+  return make_kalman_tracker(kKalmanQ, kKalmanVelocitySigma, association);
+}
+
+// The tuning grid of R15, run again on the hard scenario.
+inline constexpr std::array<double, 4> kTuningQs = {0.01, 0.1, 1.0, 10.0};
+inline constexpr std::array<double, 3> kTuningVelocitySigmas = {5.0, 10.0, 20.0};
+inline constexpr int kFirstTuningSeed = 101;
+inline constexpr int kLastReportingSeed = 20;
 
 inline constexpr std::array<std::pair<AssociationMode, std::string_view>, 3> kAssociationNames = {{
     {AssociationMode::two_stage, "two_stage"},

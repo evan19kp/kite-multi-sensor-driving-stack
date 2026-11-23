@@ -555,6 +555,20 @@ Each item that introduces a lasting rule adds a "## Standing rules (R<n>)" secti
   off glibc and MSVC. `Generator.AdvanceRenormalisesTheHeadingWithTheCorrectlyRoundedLength`
   fails with `std::sqrt` in the MinGW Debug build of the `dev` preset.
 
+## Standing rules (R51)
+
+- `kite_baseline --scenario straight` is the default and prints exactly what it printed without
+  the flag; `kite_baseline_scenario_straight_matches_default` and
+  `kite_baseline_scenario_straight_kalman_matches_default` enforce it. The hard scenario's
+  constants live in `tools/baseline_setup.hpp` beside the straight ones.
+- The "Hard scenario" tables in `docs/BASELINE.md` change only by pasting `kite_baseline` output;
+  `kite_baseline_hard_doc_matches`, `kite_baseline_hard_kalman_doc_matches` and
+  `kite_baseline_hard_grid_doc_matches` enforce them. Their comparison paragraph quotes only
+  numbers that appear in those tables.
+- Tuning candidates are reported on seeds 101-120 only. `kite_baseline --grid` refuses any seed
+  range that includes a reporting seed (1-20), and no table gives a tuned candidate's numbers on
+  seeds 1-20. The tracker defaults stay as they are until a roadmap item changes them.
+
 ## Simulator files (hard rule)
 
 - Never read, list, search, copy, launch or write about the simulator's install folder, its user

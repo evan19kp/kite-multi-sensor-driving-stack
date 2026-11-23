@@ -202,6 +202,87 @@ if(KITE_BUILD_TESTS)
             -P ${CMAKE_CURRENT_SOURCE_DIR}/doc_contains.cmake)
   set_tests_properties(kite_baseline_kalman_doc_matches PROPERTIES FIXTURES_REQUIRED kite_kalman_table)
 
+  kite_exit_test(kite_baseline_scenario_bad_value kite_baseline 2 "--scenario;bogus")
+  kite_exit_test(kite_baseline_scenario_missing_value kite_baseline 2 "--seeds;1;--scenario")
+  kite_exit_test(kite_baseline_scenario_duplicate kite_baseline 2
+    "--scenario;hard;--seeds;1;--scenario;straight")
+  kite_exit_test(kite_baseline_grid_on_reporting_seeds kite_baseline 2
+    "--scenario;hard;--grid;1-20")
+  kite_exit_test(kite_baseline_grid_single_number kite_baseline 2 "--grid;120")
+  kite_exit_test(kite_baseline_grid_straddling_reporting_seeds kite_baseline 2
+    "--grid;20-101")
+  kite_exit_test(kite_baseline_grid_with_seeds kite_baseline 2 "--grid;101-102;--seeds;101-102")
+  kite_exit_test(kite_baseline_grid_with_tracker kite_baseline 2
+    "--tracker;kalman;--grid;101-102")
+  kite_exit_test(kite_baseline_grid_with_association kite_baseline 2
+    "--grid;101-102;--tracker;kalman;--association;joint")
+
+  # --scenario straight is the default, so its output is the table the doc-matches tests pin.
+  add_test(NAME kite_baseline_scenario_straight_output
+    COMMAND ${CMAKE_COMMAND} -DEXE=$<TARGET_FILE:kite_baseline> "-DARGS=--scenario;straight"
+            -DOUT=${CMAKE_CURRENT_BINARY_DIR}/baseline_straight.md
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/run_to_file.cmake)
+  set_tests_properties(kite_baseline_scenario_straight_output
+                       PROPERTIES FIXTURES_SETUP kite_baseline_straight_table)
+  add_test(NAME kite_baseline_scenario_straight_matches_default
+    COMMAND ${CMAKE_COMMAND} -E compare_files
+            ${CMAKE_CURRENT_BINARY_DIR}/baseline.md ${CMAKE_CURRENT_BINARY_DIR}/baseline_straight.md)
+  set_tests_properties(kite_baseline_scenario_straight_matches_default
+                       PROPERTIES FIXTURES_REQUIRED "kite_baseline_table;kite_baseline_straight_table")
+
+  add_test(NAME kite_baseline_scenario_straight_kalman_output
+    COMMAND ${CMAKE_COMMAND} -DEXE=$<TARGET_FILE:kite_baseline>
+            "-DARGS=--scenario;straight;--tracker;kalman"
+            -DOUT=${CMAKE_CURRENT_BINARY_DIR}/kalman_straight.md
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/run_to_file.cmake)
+  set_tests_properties(kite_baseline_scenario_straight_kalman_output
+                       PROPERTIES FIXTURES_SETUP kite_kalman_straight_table)
+  add_test(NAME kite_baseline_scenario_straight_kalman_matches_default
+    COMMAND ${CMAKE_COMMAND} -E compare_files
+            ${CMAKE_CURRENT_BINARY_DIR}/kalman.md ${CMAKE_CURRENT_BINARY_DIR}/kalman_straight.md)
+  set_tests_properties(kite_baseline_scenario_straight_kalman_matches_default
+                       PROPERTIES FIXTURES_REQUIRED "kite_kalman_table;kite_kalman_straight_table")
+
+  add_test(NAME kite_baseline_hard_output
+    COMMAND ${CMAKE_COMMAND} -DEXE=$<TARGET_FILE:kite_baseline> "-DARGS=--scenario;hard"
+            -DOUT=${CMAKE_CURRENT_BINARY_DIR}/baseline_hard.md
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/run_to_file.cmake)
+  set_tests_properties(kite_baseline_hard_output PROPERTIES FIXTURES_SETUP kite_baseline_hard_table)
+  add_test(NAME kite_baseline_hard_doc_matches
+    COMMAND ${CMAKE_COMMAND} -DTABLE=${CMAKE_CURRENT_BINARY_DIR}/baseline_hard.md
+            -DDOC=${PROJECT_SOURCE_DIR}/docs/BASELINE.md
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/doc_contains.cmake)
+  set_tests_properties(kite_baseline_hard_doc_matches
+                       PROPERTIES FIXTURES_REQUIRED kite_baseline_hard_table)
+
+  add_test(NAME kite_baseline_hard_kalman_output
+    COMMAND ${CMAKE_COMMAND} -DEXE=$<TARGET_FILE:kite_baseline>
+            "-DARGS=--scenario;hard;--tracker;kalman"
+            -DOUT=${CMAKE_CURRENT_BINARY_DIR}/kalman_hard.md
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/run_to_file.cmake)
+  set_tests_properties(kite_baseline_hard_kalman_output
+                       PROPERTIES FIXTURES_SETUP kite_kalman_hard_table)
+  add_test(NAME kite_baseline_hard_kalman_doc_matches
+    COMMAND ${CMAKE_COMMAND} -DTABLE=${CMAKE_CURRENT_BINARY_DIR}/kalman_hard.md
+            -DDOC=${PROJECT_SOURCE_DIR}/docs/BASELINE.md
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/doc_contains.cmake)
+  set_tests_properties(kite_baseline_hard_kalman_doc_matches
+                       PROPERTIES FIXTURES_REQUIRED kite_kalman_hard_table)
+
+  add_test(NAME kite_baseline_hard_grid_output
+    COMMAND ${CMAKE_COMMAND} -DEXE=$<TARGET_FILE:kite_baseline> "-DARGS=--scenario;hard;--grid;101-120"
+            "-DEXPECT_MATCH=[|] 10[.]000 [|] 5[.]000 [|] 1494[.]100 [|] 10[.]900 [|] 1[.]100 [|] 0[.]806 [|] 0[.]150 [|] 301[.]000 [|] 12[.]150 [|].*selected: q 10[.]000, velocity_sigma 5[.]000"
+            -DOUT=${CMAKE_CURRENT_BINARY_DIR}/grid_hard.md
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/run_to_file.cmake)
+  set_tests_properties(kite_baseline_hard_grid_output
+                       PROPERTIES FIXTURES_SETUP kite_baseline_hard_grid_table)
+  add_test(NAME kite_baseline_hard_grid_doc_matches
+    COMMAND ${CMAKE_COMMAND} -DTABLE=${CMAKE_CURRENT_BINARY_DIR}/grid_hard.md
+            -DDOC=${PROJECT_SOURCE_DIR}/docs/BASELINE.md
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/doc_contains.cmake)
+  set_tests_properties(kite_baseline_hard_grid_doc_matches
+                       PROPERTIES FIXTURES_REQUIRED kite_baseline_hard_grid_table)
+
   kite_exit_test(kite_baseline_association_without_tracker kite_baseline 2 "--association;joint")
   kite_exit_test(kite_baseline_association_with_baseline_tracker kite_baseline 2
     "--tracker;baseline;--association;joint")

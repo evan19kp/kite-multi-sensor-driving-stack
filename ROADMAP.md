@@ -431,7 +431,7 @@ golden file stays byte-identical. Nothing here needs the simulator; every accept
   unchanged); a turning vehicle ends where the closed-form circle says (stated tolerance); speed stays
   in [0, 20]; clutter count mean within a stated bound of λ; clutter carries no identity; a golden
   test of a small hard scenario byte-identical on g++ and MSVC.
-- [ ] **R51 `kite_baseline --scenario straight|hard` and honest tables** (feat, Sonnet; needs R50):
+- [x] **R51 `kite_baseline --scenario straight|hard` and honest tables** (feat, Sonnet; needs R50):
   `--scenario` (default `straight`, today's exact output); `hard` is the same 5 vehicles, 30 s, dt
   0.1 s, noise 1.0 m, pd 0.95, half-width 100 m plus turning, speed changes and clutter λ = 2, with
   constants in `tools/baseline_setup.hpp`; `docs/BASELINE.md` section "Hard scenario" with the
