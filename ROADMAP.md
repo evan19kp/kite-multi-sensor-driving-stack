@@ -420,7 +420,7 @@ Harder synthetic scenarios (turns, braking, clutter) and the trackers re-scored 
 No tracker default or parameter changes; with the new options off every existing output, table and
 golden file stays byte-identical. Nothing here needs the simulator; every acceptance check runs in CI.
 
-- [ ] **R50 Generator: manoeuvres and clutter** (feat, Opus builder): new `ScenarioConfig` fields,
+- [x] **R50 Generator: manoeuvres and clutter** (feat, Opus builder): new `ScenarioConfig` fields,
   all off by default: turning (straight and constant-turn-rate segments, lengths uniform in [2, 6) s,
   turn rate uniform in [-0.3, 0.3) rad/s), speed changes (constant-acceleration segments uniform in
   [-3, 2) m/s², speed clamped to [0, 20] m/s) and clutter (per step a count of false detections with
