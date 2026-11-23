@@ -22,14 +22,22 @@ using namespace kite::drop_study;
 using namespace kite::study;
 
 constexpr const char* kUsage =
-    "usage: kite_drop_study --monte-carlo | --tuning\n"
+    "usage: kite_drop_study (--monte-carlo | --tuning) [--scenario straight|hard]\n"
     "Measures how often KalmanTracker drops a tentative track, with the kite_baseline tracker\n"
     "parameters and the default two_stage association.\n"
     "  --monte-carlo  one vehicle, detection probability 0.95, 0.90, 0.80 and 0.70, 20000 seeds each\n"
     "                 from 100001: the first track born from the car is confirmed or dropped\n"
     "  --tuning       the kite_baseline scenario on seeds 101-120: every dropped tentative track,\n"
     "                 and the steps from a car's first measurement to its confirmation\n"
+    "  --scenario     straight (default) or hard, as in kite_baseline. With hard, --tuning counts\n"
+    "                 clutter and ambiguous measurements and births apart and adds the duplicate\n"
+    "                 tentative tracks of one car; --monte-carlo takes straight only\n"
     "  --help         print this text\n";
+
+class UsageError : public std::runtime_error {
+ public:
+  using std::runtime_error::runtime_error;
+};
 
 constexpr int kSeedsPerP = 20000;
 constexpr double kMonteCarloDurationS = 10.0;
@@ -40,9 +48,6 @@ struct Block {
 };
 constexpr std::array<Block, 4> kBlocks = {
     {{0.95, 100001}, {0.90, 120001}, {0.80, 140001}, {0.70, 160001}}};
-
-constexpr int kFirstTuningSeed = 101;
-constexpr int kLastTuningSeed = 120;
 
 std::string percent(double fraction) { return kite::format_fixed(fraction * 100.0); }
 
@@ -170,13 +175,13 @@ void print_monte_carlo() {
 struct TuningSeed {
   int seed;
   int measurements = 0;
-  int ambiguous = 0;
+  LabelCounts unlabelled;
   TentativeOutcome outcome;
 };
 
-TuningSeed run_tuning_seed(int seed) {
+TuningSeed run_tuning_seed(int seed, Scenario scenario_kind) {
   const kite::GeneratedScenario scenario =
-      kite::generate(scenario_config(static_cast<std::uint64_t>(seed)));
+      kite::generate(scenario_config(scenario_kind, static_cast<std::uint64_t>(seed)));
   kite::KalmanTracker tracker = make_kalman_tracker(kite::AssociationMode::two_stage);
   tracker.record_steps(true);
 
@@ -185,13 +190,13 @@ TuningSeed run_tuning_seed(int seed) {
   TentativeClassifier classifier(kKalmanGateChi2);
   for (const kite::ScenarioStep& step : scenario.steps) {
     const std::vector<kite::TrackState> output = tracker.update(step.t, step.measurements);
-    std::vector<CarLabel> labels;
+    std::vector<Label> labels;
     for (const kite::Measurement& z : step.measurements) {
-      labels.push_back(label_of(z.position, step.truth));
+      labels.push_back(classify_measurement(z.position, step.truth));
       ++result.measurements;
-      result.ambiguous += labels.back() ? 0 : 1;
+      result.unlabelled.add(labels.back());
     }
-    classifier.observe(tracker.step_record().value(), step.measurements, output, labels);
+    classifier.observe_labelled(tracker.step_record().value(), step.measurements, output, labels);
   }
   result.outcome = classifier.outcome();
   return result;
@@ -204,46 +209,69 @@ std::string mean_steps(long long steps, int confirmed_cars) {
   return kite::format_fixed(static_cast<double>(steps) / static_cast<double>(confirmed_cars));
 }
 
-void print_tuning() {
+void print_tuning(Scenario scenario) {
   std::vector<TuningSeed> seeds;
   TuningSeed total{};
   for (int seed = kFirstTuningSeed; seed <= kLastTuningSeed; ++seed) {
-    seeds.push_back(run_tuning_seed(seed));
+    seeds.push_back(run_tuning_seed(seed, scenario));
     const TuningSeed& s = seeds.back();
     total.measurements += s.measurements;
-    total.ambiguous += s.ambiguous;
+    total.unlabelled += s.unlabelled;
     total.outcome += s.outcome;
   }
-  const std::string caption = "Tentative tracks, two_stage, seeds " +
-                              seed_range(kFirstTuningSeed, kLastTuningSeed) + ": " +
-                              count(total.measurements) + " measurements, " +
-                              count(total.ambiguous) + " ambiguous.\n\n";
+  const std::string caption = "Tentative tracks, two_stage" + scenario_suffix(scenario) +
+                              ", seeds " + seed_range(kFirstTuningSeed, kLastTuningSeed) + ": " +
+                              label_summary(scenario, total.measurements, total.unlabelled) +
+                              ".\n\n";
 
-  const auto track_row = [](const std::string& label, const TuningSeed& s) {
+  const auto track_row = [scenario](const std::string& label, const TuningSeed& s) {
     const TentativeOutcome& o = s.outcome;
-    return row({label, count(o.tentative), count(o.confirmed), count(o.dropped),
-                count(o.unresolved), count(o.real_births_lost), count(o.car_already_confirmed),
-                count(o.ambiguous_births)});
+    std::vector<std::string> cells{label,
+                                   count(o.tentative),
+                                   count(o.confirmed),
+                                   count(o.dropped),
+                                   count(o.unresolved),
+                                   count(o.real_births_lost),
+                                   count(o.car_already_confirmed)};
+    append(cells, label_cells(scenario, o.births()));
+    if (scenario == Scenario::hard) {
+      cells.push_back(count(o.duplicate_tentative_tracks));
+    }
+    return row(cells);
   };
-  const auto car_row = [](const std::string& label, const TuningSeed& s) {
+  const auto car_row = [scenario](const std::string& label, const TuningSeed& s) {
     const TentativeOutcome& o = s.outcome;
-    return row({label, count(s.measurements), count(s.ambiguous), count(o.cars),
-                count(o.cars_never_confirmed),
-                mean_steps(o.steps_to_confirmation, o.cars - o.cars_never_confirmed)});
+    std::vector<std::string> cells{label, count(s.measurements)};
+    append(cells, label_cells(scenario, s.unlabelled));
+    cells.push_back(count(o.cars));
+    cells.push_back(count(o.cars_never_confirmed));
+    cells.push_back(mean_steps(o.steps_to_confirmation, o.cars - o.cars_never_confirmed));
+    return row(cells);
   };
 
-  std::string out = caption + table_header({"seed", "tentative tracks", "confirmed", "dropped",
-                                            "unresolved", "real births lost",
-                                            "birth to a car with a confirmed track",
-                                            "ambiguous birth"});
+  std::vector<std::string> track_names{"seed",
+                                       "tentative tracks",
+                                       "confirmed",
+                                       "dropped",
+                                       "unresolved",
+                                       "real births lost",
+                                       "birth to a car with a confirmed track"};
+  append(track_names, label_headers(scenario, "", " birth"));
+  if (scenario == Scenario::hard) {
+    track_names.push_back("duplicate tentative tracks");
+  }
+  std::string out = caption + table_header(track_names);
   for (const TuningSeed& s : seeds) {
     out += track_row(count(s.seed), s);
   }
   out += track_row("total", total);
 
-  out += "\n" + caption +
-         table_header({"seed", "measurements", "ambiguous", "cars", "cars never confirmed",
-                       "mean steps, first measurement to confirmation"});
+  std::vector<std::string> car_names{"seed", "measurements"};
+  append(car_names, label_headers(scenario));
+  car_names.push_back("cars");
+  car_names.push_back("cars never confirmed");
+  car_names.push_back("mean steps, first measurement to confirmation");
+  out += "\n" + caption + table_header(car_names);
   for (const TuningSeed& s : seeds) {
     out += car_row(count(s.seed), s);
   }
@@ -251,22 +279,64 @@ void print_tuning() {
   std::cout << out;
 }
 
+enum class Study { monte_carlo, tuning };
+
+struct Options {
+  Study study;
+  Scenario scenario;
+};
+
+Options parse_options(int argc, char** argv) {
+  std::optional<Study> study;
+  std::optional<Scenario> scenario;
+  for (int i = 1; i < argc; ++i) {
+    const std::string_view flag = argv[i];
+    if (flag == "--monte-carlo" || flag == "--tuning") {
+      if (study) {
+        throw UsageError("give one of --monte-carlo and --tuning, once");
+      }
+      study = flag == "--tuning" ? Study::tuning : Study::monte_carlo;
+    } else if (flag == "--scenario") {
+      if (scenario) {
+        throw UsageError("duplicate argument: --scenario");
+      }
+      if (++i == argc) {
+        throw UsageError("missing value for --scenario");
+      }
+      scenario = parse_scenario(argv[i]);
+      if (!scenario) {
+        throw UsageError("invalid value for --scenario: '" + std::string(argv[i]) + "'");
+      }
+    } else {
+      throw UsageError("unknown argument: " + std::string(flag));
+    }
+  }
+  if (!study) {
+    throw UsageError("give --monte-carlo or --tuning");
+  }
+  if (*study == Study::monte_carlo && scenario == Scenario::hard) {
+    throw UsageError("--monte-carlo takes --scenario straight only");
+  }
+  return {*study, scenario.value_or(Scenario::straight)};
+}
+
 }
 
 int main(int argc, char** argv) {
-  const std::string_view flag = argc == 2 ? argv[1] : "";
-  if (flag == "--help") {
+  if (argc == 2 && std::string_view(argv[1]) == "--help") {
     std::cout << kUsage;
     return 0;
   }
-  if (flag == "--monte-carlo") {
-    print_monte_carlo();
+  try {
+    const Options options = parse_options(argc, argv);
+    if (options.study == Study::monte_carlo) {
+      print_monte_carlo();
+    } else {
+      print_tuning(options.scenario);
+    }
     return 0;
+  } catch (const UsageError& error) {
+    std::cerr << error.what() << "\n" << kUsage;
+    return 2;
   }
-  if (flag == "--tuning") {
-    print_tuning();
-    return 0;
-  }
-  std::cerr << kUsage;
-  return 2;
 }

@@ -143,10 +143,16 @@ class TrackFollower {
   MissCauses misses_;
 };
 
+// A track started at most this many steps after an earlier track of the same car is a duplicate
+// tentative track. Two births in the same step are 0 steps apart.
+inline constexpr std::size_t kDuplicateBirthWindowSteps = 5;
+
 // What became of every tentative track in one run, and how fast each car got a confirmed track.
-// A dropped track is "ambiguous" when its birth measurement had no label, "car already confirmed"
-// when it was labelled and some confirmed track already belonged to that car after the birth
-// step, and "real birth lost" otherwise.
+// A dropped track is "clutter" when its birth measurement had no truth vehicle within the gate,
+// "ambiguous" when it had one but no car label, "car already confirmed" when it was labelled and
+// some confirmed track already belonged to that car after the birth step, and "real birth lost"
+// otherwise. A duplicate tentative track, dropped or not, is one whose birth measurement is
+// labelled to a car that an earlier track was also born from within kDuplicateBirthWindowSteps.
 struct TentativeOutcome {
   int tentative = 0;
   int confirmed = 0;
@@ -154,10 +160,14 @@ struct TentativeOutcome {
   int unresolved = 0;
   int real_births_lost = 0;
   int car_already_confirmed = 0;
+  int clutter_births = 0;
   int ambiguous_births = 0;
+  int duplicate_tentative_tracks = 0;
   int cars = 0;
   int cars_never_confirmed = 0;
   long long steps_to_confirmation = 0;
+
+  study::LabelCounts births() const { return {clutter_births, ambiguous_births}; }
 
   TentativeOutcome& operator+=(const TentativeOutcome& other) {
     tentative += other.tentative;
@@ -166,7 +176,9 @@ struct TentativeOutcome {
     unresolved += other.unresolved;
     real_births_lost += other.real_births_lost;
     car_already_confirmed += other.car_already_confirmed;
+    clutter_births += other.clutter_births;
     ambiguous_births += other.ambiguous_births;
+    duplicate_tentative_tracks += other.duplicate_tentative_tracks;
     cars += other.cars;
     cars_never_confirmed += other.cars_never_confirmed;
     steps_to_confirmation += other.steps_to_confirmation;
@@ -190,10 +202,26 @@ class TentativeClassifier {
  public:
   explicit TentativeClassifier(double gate_chi2) : gate_chi2_(gate_chi2) {}
 
+  // A measurement without a car label counts as ambiguous, never as clutter.
   void observe(const StepRecord& record, const std::vector<Measurement>& measurements,
                const std::vector<TrackState>& output, const std::vector<study::CarLabel>& labels) {
-    if (labels.size() != measurements.size()) {
+    std::vector<study::Label> kinds;
+    for (const study::CarLabel& car : labels) {
+      kinds.push_back(car ? study::Label{study::LabelKind::car, *car}
+                          : study::Label{study::LabelKind::ambiguous});
+    }
+    observe_labelled(record, measurements, output, kinds);
+  }
+
+  void observe_labelled(const StepRecord& record, const std::vector<Measurement>& measurements,
+                        const std::vector<TrackState>& output,
+                        const std::vector<study::Label>& kinds) {
+    if (kinds.size() != measurements.size()) {
       throw std::invalid_argument("need one label per measurement");
+    }
+    std::vector<study::CarLabel> labels;
+    for (const study::Label& kind : kinds) {
+      labels.push_back(kind.as_car());
     }
     for (Born& track : born_) {
       track.follower.observe(record, measurements, output);
@@ -223,7 +251,13 @@ class TentativeClassifier {
         const bool car_has_confirmed_track =
             labels[m] && std::count(cars_with_confirmed_track.begin(),
                                     cars_with_confirmed_track.end(), *labels[m]) > 0;
-        born_.push_back({TrackFollower(*id, gate_chi2_), labels[m], car_has_confirmed_track});
+        const bool duplicate =
+            labels[m] && std::any_of(born_.begin(), born_.end(), [&](const Born& earlier) {
+              return earlier.birth.as_car() == labels[m] &&
+                     step_ - earlier.birth_step <= kDuplicateBirthWindowSteps;
+            });
+        born_.push_back({TrackFollower(*id, gate_chi2_), kinds[m], car_has_confirmed_track, step_,
+                         duplicate});
       }
     }
     ++step_;
@@ -233,6 +267,7 @@ class TentativeClassifier {
     TentativeOutcome result;
     for (const Born& track : born_) {
       ++result.tentative;
+      result.duplicate_tentative_tracks += track.duplicate ? 1 : 0;
       switch (track.follower.fate()) {
         case Fate::confirmed:
           ++result.confirmed;
@@ -242,7 +277,9 @@ class TentativeClassifier {
           break;
         case Fate::dropped:
           ++result.dropped;
-          if (!track.birth_label) {
+          if (track.birth.kind == study::LabelKind::clutter) {
+            ++result.clutter_births;
+          } else if (track.birth.kind == study::LabelKind::ambiguous) {
             ++result.ambiguous_births;
           } else if (track.car_had_confirmed_track) {
             ++result.car_already_confirmed;
@@ -267,8 +304,10 @@ class TentativeClassifier {
  private:
   struct Born {
     TrackFollower follower;
-    study::CarLabel birth_label;
+    study::Label birth;
     bool car_had_confirmed_track;
+    std::size_t birth_step;
+    bool duplicate;
   };
 
   double gate_chi2_;

@@ -98,7 +98,7 @@ if(KITE_BUILD_TESTS)
             "-DEXPECT_STDOUT=matched=0 missed=2 false=2 rmse_m=n/a id_switches=0 steps=2"
             -P ${CMAKE_CURRENT_SOURCE_DIR}/score_log.cmake)
 
-  add_executable(kite_tools_tests tests/track_log_test.cpp)
+  add_executable(kite_tools_tests tests/track_log_test.cpp tests/study_test.cpp)
   target_link_libraries(kite_tools_tests PRIVATE kite_sim kite_eval kite_core GTest::gmock_main)
   target_include_directories(kite_tools_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
   target_compile_options(kite_tools_tests
@@ -383,6 +383,84 @@ if(KITE_BUILD_TESTS)
   set_tests_properties(kite_association_study_doc_matches
                        PROPERTIES FIXTURES_REQUIRED kite_association_study_tables)
 
+  kite_exit_test(kite_association_study_scenario_bad_value kite_association_study 2
+    "--scenario;bogus")
+  kite_exit_test(kite_association_study_scenario_missing_value kite_association_study 2
+    "--summary;--scenario")
+  kite_exit_test(kite_association_study_scenario_duplicate kite_association_study 2
+    "--scenario;hard;--scenario;straight")
+
+  # --scenario straight is the default, so its output is what the doc-matches tests pin.
+  add_test(NAME kite_association_study_scenario_straight_output
+    COMMAND ${CMAKE_COMMAND} -DEXE=$<TARGET_FILE:kite_association_study>
+            "-DARGS=--scenario;straight;--association;joint"
+            -DOUT=${CMAKE_CURRENT_BINARY_DIR}/association_study_straight.md
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/run_to_file.cmake)
+  set_tests_properties(kite_association_study_scenario_straight_output
+                       PROPERTIES FIXTURES_SETUP kite_association_study_straight_tables)
+  add_test(NAME kite_association_study_scenario_straight_matches_default
+    COMMAND ${CMAKE_COMMAND} -E compare_files
+            ${CMAKE_CURRENT_BINARY_DIR}/association_study.md
+            ${CMAKE_CURRENT_BINARY_DIR}/association_study_straight.md)
+  set_tests_properties(kite_association_study_scenario_straight_matches_default
+                       PROPERTIES FIXTURES_REQUIRED
+                       "kite_association_study_tables;kite_association_study_straight_tables")
+
+  add_test(NAME kite_association_study_scenario_straight_summary_output
+    COMMAND ${CMAKE_COMMAND} -DEXE=$<TARGET_FILE:kite_association_study>
+            "-DARGS=--scenario;straight;--association;joint;--summary"
+            -DOUT=${CMAKE_CURRENT_BINARY_DIR}/association_study_straight_summary.md
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/run_to_file.cmake)
+  set_tests_properties(kite_association_study_scenario_straight_summary_output
+                       PROPERTIES FIXTURES_SETUP kite_association_study_straight_summary)
+  add_test(NAME kite_association_study_scenario_straight_summary_matches_default
+    COMMAND ${CMAKE_COMMAND} -E compare_files
+            ${CMAKE_CURRENT_BINARY_DIR}/association_study_joint_summary.md
+            ${CMAKE_CURRENT_BINARY_DIR}/association_study_straight_summary.md)
+  set_tests_properties(kite_association_study_scenario_straight_summary_matches_default
+                       PROPERTIES FIXTURES_REQUIRED
+                       "kite_association_study_joint_summary;kite_association_study_straight_summary")
+
+  add_test(NAME kite_association_study_hard_tables_output
+    COMMAND ${CMAKE_COMMAND} -DEXE=$<TARGET_FILE:kite_association_study>
+            "-DARGS=--scenario;hard;--association;joint"
+            "-DEXPECT_MATCH=^Association joint, hard scenario, seeds 101-120: [0-9]+ measurements, [0-9]+ clutter, [0-9]+ ambiguous[.].*[|] seed [|] measurements [|] clutter [|] ambiguous [|] steals [|] H1 [|] nearer [|] other [|] duplicates [|]"
+            -DOUT=${CMAKE_CURRENT_BINARY_DIR}/association_study_hard.md
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/run_to_file.cmake)
+
+  foreach(mode two_stage joint joint_likelihood)
+    add_test(NAME kite_baseline_hard_association_${mode}_output
+      COMMAND ${CMAKE_COMMAND} -DEXE=$<TARGET_FILE:kite_baseline>
+              "-DARGS=--scenario;hard;--tracker;kalman;--association;${mode};--seeds;101-120"
+              -DOUT=${CMAKE_CURRENT_BINARY_DIR}/kalman_hard_${mode}_tuning.md
+              -P ${CMAKE_CURRENT_SOURCE_DIR}/run_to_file.cmake)
+    set_tests_properties(kite_baseline_hard_association_${mode}_output
+                         PROPERTIES FIXTURES_SETUP kite_baseline_hard_association_${mode}_table)
+    add_test(NAME kite_baseline_hard_association_${mode}_doc_matches
+      COMMAND ${CMAKE_COMMAND} -DTABLE=${CMAKE_CURRENT_BINARY_DIR}/kalman_hard_${mode}_tuning.md
+              "-DHEADING=hard ${mode}:"
+              -DDOC=${PROJECT_SOURCE_DIR}/docs/INVESTIGATION-ASSOCIATION.md
+              -P ${CMAKE_CURRENT_SOURCE_DIR}/doc_contains.cmake)
+    set_tests_properties(kite_baseline_hard_association_${mode}_doc_matches
+                         PROPERTIES FIXTURES_REQUIRED kite_baseline_hard_association_${mode}_table)
+
+    add_test(NAME kite_association_study_hard_${mode}_summary_output
+      COMMAND ${CMAKE_COMMAND} -DEXE=$<TARGET_FILE:kite_association_study>
+              "-DARGS=--scenario;hard;--association;${mode};--summary"
+              "-DEXPECT_MATCH=^Association ${mode}, hard scenario, seeds 101-120:"
+              -DOUT=${CMAKE_CURRENT_BINARY_DIR}/association_study_hard_${mode}_summary.md
+              -P ${CMAKE_CURRENT_SOURCE_DIR}/run_to_file.cmake)
+    set_tests_properties(kite_association_study_hard_${mode}_summary_output
+                         PROPERTIES FIXTURES_SETUP kite_association_study_hard_${mode}_summary)
+    add_test(NAME kite_association_study_hard_${mode}_summary_doc_matches
+      COMMAND ${CMAKE_COMMAND}
+              -DTABLE=${CMAKE_CURRENT_BINARY_DIR}/association_study_hard_${mode}_summary.md
+              -DDOC=${PROJECT_SOURCE_DIR}/docs/INVESTIGATION-ASSOCIATION.md
+              -P ${CMAKE_CURRENT_SOURCE_DIR}/doc_contains.cmake)
+    set_tests_properties(kite_association_study_hard_${mode}_summary_doc_matches
+                         PROPERTIES FIXTURES_REQUIRED kite_association_study_hard_${mode}_summary)
+  endforeach()
+
   kite_exit_test(kite_drop_study_help kite_drop_study 0 "--help")
   kite_exit_test(kite_drop_study_no_args kite_drop_study 2 "")
   kite_exit_test(kite_drop_study_unknown_flag kite_drop_study 2 "--bogus")
@@ -403,4 +481,41 @@ if(KITE_BUILD_TESTS)
     set_tests_properties(kite_drop_study_${study}_doc_matches
                          PROPERTIES FIXTURES_REQUIRED kite_drop_study_${study}_tables)
   endforeach()
+
+  kite_exit_test(kite_drop_study_scenario_bad_value kite_drop_study 2 "--tuning;--scenario;bogus")
+  kite_exit_test(kite_drop_study_scenario_missing_value kite_drop_study 2 "--tuning;--scenario")
+  kite_exit_test(kite_drop_study_scenario_duplicate kite_drop_study 2
+    "--tuning;--scenario;hard;--scenario;straight")
+  kite_exit_test(kite_drop_study_scenario_without_a_study kite_drop_study 2 "--scenario;hard")
+  kite_exit_test(kite_drop_study_monte_carlo_hard kite_drop_study 2
+    "--monte-carlo;--scenario;hard")
+
+  # --scenario straight is the default, so its output is what the doc-matches test pins.
+  add_test(NAME kite_drop_study_scenario_straight_output
+    COMMAND ${CMAKE_COMMAND} -DEXE=$<TARGET_FILE:kite_drop_study> "-DARGS=--tuning;--scenario;straight"
+            -DOUT=${CMAKE_CURRENT_BINARY_DIR}/drop_study_tuning_straight.md
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/run_to_file.cmake)
+  set_tests_properties(kite_drop_study_scenario_straight_output
+                       PROPERTIES FIXTURES_SETUP kite_drop_study_tuning_straight_table)
+  add_test(NAME kite_drop_study_scenario_straight_matches_default
+    COMMAND ${CMAKE_COMMAND} -E compare_files
+            ${CMAKE_CURRENT_BINARY_DIR}/drop_study_tuning.md
+            ${CMAKE_CURRENT_BINARY_DIR}/drop_study_tuning_straight.md)
+  set_tests_properties(kite_drop_study_scenario_straight_matches_default
+                       PROPERTIES FIXTURES_REQUIRED
+                       "kite_drop_study_tuning_tables;kite_drop_study_tuning_straight_table")
+
+  add_test(NAME kite_drop_study_hard_tuning_output
+    COMMAND ${CMAKE_COMMAND} -DEXE=$<TARGET_FILE:kite_drop_study> "-DARGS=--tuning;--scenario;hard"
+            "-DEXPECT_MATCH=^Tentative tracks, two_stage, hard scenario, seeds 101-120:"
+            -DOUT=${CMAKE_CURRENT_BINARY_DIR}/drop_study_hard_tuning.md
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/run_to_file.cmake)
+  set_tests_properties(kite_drop_study_hard_tuning_output
+                       PROPERTIES FIXTURES_SETUP kite_drop_study_hard_tuning_tables)
+  add_test(NAME kite_drop_study_hard_tuning_doc_matches
+    COMMAND ${CMAKE_COMMAND} -DTABLE=${CMAKE_CURRENT_BINARY_DIR}/drop_study_hard_tuning.md
+            -DDOC=${PROJECT_SOURCE_DIR}/docs/INVESTIGATION-ASSOCIATION.md
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/doc_contains.cmake)
+  set_tests_properties(kite_drop_study_hard_tuning_doc_matches
+                       PROPERTIES FIXTURES_REQUIRED kite_drop_study_hard_tuning_tables)
 endif()

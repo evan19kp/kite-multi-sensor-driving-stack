@@ -569,6 +569,22 @@ Each item that introduces a lasting rule adds a "## Standing rules (R<n>)" secti
   range that includes a reporting seed (1-20), and no table gives a tuned candidate's numbers on
   seeds 1-20. The tracker defaults stay as they are until a roadmap item changes them.
 
+## Standing rules (R52)
+
+- `kite_association_study` and `kite_drop_study` take `--scenario straight|hard`. `straight` is the
+  default and prints exactly what the tools printed without the flag; the
+  `*_scenario_straight_matches_default` tests enforce it. The hard studies run on seeds 101-120
+  only, never on 1-20. `kite_drop_study --monte-carlo` takes `straight` only.
+- The "clutter" label (no truth vehicle within the 3 m gate) is computed by the study from truth
+  distances in `tools/study_common.hpp`, beside the R23 labelling rule, never read from the
+  generator or given to a tracker. Every hard table states its clutter and ambiguous counts apart.
+- A duplicate tentative track is one born from a measurement labelled to a car that an earlier
+  track was also born from, at most 5 steps before (same step counts as 0). The window lives only
+  in `kDuplicateBirthWindowSteps` in `tools/drop_study.hpp`.
+- The "Hard scenario (seeds 101-120)" tables in `docs/INVESTIGATION-ASSOCIATION.md` change only by
+  pasting tool output; the `*_hard_*_doc_matches` tests enforce them. Each paragraph quotes only
+  numbers from its own table.
+
 ## Simulator files (hard rule)
 
 - Never read, list, search, copy, launch or write about the simulator's install folder, its user
