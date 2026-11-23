@@ -414,6 +414,39 @@ needs the simulator; every acceptance check runs in CI.
   numbers; the stale test comment, a test for `_ctrl_c_held` off the main thread, and two messages
   that state their real cause.
 
+## Sprint 0A.4
+
+Harder synthetic scenarios (turns, braking, clutter) and the trackers re-scored on them, measured.
+No tracker default or parameter changes; with the new options off every existing output, table and
+golden file stays byte-identical. Nothing here needs the simulator; every acceptance check runs in CI.
+
+- [ ] **R50 Generator: manoeuvres and clutter** (feat, Opus builder): new `ScenarioConfig` fields,
+  all off by default: turning (straight and constant-turn-rate segments, lengths uniform in [2, 6) s,
+  turn rate uniform in [-0.3, 0.3) rad/s), speed changes (constant-acceleration segments uniform in
+  [-3, 2) m/s², speed clamped to [0, 20] m/s) and clutter (per step a count of false detections with
+  mean λ, each uniform over the area; the count-sampling method documented in the header's draw-order
+  section); truth integrated per step with exact, documented formulas using only IEEE-exact
+  operations and fixed-term series (no platform transcendental); new draws after the existing ones;
+  `kite_gen` flags (defaults off) and usage text. Tests: off gives byte-identical output (golden log
+  unchanged); a turning vehicle ends where the closed-form circle says (stated tolerance); speed stays
+  in [0, 20]; clutter count mean within a stated bound of λ; clutter carries no identity; a golden
+  test of a small hard scenario byte-identical on g++ and MSVC.
+- [ ] **R51 `kite_baseline --scenario straight|hard` and honest tables** (feat, Sonnet; needs R50):
+  `--scenario` (default `straight`, today's exact output); `hard` is the same 5 vehicles, 30 s, dt
+  0.1 s, noise 1.0 m, pd 0.95, half-width 100 m plus turning, speed changes and clutter λ = 2, with
+  constants in `tools/baseline_setup.hpp`; `docs/BASELINE.md` section "Hard scenario" with the
+  baseline and Kalman tables on seeds 1-20 (doc-matches tests) and a short comparison using only
+  those numbers; a tuning report over q {0.01, 0.1, 1, 10} and initial velocity sigma {5, 10, 20} on
+  seeds 101-120 of the hard scenario (R15's selection rule), pinned by a test, reported on 101-120
+  only. No default changes.
+- [ ] **R52 Association and track-drop studies on the hard scenario** (feat, Sonnet; needs R51):
+  `kite_association_study` and `kite_drop_study` gain `--scenario straight|hard` (default straight,
+  tables unchanged); `docs/INVESTIGATION-ASSOCIATION.md` section "Hard scenario (seeds 101-120)":
+  the three modes' scoring rows, steals, duplicates and reverse steals, the drop study's
+  tentative-track table and a count of duplicate tentative tracks of one car (births labelled to the
+  same car within 5 steps), all doc-matched; R21 labels plus "clutter" when no truth is within 3 m,
+  clutter and ambiguous counts stated; one short paragraph per table, no winner chosen.
+
 ## Later
 
 Planned, not scheduled. Do not pick these up as roadmap items.
